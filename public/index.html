@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zadania</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="pasek">
+      <h1>Zadania</h1>
+      <nav class="nawigacja"><a href="/dziennik.html">Dziennik →</a></nav>
+      <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
+      <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
+      <button id="przycisk-import" type="button" data-profil="zadania">Importuj z CSV</button>
+      <!--
+        Ukryty input pliku: przycisk wyzej wywoluje go programowo, zeby oba
+        przyciski wygladaly tak samo. accept to tylko podpowiedz dla okna wyboru
+        - o tym, czy plik da sie wczytac, decyduje parser po stronie serwera.
+      -->
+      <input type="file" id="plik-importu" accept=".csv,text/csv" hidden />
+      <!-- Krotki komunikat o wyniku ostatniej operacji (zapisano / blad). -->
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+
+    <!--
+      Panel filtrow. <details> daje zwijanie bez ani jednej linijki JS.
+      Listy checkboxow (stany, priorytety, klienci) buduje public/js/zadania.js
+      ze slownikow z /api/slowniki - nie ma ich tu na sztywno, zeby dopisanie
+      klienta w config/slowniki.js od razu pojawialo sie w filtrach.
+    -->
+    <details id="panel-filtrow" class="filtry">
+      <summary>
+        Filtry<span id="znacznik-filtrow" class="znacznik"></span>
+      </summary>
+
+      <div class="filtry-tresc">
+        <label class="filtr">
+          <span class="filtr-tytul">Nazwa zawiera</span>
+          <input type="search" id="filtr-nazwa" placeholder="np. raport" />
+        </label>
+
+        <fieldset class="filtr">
+          <legend>Stan</legend>
+          <div id="filtr-stany" class="checkboxy"></div>
+        </fieldset>
+
+        <fieldset class="filtr">
+          <legend>Priorytet</legend>
+          <div id="filtr-priorytety" class="checkboxy"></div>
+        </fieldset>
+
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Klient / kategoria</legend>
+          <div id="filtr-klienci" class="checkboxy"></div>
+        </fieldset>
+
+        <!--
+          Zakres dat celowo na polach type="date", a nie datetime-local:
+          dopasowanie liczy sie na pelnych dniach kalendarzowych, wiec godzina
+          nie mialaby tu zadnego wplywu (patrz pasujeZakresDat w zadania.js).
+          Presety to skroty, ktore po prostu wypelniaja pola OD i DO - dzieki temu
+          zawsze widac, jaki zakres jest naprawde uzyty, i mozna go recznie poprawic.
+        -->
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Zakres dat</legend>
+          <div id="presety-dat" class="presety"></div>
+          <label class="zakres">od <input type="date" id="filtr-od" /></label>
+          <label class="zakres">do <input type="date" id="filtr-do" /></label>
+        </fieldset>
+
+        <button type="button" id="przycisk-wyczysc">Wyczyść filtry</button>
+      </div>
+    </details>
+
+    <!--
+      Naglowki tabeli sa statyczne, bo kolumny sa staly element interfejsu.
+      Wiersze buduje public/js/zadania.js na podstawie danych z /api/zadania.
+      Kolumny oznaczone jako "wyliczane" nie istnieja w bazie - licza sie w przegladarce.
+
+      data-kolumna = klucz sortowania (patrz KOLUMNY_SORTOWANIA w public/js/zadania.js).
+      Naglowek bez tego atrybutu jest po prostu nieklikalny.
+    -->
+    <!--
+      Podglad importu (dry-run). Ukryty, dopoki nie wybierzesz pliku.
+      Zapis do bazy nastepuje dopiero po klknieciu "Zatwierdź import" - to celowo
+      osobny krok, zeby dalo sie najpierw zobaczyc, co wejdzie, a co odpadnie.
+    -->
+    <section id="panel-importu" class="import" hidden>
+      <h2 id="import-naglowek"></h2>
+      <p id="import-uwagi" class="import-uwagi"></p>
+      <div id="import-odrzucone"></div>
+      <div class="import-akcje">
+        <button type="button" id="przycisk-zatwierdz-import">Zatwierdź import</button>
+        <button type="button" id="przycisk-anuluj-import">Anuluj</button>
+      </div>
+    </section>
+
+    <table id="tabela-zadan">
+      <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
+        <tr>
+          <th class="kol-id" data-kolumna="id">#</th>
+          <th class="kol-stan" data-kolumna="stan">Stan</th>
+          <th class="kol-nazwa" data-kolumna="nazwa">Nazwa</th>
+          <th class="kol-priorytet" data-kolumna="priorytet">Priorytet</th>
+          <th class="kol-klient" data-kolumna="klient_kategoria">Klient / kategoria</th>
+          <th class="kol-data" data-kolumna="start_zadania">Start</th>
+          <th class="kol-data" data-kolumna="termin">Termin</th>
+          <th class="kol-liczba" data-kolumna="dni_do_terminu" title="Wyliczane: termin minus dzisiaj">
+            Dni do terminu
+          </th>
+          <th class="kol-data" data-kolumna="czas_zakonczenia">Zakończenie</th>
+          <th class="kol-liczba" data-kolumna="czas_trwania" title="Wyliczane: zakończenie minus start">
+            Czas trwania (dni)
+          </th>
+          <th class="kol-akcje"></th>
+        </tr>
+      </thead>
+      <tbody id="wiersze"></tbody>
+    </table>
+
+    <p id="podsumowanie" class="podsumowanie"></p>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/csv.js"></script>
+    <script src="/js/csv-import.js"></script>
+    <script src="/js/zadania.js"></script>
+  </body>
+</html>

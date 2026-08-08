@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dziennik</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="pasek">
+      <h1>Dziennik</h1>
+      <nav class="nawigacja"><a href="/index.html">← Zadania</a></nav>
+      <button id="przycisk-dodaj" type="button">+ Dodaj wpis</button>
+      <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
+      <button id="przycisk-import" type="button" data-profil="dziennik">Importuj z CSV</button>
+      <input type="file" id="plik-importu" accept=".csv,text/csv" hidden />
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+
+    <!-- Podglad importu (dry-run) - ten sam mechanizm co na stronie zadan,
+         rozni je tylko data-profil na przycisku wyzej. -->
+    <section id="panel-importu" class="import" hidden>
+      <h2 id="import-naglowek"></h2>
+      <p id="import-uwagi" class="import-uwagi"></p>
+      <div id="import-odrzucone"></div>
+      <div class="import-akcje">
+        <button type="button" id="przycisk-zatwierdz-import">Zatwierdź import</button>
+        <button type="button" id="przycisk-anuluj-import">Anuluj</button>
+      </div>
+    </section>
+
+    <!--
+      Naglowki statyczne, wiersze buduje public/js/dziennik.js.
+      data-kolumna = klucz sortowania; naglowek bez tego atrybutu jest nieklikalny.
+      Domyslne sortowanie: data malejaco (najnowszy wpis u gory).
+    -->
+    <table id="tabela-dziennika">
+      <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
+        <tr>
+          <th class="kol-id" data-kolumna="id">#</th>
+          <th class="kol-dzien" data-kolumna="data">Data</th>
+          <th class="kol-godzina" data-kolumna="pobudka">Pobudka</th>
+          <th class="kol-ocena" data-kolumna="godziny_snu">Sen (h)</th>
+          <th class="kol-ocena" data-kolumna="jakosc_snu">Jakość snu</th>
+          <th class="kol-ocena" data-kolumna="stres">Stres</th>
+          <th class="kol-ocena" data-kolumna="nastroj">Nastrój</th>
+          <th class="kol-ocena" data-kolumna="intencjonalnosc">Intencjonalność</th>
+          <th class="kol-tekst" data-kolumna="trzy_slowa">Trzy słowa</th>
+          <th class="kol-tekst-szeroki" data-kolumna="nawyki">Nawyki</th>
+          <th class="kol-tekst" data-kolumna="wdziecznosc">Wdzięczność</th>
+          <th class="kol-tekst" data-kolumna="bledy">Błędy</th>
+          <th class="kol-tekst" data-kolumna="rozmowa">Rozmowa</th>
+          <th class="kol-tekst" data-kolumna="co_poszlo_dobrze">Co poszło dobrze</th>
+          <th class="kol-tekst" data-kolumna="jutro_wazne">Jutro ważne</th>
+          <th class="kol-tekst" data-kolumna="do_przemyslenia">Do przemyślenia</th>
+          <th class="kol-tekst" data-kolumna="sniadanie">Śniadanie</th>
+          <th class="kol-tekst" data-kolumna="obiad">Obiad</th>
+          <th class="kol-tekst" data-kolumna="kolacja">Kolacja</th>
+          <th class="kol-akcje"></th>
+        </tr>
+      </thead>
+      <tbody id="wiersze"></tbody>
+    </table>
+
+    <p id="podsumowanie" class="podsumowanie"></p>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/csv.js"></script>
+    <script src="/js/csv-import.js"></script>
+    <script src="/js/dziennik.js"></script>
+  </body>
+</html>

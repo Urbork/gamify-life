@@ -1,0 +1,431 @@
+/*
+  Surowy, funkcjonalny styl. Zadnych bibliotek, zadnego build stepu.
+  Zasada: kolor niesie informacje (po terminie, zrobione, blad), a nie dekoracje.
+*/
+
+:root {
+  --ramka: #ccc;
+  --tlo-naglowka: #f0f0f0;
+  --tekst-slaby: #888;
+  --alarm: #b00020;
+  --ok: #0a7a2f;
+
+  /*
+    Cala paleta jest zbudowana pod JASNE tlo (ramki #ccc, naglowki #f0f0f0, tekst #111).
+    Bez tej deklaracji przegladarka ustawiona na motyw ciemny malowala ciemne plotno,
+    na ktorym prawie czarny tekst byl nieczytelny.
+
+    color-scheme obejmuje takze kontrolki rysowane przez przegladarke - <select>
+    i <input type="datetime-local"> (razem z ikona kalendarza) - ktore inaczej
+    zostalyby ciemne na jasnym wierszu.
+  */
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  font: 14px/1.4 system-ui, sans-serif;
+  color: #111;
+  /* Jawne tlo - patrz color-scheme wyzej. Zebra i hover licza na to, ze plotno jest biale. */
+  background: #fff;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+/* --- pasek nad tabela --- */
+
+.pasek {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+button {
+  font: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--tekst-slaby);
+}
+
+.status.blad {
+  color: var(--alarm);
+  font-weight: bold;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+/* --- panel filtrow --- */
+
+.filtry {
+  border: 1px solid var(--ramka);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.filtry > summary {
+  cursor: pointer;
+  padding: 4px 8px;
+  background: var(--tlo-naglowka);
+  user-select: none;
+}
+
+/* Licznik aktywnych filtrow przy zwinietym panelu - inaczej krotsza lista
+   wygladalaby jak zgubione dane. */
+.znacznik {
+  color: var(--alarm);
+  font-weight: bold;
+}
+
+.filtry-tresc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px;
+}
+
+.filtr {
+  border: 1px solid var(--ramka);
+  padding: 4px 8px;
+  margin: 0;
+}
+
+.filtr-szeroki {
+  flex: 1 1 320px;
+}
+
+.filtr legend,
+.filtr-tytul {
+  font-size: 11px;
+  color: var(--tekst-slaby);
+  text-transform: uppercase;
+}
+
+.filtr-tytul {
+  display: block;
+}
+
+.filtry input[type='search'],
+.filtry input[type='date'] {
+  font: inherit;
+  padding: 2px 4px;
+}
+
+.checkboxy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  max-width: 100%;
+}
+
+.checkboxy label {
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.presety {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.presety button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Preset, ktory odpowiada aktualnie wpisanemu zakresowi. Recznie zmieniona data
+   gasi to podswietlenie, bo zakres przestaje byc "tym presetem". */
+.presety button[data-aktywny='tak'] {
+  background: #d0d0d0;
+  font-weight: bold;
+}
+
+.zakres {
+  margin-right: 10px;
+}
+
+/* --- podglad importu --- */
+
+.import {
+  border: 1px solid var(--ramka);
+  border-left: 3px solid #3b7ddd;
+  padding: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.import h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.import-uwagi {
+  margin: 0 0 8px;
+  color: var(--tekst-slaby);
+  font-size: 12px;
+}
+
+/* Dluga lista odrzuconych nie moze rozpychac strony w nieskonczonosc. */
+#import-odrzucone {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.tabela-odrzuconych th,
+.tabela-odrzuconych td {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.tabela-odrzuconych th:first-child,
+.tabela-odrzuconych td:first-child {
+  width: 50px;
+  text-align: right;
+}
+
+.import-akcje {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- tabela --- */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid var(--ramka);
+  padding: 3px 6px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--tlo-naglowka);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* --- naglowki sortowania --- */
+
+/* Klikalne sa tylko naglowki z data-kolumna (ostatnia, z akcjami, nie jest). */
+th[data-kolumna] {
+  cursor: pointer;
+  user-select: none; /* podwojne klikniecie ma sortowac, a nie zaznaczac tekst naglowka */
+}
+
+th[data-kolumna]:hover {
+  background: #e4e4e4;
+}
+
+/* Strzalka pokazuje aktywna kolumne i kierunek. Rysuje ja CSS na podstawie
+   atrybutu data-kierunek, ktory ustawia odswiezNaglowki() w zadania.js. */
+th[data-kierunek='rosnaco']::after {
+  content: ' \25B2'; /* trojkat w gore */
+}
+
+th[data-kierunek='malejaco']::after {
+  content: ' \25BC'; /* trojkat w dol */
+}
+
+th[data-kierunek='rosnaco'],
+th[data-kierunek='malejaco'] {
+  background: #e0e0e0;
+}
+
+/* Szerokosci kolumn: nazwa dostaje reszte miejsca, pozostale tylko tyle, ile trzeba. */
+.kol-id {
+  width: 44px;
+  color: var(--tekst-slaby);
+  text-align: right;
+}
+.kol-stan {
+  width: 110px;
+}
+.kol-priorytet {
+  width: 100px;
+}
+.kol-klient {
+  width: 180px;
+}
+/* Szersza niz przy samej dacie - datetime-local pokazuje jeszcze godzine. */
+.kol-data {
+  width: 185px;
+}
+.kol-liczba {
+  width: 90px;
+  text-align: right;
+}
+.kol-akcje {
+  width: 34px;
+  text-align: center;
+}
+
+/* --- kolumny dziennika --- */
+
+.kol-dzien {
+  width: 130px;
+}
+.kol-godzina {
+  width: 90px;
+}
+.kol-ocena {
+  width: 72px;
+}
+/* Pola refleksji bywaja dlugie - staly limit szerokosci zamiast rozpychania tabeli. */
+.kol-tekst {
+  width: 190px;
+}
+.kol-tekst-szeroki {
+  width: 260px;
+}
+
+/* Tabela dziennika ma 20 kolumn - bez tego zwezalaby je do nieczytelnosci,
+   zamiast pozwolic na przewijanie w poziomie. */
+#tabela-dziennika {
+  min-width: 2400px;
+}
+
+/* Link nawigacyjny miedzy stronami. */
+.nawigacja a {
+  color: #3b7ddd;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.nawigacja a:hover {
+  text-decoration: underline;
+}
+
+td.kol-liczba {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- pola edytowalne w komorkach --- */
+
+/* Kontrolki maja wypelniac komorke i nie rysowac wlasnych ramek -
+   ramka tabeli w zupelnosci wystarcza. */
+/* Wszystkie kontrolki w komorkach (datetime-local w zadaniach, date/time/number
+   w dzienniku) maja wypelniac komorke i nie rysowac wlasnych ramek. */
+td select,
+td input {
+  font: inherit;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 1px 0;
+}
+
+td[contenteditable] {
+  outline: none;
+  min-height: 1.4em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+td[contenteditable]:focus,
+td select:focus,
+td input:focus {
+  outline: 2px solid #3b7ddd;
+  outline-offset: -2px;
+}
+
+/* Podpowiedz dla swiezo dodanego, jeszcze nienazwanego zadania.
+   Zawezone do kolumny nazwy: bez tego napis pojawialby sie w KAZDEJ pustej
+   komorce tekstowej, a w dzienniku puste pola sa norma (18 kolumn refleksji). */
+td.kol-nazwa[contenteditable]:empty::before {
+  content: 'bez nazwy';
+  color: var(--tekst-slaby);
+}
+
+/* --- czytelnosc wierszy: zebra + hover --------------------------------------
+
+  Regula celowo NIE jest przypieta do #wiersze, tylko do kazdego <tbody> w tabeli.
+  Dzieki temu obejmuje tabele zadan, tabele odrzuconych wierszy w podgladzie importu
+  i kazda kolejna tabele (np. przyszly dziennik) bez dopisywania czegokolwiek.
+
+  Oba tla ida na <tr>, a nie na <td>. To wazne: sygnaly stanu (np. blad zapisu)
+  maluja tlo na <td>, ktore rysuje sie NA WIERZCHU tla wiersza - wiec czerwone
+  podswietlenie bledu wygrywa z zebra i hoverem bez walki o specyficznosc.
+*/
+
+/* Co drugi wiersz odrobine ciemniejszy - prowadzi wzrok w poziomie przy wielu
+   kolumnach. Roznica jest minimalna (bialy -> #f6f6f6): ma pomagac czytac,
+   a nie rysowac pasy przez cala tabele. */
+tbody tr:nth-child(even) {
+  background: #f6f6f7;
+}
+
+/* Hover jest WYRAZNIE mocniejszy od zebry, zeby dalo sie jednym rzutem oka
+   namierzyc wiersz pod kursorem po przewedrowaniu wzrokiem przez dziesiec kolumn.
+   Chlodny odcien nawiazuje do koloru obramowania aktywnej komorki (#3b7ddd).
+
+   Regula MUSI stac PO zebrze: obie maja te sama specyficznosc (0,1,2),
+   wiec o pierwszenstwie decyduje kolejnosc w pliku. */
+tbody tr:hover {
+  background: #e6eefb;
+}
+
+/* --- sygnaly wizualne --- */
+
+/* Termin minal - liczba dni na czerwono. */
+td.po-terminie {
+  color: var(--alarm);
+  font-weight: bold;
+}
+
+/* Zadanie zrobione - caly wiersz przygaszony. */
+tr[data-stan='Zrobione'] {
+  color: var(--tekst-slaby);
+}
+
+/* Zadanie zablokowane - znacznik na lewej krawedzi wiersza. */
+tr[data-stan='Blok'] td:first-child {
+  border-left: 3px solid var(--alarm);
+}
+
+/* Wiersz, ktorego zapis sie nie powiodl. */
+tr.blad-zapisu td {
+  background: #ffecec;
+}
+
+.usun {
+  border: none;
+  background: none;
+  color: var(--tekst-slaby);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.usun:hover {
+  color: var(--alarm);
+}
+
+.podsumowanie {
+  font-size: 12px;
+  color: var(--tekst-slaby);
+}

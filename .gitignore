@@ -1,0 +1,14 @@
+node_modules/
+
+# Baza danych jest lokalna i prywatna - nie trafia do repozytorium.
+# Jesli kiedys zechcesz wersjonowac schemat, sluza do tego migracje w db/migracje.js.
+data/
+
+# Eksporty zrodlowe do testow importu. To PRYWATNE DANE OSOBOWE - dziennik zawiera
+# refleksje, imiona konkretnych osob, posilki i nastroje z ponad dwoch lat.
+# To repozytorium jest publiczne, wiec te pliki NIE MOGA sie w nim znalezc.
+# Jesli potrzebujesz danych testowych w repo, dodaj maly, zanonimizowany wycinek.
+_test/
+
+# Lokalne ustawienia narzedzi - dotycza tej maszyny, nie projektu.
+.claude/settings.local.json

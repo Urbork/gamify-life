@@ -1,0 +1,1031 @@
+/*
+  Widok tabeli zadan: renderowanie, sortowanie, edycja inline, kolumny wyliczane, eksport CSV.
+
+  ZASADA DZIALANIA
+  - `zadania` to lokalna kopia tego, co jest w bazie (Map: id -> rekord).
+    Dane pobieramy z API RAZ, przy starcie. Sortowanie i kolumny wyliczane licza sie
+    tutaj, w przegladarce - serwer nie wie ani o kolejnosci, ani o eksporcie.
+  - Kazda zmiana w komorce od razu leci PATCH-em na serwer. Odpowiedz serwera
+    (czyli rzeczywisty stan wiersza w bazie) nadpisuje lokalna kopie.
+  - Gdy zapis sie nie uda, komorka wraca do poprzedniej wartosci - tabela nigdy
+    nie pokazuje czegos, czego nie ma w bazie.
+  - Kolumny "Dni do terminu" i "Czas trwania" NIE sa zapisywane.
+
+  Cala logika siedzi w IIFE, zeby nie zasmiecac globalnego zakresu -
+  przyszly modul dziennika bedzie mogl uzyc tych samych nazw funkcji.
+*/
+
+(() => {
+  'use strict';
+
+  // Slowniki przyjda z serwera (GET /api/slowniki) - tu tylko wartosci awaryjne.
+  let slowniki = {
+    stany: [],
+    stanDomyslny: 'Plan',
+    stanZakonczony: 'Zrobione',
+    priorytety: [],
+    priorytetDomyslny: 2,
+    klienci: [],
+  };
+
+  // Lokalna kopia stanu bazy. Zrodlo prawdy dla sortowania, kolumn wyliczanych,
+  // eksportu i cofania nieudanych zmian.
+  const zadania = new Map();
+
+  // Aktualne sortowanie. Domyslnie: najblizsze terminy u gory.
+  const sortowanie = { kolumna: 'termin', kierunek: 'rosnaco' };
+
+  const elWiersze = document.getElementById('wiersze');
+  const elNaglowki = document.getElementById('naglowki');
+  const elStatus = document.getElementById('status');
+  const elPodsumowanie = document.getElementById('podsumowanie');
+  const elDodaj = document.getElementById('przycisk-dodaj');
+  const elEksport = document.getElementById('przycisk-eksport');
+
+  // Panel filtrow
+  const elPanelFiltrow = document.getElementById('panel-filtrow');
+  const elZnacznikFiltrow = document.getElementById('znacznik-filtrow');
+  const elFiltrNazwa = document.getElementById('filtr-nazwa');
+  const elFiltrStany = document.getElementById('filtr-stany');
+  const elFiltrPriorytety = document.getElementById('filtr-priorytety');
+  const elFiltrKlienci = document.getElementById('filtr-klienci');
+  const elPresety = document.getElementById('presety-dat');
+  const elFiltrOd = document.getElementById('filtr-od');
+  const elFiltrDo = document.getElementById('filtr-do');
+  const elWyczysc = document.getElementById('przycisk-wyczysc');
+
+  // Dzisiejsza data wedlug SERWERA (GET /api/czas) - od niej licza sie presety zakresu.
+  // Pobierana przy starcie i odswiezana po powrocie do karty.
+  let dzisiajSerwera = null;
+
+  // ==========================================================================
+  // Czas
+  // ==========================================================================
+
+  /*
+    Daty trzymamy jako znaczniki ISO 8601: 'YYYY-MM-DDTHH:MM' (dokladnie w tej postaci
+    przyjmuje i zwraca je <input type="datetime-local">).
+
+    WAZNE ROZROZNIENIE:
+    - kolumny WYLICZANE ("Dni do terminu", "Czas trwania") licza w PELNYCH DNIACH
+      KALENDARZOWYCH i godzine CALKOWICIE IGNORUJA - stad numerDnia() bierze same
+      pierwsze 10 znakow. To swiadoma decyzja: godzina jest na razie dodatkowa
+      informacja do zapisu i wyswietlenia, a logika wyliczen zostaje prosta;
+    - SORTOWANIE uwzglednia godzine, bo przy dwoch zadaniach na ten sam dzien
+      naturalne jest, zeby wczesniejsza godzina byla wyzej. To nie koliduje
+      z powyzszym - dotyczy porzadkowania wierszy, a nie wartosci w kolumnach.
+  */
+
+  const MS_W_DNIU = 86400000;
+
+  /**
+   * Znacznik czasu -> numer dnia (liczba pelnych dni od 1970-01-01, liczona w UTC).
+   * CZESC GODZINOWA JEST POMIJANA. Zwraca null dla pustej lub niepoprawnej wartosci.
+   *
+   * Liczymy w UTC, bo w strefie lokalnej doba przy zmianie czasu ma 23 albo 25 godzin
+   * i dzielenie roznicy milisekund przez 24h dawaloby czasem blad o jeden dzien.
+   */
+  function numerDnia(znacznik) {
+    if (!znacznik) return null;
+    const czesci = znacznik.slice(0, 10).split('-').map(Number);
+    if (czesci.length !== 3 || czesci.some(Number.isNaN)) return null;
+    return Date.UTC(czesci[0], czesci[1] - 1, czesci[2]) / MS_W_DNIU;
+  }
+
+  /** Numer dnia dla dzisiejszej daty (wg zegara komputera). */
+  function numerDzisiaj() {
+    const t = new Date();
+    return Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) / MS_W_DNIU;
+  }
+
+  /** Dzisiejsza data jako 'YYYY-MM-DD' wedlug czasu LOKALNEGO (nie UTC - stad nie toISOString). */
+  function dzisiajISO() {
+    const t = new Date();
+    const dwie = (n) => String(n).padStart(2, '0');
+    return `${t.getFullYear()}-${dwie(t.getMonth() + 1)}-${dwie(t.getDate())}`;
+  }
+
+  /** Kolumna wyliczana: ile PELNYCH DNI zostalo do terminu (ujemne = po terminie). */
+  function dniDoTerminu(z) {
+    const termin = numerDnia(z.termin);
+    if (termin === null) return null;
+    return termin - numerDzisiaj();
+  }
+
+  /** Kolumna wyliczana: ile PELNYCH DNI trwalo zadanie. Puste, gdy brakuje ktorejs z dat. */
+  function czasTrwania(z) {
+    const start = numerDnia(z.start_zadania);
+    const koniec = numerDnia(z.czas_zakonczenia);
+    if (start === null || koniec === null) return null;
+    return koniec - start;
+  }
+
+  /** 'YYYY-MM-DD' + n dni -> 'YYYY-MM-DD'. Liczone w UTC, wiec zmiana czasu nic nie psuje. */
+  function dataPlusDni(iso, dni) {
+    const numer = numerDnia(iso);
+    if (numer === null) return '';
+    return new Date((numer + dni) * MS_W_DNIU).toISOString().slice(0, 10);
+  }
+
+  /** Etykieta slowna priorytetu. Numer spoza slownika pokazujemy w nawiasach. */
+  function etykietaPriorytetu(numer) {
+    const znaleziony = slowniki.priorytety.find((p) => p.numer === numer);
+    return znaleziony ? znaleziony.etykieta : `(${numer})`;
+  }
+
+  // ==========================================================================
+  // Filtrowanie
+  // ==========================================================================
+
+  /*
+    Stan filtrow. Zbiory PUSTE oznaczaja "nie filtruj po tym polu" - to naturalne
+    zachowanie listy checkboxow: nic nie zaznaczone = wszystko przechodzi.
+
+    Wszystkie pola lacza sie przez ORAZ, a zaznaczenia w obrebie jednego pola
+    przez LUB (zadanie musi miec jeden z wybranych stanow, jeden z wybranych
+    priorytetow itd.).
+  */
+  const filtry = {
+    nazwa: '',
+    stany: new Set(),
+    priorytety: new Set(), // liczby, nie teksty
+    klienci: new Set(),
+    od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
+    do: '',
+  };
+
+  /*
+    Presety zakresu dat. `dni` to liczba dni kalendarzowych liczona OD DZISIAJ WLACZNIE,
+    stad "Dziś" = 1 dzien, "Dziś + jutro" = 2 dni, "7 dni" = dzis .. dzis+6.
+    Preset tylko wypelnia pola OD i DO - zadnego osobnego stanu nie trzymamy.
+  */
+  const PRESETY_DAT = [
+    { etykieta: 'Wszystkie', dni: null },
+    { etykieta: 'Dziś', dni: 1 },
+    { etykieta: 'Dziś + jutro', dni: 2 },
+    { etykieta: '7 dni', dni: 7 },
+    { etykieta: '30 dni', dni: 30 },
+  ];
+
+  function pasujeNazwa(z) {
+    if (filtry.nazwa === '') return true;
+    // Zwykly "zawiera", bez rozrozniania wielkosci liter.
+    return (z.nazwa || '').toLocaleLowerCase('pl').includes(filtry.nazwa);
+  }
+
+  function pasujeStan(z) {
+    return filtry.stany.size === 0 || filtry.stany.has(z.stan);
+  }
+
+  function pasujePriorytet(z) {
+    return filtry.priorytety.size === 0 || filtry.priorytety.has(z.priorytet);
+  }
+
+  function pasujeKlient(z) {
+    if (filtry.klienci.size === 0) return true;
+    // Zadanie bez klienta ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
+    return filtry.klienci.has(z.klient_kategoria);
+  }
+
+  /*
+    Dopasowanie do zakresu dat [OD, DO].
+
+    Zadanie pasuje, jesli spelnia CO NAJMNIEJ JEDEN z dwoch warunkow:
+
+      a) TERMIN jest wypelniony i miesci sie w zakresie;
+      b) AKTYWNOSC zadania nachodzi na zakres, czyli start jest wypelniony,
+         zaczyna sie nie pozniej niz DO, a konczy nie wczesniej niz OD.
+
+    Kazdy warunek sprawdzany jest NIEZALEZNIE - zadanie bez terminu moze pasowac
+    przez b), a zadanie bez startu przez a). Zadanie bez zadnej z trzech dat
+    nie pasuje nigdy (oba warunki wymagaja swojej daty).
+
+    PUSTY czas_zakonczenia = zadanie wciaz trwa, wiec warunek konca jest spelniony
+    (zadanie traktujemy jako otwarte, bez daty zamkniecia). Praktyczna roznica wobec
+    wariantu "trwa dokladnie do dzisiaj" pojawia sie tylko dla zakresu w calosci
+    w przyszlosci (OD > dzisiaj); zaden z presetow takiego zakresu nie tworzy.
+    Gdybys chcial wariant ucinany do dzisiaj, zamien `koniec === null` ponizej
+    na `koniec === null && numerDnia(dzisiajSerwera) >= od`.
+
+    Porownania ida na PELNYCH DNIACH KALENDARZOWYCH (numerDnia pomija godzine) -
+    tak samo jak kolumny wyliczane.
+  */
+  function pasujeZakresDat(z) {
+    const od = numerDnia(filtry.od);
+    const doDnia = numerDnia(filtry.do);
+    if (od === null && doDnia === null) return true; // zakres nieustawiony = brak filtra
+
+    const termin = numerDnia(z.termin);
+    const start = numerDnia(z.start_zadania);
+    const koniec = numerDnia(z.czas_zakonczenia);
+
+    const przezTermin =
+      termin !== null && (od === null || termin >= od) && (doDnia === null || termin <= doDnia);
+
+    const przezAktywnosc =
+      start !== null &&
+      (doDnia === null || start <= doDnia) &&
+      (koniec === null || od === null || koniec >= od);
+
+    return przezTermin || przezAktywnosc;
+  }
+
+  /**
+   * Zadania spelniajace WSZYSTKIE aktywne filtry.
+   * @param {Array} lista domyslnie wszystkie zadania z lokalnej kopii.
+   */
+  function filtrowane(lista = [...zadania.values()]) {
+    return lista.filter(
+      (z) =>
+        pasujeNazwa(z) &&
+        pasujeStan(z) &&
+        pasujePriorytet(z) &&
+        pasujeKlient(z) &&
+        pasujeZakresDat(z)
+    );
+  }
+
+  /** Ile pol filtrow jest aktywnych (do znacznika przy zwinietym panelu). */
+  function ileAktywnychFiltrow() {
+    return [
+      filtry.nazwa !== '',
+      filtry.stany.size > 0,
+      filtry.priorytety.size > 0,
+      filtry.klienci.size > 0,
+      filtry.od !== '' || filtry.do !== '',
+    ].filter(Boolean).length;
+  }
+
+  // ==========================================================================
+  // Sortowanie
+  // ==========================================================================
+
+  /*
+    REGULY (w tej kolejnosci):
+    1. Zadania zakonczone zawsze na dole - niezaleznie od wybranej kolumny i kierunku.
+    2. W obrebie grupy: wybrana kolumna, rosnaco albo malejaco.
+    3. Puste wartosci zawsze na koncu swojej grupy, TAKZE przy sortowaniu malejaco.
+       (Zadanie bez terminu nie jest "najpilniejsze" ani "najmniej pilne" - jest nieokreslone,
+       wiec nie ma powodu, zeby wyplywalo na gore przy odwroceniu kierunku.)
+    4. Remisy rozstrzyga id rosnaco - dzieki temu kolejnosc jest zawsze taka sama
+       i wiersze nie zamieniaja sie miejscami przy kazdym renderowaniu.
+  */
+
+  /*
+    Definicje kolumn, po ktorych mozna sortowac. Klucz odpowiada atrybutowi
+    data-kolumna w naglowku tabeli (public/index.html).
+
+    Typy:
+      'liczba'   - zwykle odejmowanie
+      'tekst'    - localeCompare z polskim alfabetem
+      'znacznik' - data z godzina; format YYYY-MM-DDTHH:MM ma stala szerokosc,
+                   wiec kolejnosc alfabetyczna = kolejnosc chronologiczna
+  */
+  const KOLUMNY_SORTOWANIA = {
+    id: { typ: 'liczba', wartosc: (z) => z.id },
+    // Stan sortujemy wedlug kolejnosci ze slownika (Plan, Czeka, W trakcie...),
+    // a nie alfabetycznie - alfabetyczna kolejnosc stanow nic nie znaczy.
+    stan: {
+      typ: 'liczba',
+      wartosc: (z) => {
+        const i = slowniki.stany.indexOf(z.stan);
+        return i === -1 ? slowniki.stany.length : i; // stan spoza slownika laduje na koncu
+      },
+    },
+    nazwa: { typ: 'tekst', wartosc: (z) => z.nazwa },
+    // Po NUMERZE priorytetu, nie po etykiecie - alfabetycznie wyszloby
+    // Brak, Niski, Pilne, Sredni, Wysoki, czyli kolejnosc bez sensu.
+    priorytet: { typ: 'liczba', wartosc: (z) => z.priorytet },
+    klient_kategoria: { typ: 'tekst', wartosc: (z) => z.klient_kategoria },
+    start_zadania: { typ: 'znacznik', wartosc: (z) => z.start_zadania },
+    termin: { typ: 'znacznik', wartosc: (z) => z.termin },
+    dni_do_terminu: { typ: 'liczba', wartosc: dniDoTerminu },
+    czas_zakonczenia: { typ: 'znacznik', wartosc: (z) => z.czas_zakonczenia },
+    czas_trwania: { typ: 'liczba', wartosc: czasTrwania },
+  };
+
+  /**
+   * Brak wartosci: null, undefined albo pusty tekst.
+   * Zero NIE jest brakiem - priorytet 0 ("Brak") to prawidlowa wartosc do sortowania.
+   */
+  function pusta(w) {
+    return w === null || w === undefined || w === '';
+  }
+
+  /** Numer grupy: 0 = aktywne, 1 = zakonczone. Grupa ma zawsze pierwszenstwo przed kolumna. */
+  function grupa(z) {
+    return z.stan === slowniki.stanZakonczony ? 1 : 0;
+  }
+
+  function porownajWKolumnie(a, b) {
+    const definicja = KOLUMNY_SORTOWANIA[sortowanie.kolumna];
+    if (!definicja) return 0;
+
+    const wa = definicja.wartosc(a);
+    const wb = definicja.wartosc(b);
+
+    const pustaA = pusta(wa);
+    const pustaB = pusta(wb);
+    if (pustaA && pustaB) return 0;
+    if (pustaA) return 1; // puste na koniec - przed zwrotem kierunku, wiec go nie dotyczy
+    if (pustaB) return -1;
+
+    let wynik;
+    if (definicja.typ === 'tekst') {
+      wynik = String(wa).localeCompare(String(wb), 'pl'); // 'pl' - poprawna kolejnosc dla a/l/z itd.
+    } else if (definicja.typ === 'znacznik') {
+      wynik = wa < wb ? -1 : wa > wb ? 1 : 0;
+    } else {
+      wynik = wa - wb;
+    }
+
+    return sortowanie.kierunek === 'malejaco' ? -wynik : wynik;
+  }
+
+  /**
+   * Zwraca zadania w kolejnosci wyswietlania.
+   * @param {Array} lista domyslnie WSZYSTKIE zadania. Parametr istnieje po to,
+   *   zeby po dodaniu filtrow mozna bylo posortowac podzbior do wyswietlenia,
+   *   a eksport dalej wolal te funkcje na calosci.
+   */
+  function posortowane(lista = [...zadania.values()]) {
+    return [...lista].sort((a, b) => {
+      const roznicaGrup = grupa(a) - grupa(b);
+      if (roznicaGrup !== 0) return roznicaGrup;
+
+      const wynik = porownajWKolumnie(a, b);
+      if (wynik !== 0) return wynik;
+
+      return a.id - b.id;
+    });
+  }
+
+  /** Obsluga klikniecia w naglowek: ta sama kolumna = odwrocenie, nowa = od rosnaco. */
+  function przelaczSortowanie(kolumna) {
+    if (sortowanie.kolumna === kolumna) {
+      sortowanie.kierunek = sortowanie.kierunek === 'rosnaco' ? 'malejaco' : 'rosnaco';
+    } else {
+      sortowanie.kolumna = kolumna;
+      sortowanie.kierunek = 'rosnaco';
+    }
+    renderuj();
+  }
+
+  /** Zaznacza w naglowku aktywna kolumne i kierunek (strzalke dorysowuje CSS). */
+  function odswiezNaglowki() {
+    for (const th of elNaglowki.querySelectorAll('th[data-kolumna]')) {
+      const aktywna = th.dataset.kolumna === sortowanie.kolumna;
+      th.dataset.kierunek = aktywna ? sortowanie.kierunek : '';
+      // aria-sort informuje czytniki ekranu o tym samym, co strzalka pokazuje wzrokowo.
+      th.setAttribute(
+        'aria-sort',
+        aktywna ? (sortowanie.kierunek === 'rosnaco' ? 'ascending' : 'descending') : 'none'
+      );
+    }
+  }
+
+  // ==========================================================================
+  // Budowanie komorek
+  // ==========================================================================
+
+  /** Komorka z numerem id - tylko do odczytu, ulatwia rozmowe o konkretnym wierszu. */
+  function komorkaId(z) {
+    const td = document.createElement('td');
+    td.className = 'kol-id';
+    td.textContent = z.id;
+    return td;
+  }
+
+  /** Komorka tekstowa (contenteditable). Zapis przy opuszczeniu pola. */
+  function komorkaTekst(z, pole, klasa) {
+    const td = document.createElement('td');
+    td.className = klasa;
+    td.dataset.pole = pole;
+    td.contentEditable = 'true';
+    // textContent, nie innerHTML - tresc od uzytkownika nigdy nie jest traktowana jak HTML.
+    td.textContent = z[pole] ?? '';
+
+    td.addEventListener('blur', () => {
+      const nowa = td.textContent.trim();
+      const rekord = zadania.get(z.id);
+      if (!rekord) return; // wiersz zdazyl zniknac (np. usuniety)
+      if (nowa === (rekord[pole] ?? '')) return; // nic sie nie zmienilo
+      zapisz(td.closest('tr'), pole, nowa);
+    });
+
+    // Enter konczy edycje zamiast wstawiac lamanie linii.
+    td.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        td.blur();
+      }
+      if (e.key === 'Escape') {
+        const rekord = zadania.get(z.id);
+        td.textContent = rekord ? rekord[pole] ?? '' : '';
+        td.blur();
+      }
+    });
+
+    return td;
+  }
+
+  /**
+   * Komorka z lista rozwijana.
+   * @param {Array<{wartosc: *, etykieta: string}>} opcje pozycje listy w kolejnosci wyswietlania
+   * @param {boolean} pusteDozwolone czy dopuszczamy brak wyboru (dotyczy klienta)
+   */
+  function komorkaSelect(z, pole, klasa, opcje, pusteDozwolone) {
+    const td = document.createElement('td');
+    td.className = klasa;
+    td.dataset.pole = pole;
+
+    const select = document.createElement('select');
+    // ?? zamiast || - priorytet 0 jest wartoscia prawidlowa, a w JS jest falszywy.
+    const wartosc = z[pole] ?? '';
+
+    if (pusteDozwolone) select.appendChild(new Option('', ''));
+    for (const o of opcje) select.appendChild(new Option(o.etykieta, o.wartosc));
+
+    // Rekord moze zawierac wartosc spoza aktualnego slownika (np. klient usuniety
+    // z listy w config/slowniki.js). Dopisujemy ja, zeby edycja innej kolumny
+    // nie podmienila po cichu tej wartosci na pierwsza z listy.
+    // Porownanie przez String, bo select.value zawsze jest tekstem (priorytet to liczba).
+    if (wartosc !== '' && !opcje.some((o) => String(o.wartosc) === String(wartosc))) {
+      select.appendChild(new Option(wartosc + ' (spoza listy)', wartosc));
+    }
+
+    select.value = wartosc;
+    select.addEventListener('change', () => zapisz(td.closest('tr'), pole, select.value));
+
+    td.appendChild(select);
+    return td;
+  }
+
+  /**
+   * Komorka z data i godzina.
+   * <input type="datetime-local"> przyjmuje i zwraca dokladnie ten format,
+   * ktory trzymamy w bazie ('YYYY-MM-DDTHH:MM'), wiec nie ma tu zadnej konwersji.
+   */
+  function komorkaZnacznikCzasu(z, pole) {
+    const td = document.createElement('td');
+    td.className = 'kol-data';
+    td.dataset.pole = pole;
+
+    const input = document.createElement('input');
+    input.type = 'datetime-local';
+    input.value = z[pole] ?? '';
+    input.addEventListener('change', () => zapisz(td.closest('tr'), pole, input.value));
+
+    td.appendChild(input);
+    return td;
+  }
+
+  /** Pusta komorka na wartosc wyliczana - wypelnia ja odswiezWyliczone(). */
+  function komorkaWyliczona(nazwa) {
+    const td = document.createElement('td');
+    td.className = 'kol-liczba';
+    td.dataset.wyliczane = nazwa;
+    return td;
+  }
+
+  function komorkaUsun(z) {
+    const td = document.createElement('td');
+    td.className = 'kol-akcje';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'usun';
+    btn.textContent = '×'; // znak "razy"
+    btn.title = 'Usuń zadanie';
+    btn.addEventListener('click', () => usunZadanie(z.id));
+
+    td.appendChild(btn);
+    return td;
+  }
+
+  // ==========================================================================
+  // Renderowanie
+  // ==========================================================================
+
+  // Slowniki stanow i klientow przychodza jako zwykle listy tekstow, a select
+  // oczekuje par {wartosc, etykieta} - tu je ujednolicamy.
+  const jakoOpcje = (teksty) => teksty.map((t) => ({ wartosc: t, etykieta: t }));
+
+  function zbudujWiersz(z) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = z.id;
+    tr.dataset.stan = z.stan; // wykorzystywane przez CSS (wyszarzenie "Zrobione" itd.)
+
+    // KOLEJNOSC KOLUMN musi sie zgadzac z naglowkami w public/index.html
+    // oraz z KOLUMNY_CSV nizej.
+    tr.append(
+      komorkaId(z),
+      komorkaSelect(z, 'stan', 'kol-stan', jakoOpcje(slowniki.stany), false),
+      komorkaTekst(z, 'nazwa', 'kol-nazwa'),
+      komorkaSelect(
+        z,
+        'priorytet',
+        'kol-priorytet',
+        slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
+        false
+      ),
+      komorkaSelect(z, 'klient_kategoria', 'kol-klient', jakoOpcje(slowniki.klienci), true),
+      komorkaZnacznikCzasu(z, 'start_zadania'),
+      komorkaZnacznikCzasu(z, 'termin'),
+      komorkaWyliczona('dni_do_terminu'),
+      komorkaZnacznikCzasu(z, 'czas_zakonczenia'),
+      komorkaWyliczona('czas_trwania')
+    );
+    tr.appendChild(komorkaUsun(z));
+
+    odswiezWyliczone(tr);
+    return tr;
+  }
+
+  /*
+    Renderowanie przebudowuje CALA tresc tabeli od zera. To najprostszy sposob,
+    zeby wynik zawsze zgadzal sie z regulami sortowania, ale ma dwa skutki uboczne,
+    ktore trzeba obsluzyc:
+
+    1. Przebudowa niszczy element, ktory ma fokus. Dlatego zapamietujemy, w ktorym
+       wierszu i polu byl kursor, i wracamy tam po przebudowie.
+    2. Przebudowa w trakcie pisania bylaby uciazliwa. Dlatego zapisz() wola renderuj()
+       tylko wtedy, gdy edycja faktycznie zmienila KOLEJNOSC wierszy - w pozostalych
+       przypadkach aktualizuje wiersz w miejscu (zaktualizujWiersz).
+  */
+
+  function zapamietajFokus() {
+    const el = document.activeElement;
+    if (!el || !elWiersze.contains(el)) return null;
+    const tr = el.closest('tr');
+    const td = el.closest('td');
+    if (!tr || !td || !td.dataset.pole) return null;
+    return { id: tr.dataset.id, pole: td.dataset.pole };
+  }
+
+  function odtworzFokus(zapamietany) {
+    if (!zapamietany) return;
+    const td = elWiersze.querySelector(
+      `tr[data-id="${zapamietany.id}"] [data-pole="${zapamietany.pole}"]`
+    );
+    if (!td) return;
+    (td.querySelector('select, input') || td).focus();
+  }
+
+  /*
+    Potok wyswietlania: najpierw odsiew, potem porzadkowanie.
+    Eksport CSV CELOWO go nie uzywa - wola posortowane() bez argumentu, czyli
+    na calym zbiorze, zeby filtry nie okrajaly eksportowanego pliku.
+  */
+  function doWyswietlenia() {
+    return posortowane(filtrowane());
+  }
+
+  function renderuj() {
+    const fokus = zapamietajFokus();
+    elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
+    odtworzFokus(fokus);
+    odswiezNaglowki();
+    odswiezPodsumowanie();
+  }
+
+  /**
+   * Czy zawartosc tabeli rozni sie od tej, ktora powinna byc?
+   * Wychwytuje nie tylko zmiane kolejnosci, ale i wypadniecie wiersza z filtra
+   * (np. po zmianie stanu na taki, ktory jest odfiltrowany) - listy maja wtedy
+   * rozne dlugosci.
+   */
+  function kolejnoscSieZmienila() {
+    const oczekiwana = doWyswietlenia().map((z) => z.id);
+    const obecna = [...elWiersze.children].map((tr) => Number(tr.dataset.id));
+    return oczekiwana.length !== obecna.length || oczekiwana.some((id, i) => id !== obecna[i]);
+  }
+
+  /** Przelicza obie kolumny wyliczane dla jednego wiersza na podstawie lokalnej kopii danych. */
+  function odswiezWyliczone(tr) {
+    const z = zadania.get(Number(tr.dataset.id));
+    if (!z) return;
+
+    const doTerminu = dniDoTerminu(z);
+    const tdTermin = tr.querySelector('[data-wyliczane="dni_do_terminu"]');
+    tdTermin.textContent = doTerminu === null ? '' : doTerminu;
+    // Czerwono tylko wtedy, gdy termin minal, a zadanie nie jest zrobione.
+    tdTermin.classList.toggle(
+      'po-terminie',
+      doTerminu !== null && doTerminu < 0 && z.stan !== slowniki.stanZakonczony
+    );
+
+    const trwanie = czasTrwania(z);
+    tr.querySelector('[data-wyliczane="czas_trwania"]').textContent =
+      trwanie === null ? '' : trwanie;
+  }
+
+  /** Synchronizuje wiersz z lokalna kopia danych, bez przebudowy tabeli. */
+  function zaktualizujWiersz(tr) {
+    const z = zadania.get(Number(tr.dataset.id));
+    if (!z) return;
+
+    tr.dataset.stan = z.stan;
+
+    for (const td of tr.querySelectorAll('[data-pole]')) {
+      const kontrolka = td.querySelector('select, input');
+      const element = kontrolka || td;
+      // Pola, w ktorym ktos wlasnie pisze, nie ruszamy - nie chcemy zabrac mu tekstu
+      // spod kursora, gdy w tle przyjdzie odpowiedz na wczesniejszy zapis.
+      if (element === document.activeElement) continue;
+
+      const wartosc = z[td.dataset.pole] ?? '';
+      if (kontrolka) kontrolka.value = wartosc;
+      else td.textContent = wartosc;
+    }
+
+    odswiezWyliczone(tr);
+  }
+
+  /** Ustawia w komorce wartosc z lokalnej kopii danych (uzywane po nieudanym zapisie). */
+  function przywrocKomorke(tr, pole) {
+    const z = zadania.get(Number(tr.dataset.id));
+    const td = tr.querySelector(`[data-pole="${pole}"]`);
+    if (!z || !td) return;
+
+    const kontrolka = td.querySelector('select, input');
+    if (kontrolka) kontrolka.value = z[pole] ?? '';
+    else td.textContent = z[pole] ?? '';
+  }
+
+  /** Ustawia kursor w komorce tekstowej i zaznacza jej cala tresc. */
+  function zaznaczTresc(td) {
+    td.focus();
+    const zakres = document.createRange();
+    zakres.selectNodeContents(td);
+    const zaznaczenie = window.getSelection();
+    zaznaczenie.removeAllRanges();
+    zaznaczenie.addRange(zakres);
+  }
+
+  // ==========================================================================
+  // Operacje na danych
+  // ==========================================================================
+
+  /** Zapisuje jedno pole jednego zadania. Wywolywane z handlerow blur/change. */
+  async function zapisz(tr, pole, wartosc) {
+    const id = Number(tr.dataset.id);
+    try {
+      const zaktualizowane = await api.patch(`/api/zadania/${id}`, { [pole]: wartosc });
+      zadania.set(id, zaktualizowane);
+      tr.classList.remove('blad-zapisu');
+
+      // Przebudowa tylko wtedy, gdy zmiana faktycznie przesuwa wiersze
+      // (np. zmiana stanu na "Zrobione" albo edycja kolumny, po ktorej sortujemy).
+      if (kolejnoscSieZmienila()) renderuj();
+      else {
+        zaktualizujWiersz(tr);
+        odswiezPodsumowanie();
+      }
+
+      pokazStatus('zapisano', 'ok');
+    } catch (e) {
+      // Serwer odrzucil zmiane - pokazujemy jego komunikat i cofamy komorke,
+      // zeby tabela zgadzala sie z baza.
+      tr.classList.add('blad-zapisu');
+      przywrocKomorke(tr, pole);
+      pokazStatus(e.message, 'blad');
+    }
+  }
+
+  async function dodajZadanie() {
+    try {
+      // Wartosci domyslne (nazwa, stan, priorytet, dzisiejsza data startu)
+      // nadaje serwer - patrz routes/zadania.js.
+      const nowe = await api.post('/api/zadania');
+      zadania.set(nowe.id, nowe);
+      renderuj();
+
+      // Nowe zadanie nie ma terminu, wiec przy domyslnym sortowaniu laduje na koncu
+      // aktywnych - trzeba je odnalezc, przewinac do niego i zaznaczyc nazwe zastepcza,
+      // zeby pierwsze wpisane znaki ja nadpisaly.
+      const tr = elWiersze.querySelector(`tr[data-id="${nowe.id}"]`);
+      if (tr) {
+        tr.scrollIntoView({ block: 'nearest' });
+        zaznaczTresc(tr.querySelector('[data-pole="nazwa"]'));
+      } else {
+        // Zadanie powstalo w bazie, ale nie przechodzi przez aktywne filtry.
+        // Bez tego komunikatu klikniecie "Dodaj" wygladaloby jak brak reakcji.
+        pokazStatus('Dodano zadanie, ale ukrywają je filtry.', 'blad');
+      }
+    } catch (e) {
+      pokazStatus(e.message, 'blad');
+    }
+  }
+
+  async function usunZadanie(id) {
+    const z = zadania.get(id);
+    const etykieta = z && z.nazwa ? `„${z.nazwa}”` : `bez nazwy (#${id})`;
+    if (!confirm(`Usunąć zadanie ${etykieta}? Tej operacji nie da się cofnąć.`)) return;
+
+    try {
+      await api.usun(`/api/zadania/${id}`);
+      zadania.delete(id);
+      renderuj();
+      pokazStatus('usunięto', 'ok');
+    } catch (e) {
+      pokazStatus(e.message, 'blad');
+    }
+  }
+
+  // ==========================================================================
+  // Eksport CSV
+  // ==========================================================================
+
+  /*
+    Naglowki pliku = nazwy kolumn z bazy plus kolumny wyliczane. Nazwy techniczne
+    (a nie "Dni do terminu"), zeby plik dalo sie latwo wczytac skryptem albo do arkusza.
+
+    Kolejnosc jest ta sama co w tabeli na ekranie. Priorytet wychodzi w DWOCH kolumnach:
+    numer do sortowania i obliczen, etykieta do czytania przez czlowieka.
+  */
+  const KOLUMNY_CSV = [
+    'stan',
+    'nazwa',
+    'priorytet',
+    'priorytet_etykieta',
+    'klient_kategoria',
+    'start_zadania',
+    'termin',
+    'czas_zakonczenia',
+    'dni_do_terminu',
+    'czas_trwania_dni',
+  ];
+
+  function eksportujCsv() {
+    // Celowo bierzemy WSZYSTKIE zadania z lokalnej kopii, a nie wiersze z DOM-u:
+    // gdy w przyszlosci dojda filtry, eksport ma dalej obejmowac calosc,
+    // zachowujac przy tym aktualna kolejnosc sortowania.
+    const wszystkie = posortowane();
+
+    if (wszystkie.length === 0) {
+      pokazStatus('Nie ma czego eksportować.', 'blad');
+      return;
+    }
+
+    const wiersze = wszystkie.map((z) => [
+      z.stan,
+      z.nazwa,
+      z.priorytet,
+      etykietaPriorytetu(z.priorytet),
+      z.klient_kategoria,
+      z.start_zadania,
+      z.termin,
+      z.czas_zakonczenia,
+      // Obie kolumny wyliczane to MIGAWKA na moment eksportu - "dni do terminu"
+      // liczy sie wzgledem dzisiejszej daty, wiec jutro ten sam plik wyszedlby inny.
+      dniDoTerminu(z),
+      czasTrwania(z),
+    ]);
+
+    csv.pobierz(`zadania-eksport-${dzisiajISO()}.csv`, KOLUMNY_CSV, wiersze);
+    pokazStatus(`wyeksportowano ${wszystkie.length}`, 'ok');
+  }
+
+  // ==========================================================================
+  // Interfejs pomocniczy
+  // ==========================================================================
+
+  let timerStatusu = null;
+
+  function pokazStatus(tekst, typ) {
+    elStatus.textContent = tekst;
+    elStatus.className = 'status ' + (typ || '');
+    clearTimeout(timerStatusu);
+    // Bledy zostaja na dluzej - warto je przeczytac.
+    timerStatusu = setTimeout(
+      () => {
+        elStatus.textContent = '';
+        elStatus.className = 'status';
+      },
+      typ === 'blad' ? 8000 : 1500
+    );
+  }
+
+  function odswiezPodsumowanie() {
+    const wszystkie = [...zadania.values()];
+    if (wszystkie.length === 0) {
+      elPodsumowanie.textContent = 'Brak zadań.';
+      return;
+    }
+
+    const widoczne = filtrowane(wszystkie);
+
+    // Rozbicie po stanach dotyczy tego, co widac - kolejnosc taka jak w slowniku,
+    // stany bez zadan pomijamy.
+    const licznik = slowniki.stany
+      .map((s) => [s, widoczne.filter((z) => z.stan === s).length])
+      .filter(([, ile]) => ile > 0)
+      .map(([s, ile]) => `${s}: ${ile}`)
+      .join(', ');
+
+    elPodsumowanie.textContent =
+      `Pokazano ${widoczne.length} z ${wszystkie.length} zadań` +
+      (licznik ? ` (${licznik})` : '');
+  }
+
+  // ==========================================================================
+  // Panel filtrow
+  // ==========================================================================
+
+  /**
+   * Buduje liste checkboxow w podanym pojemniku.
+   * @param {Array<{wartosc: *, etykieta: string}>} opcje
+   * @param {Set} zbior zbior stanu filtrow, ktory ta lista modyfikuje
+   */
+  function zbudujCheckboxy(pojemnik, opcje, zbior) {
+    pojemnik.replaceChildren(
+      ...opcje.map((o) => {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+
+        input.addEventListener('change', () => {
+          // Do zbioru wklada my ORYGINALNA wartosc (liczbe dla priorytetu, tekst dla
+          // stanu), a nie input.value, ktory zawsze bylby tekstem - inaczej
+          // porownanie z rekordem z bazy nie trafialoby.
+          if (input.checked) zbior.add(o.wartosc);
+          else zbior.delete(o.wartosc);
+          zastosujFiltry();
+        });
+
+        label.append(input, ' ' + o.etykieta);
+        return label;
+      })
+    );
+  }
+
+  function zbudujPresety() {
+    elPresety.replaceChildren(
+      ...PRESETY_DAT.map((preset) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = preset.etykieta;
+        btn.dataset.dni = preset.dni === null ? '' : preset.dni;
+
+        btn.addEventListener('click', () => {
+          if (preset.dni === null) {
+            elFiltrOd.value = '';
+            elFiltrDo.value = '';
+          } else {
+            // Zakres liczy sie od DZISIAJ WEDLUG SERWERA, wlacznie z dzisiejszym dniem.
+            elFiltrOd.value = dzisiajSerwera;
+            elFiltrDo.value = dataPlusDni(dzisiajSerwera, preset.dni - 1);
+          }
+          zastosujFiltry();
+        });
+
+        return btn;
+      })
+    );
+  }
+
+  /** Podswietla preset, ktory odpowiada aktualnie wpisanemu zakresowi (jesli ktorys). */
+  function odswiezPresety() {
+    for (const btn of elPresety.querySelectorAll('button')) {
+      const dni = btn.dataset.dni === '' ? null : Number(btn.dataset.dni);
+
+      const pasuje =
+        dni === null
+          ? filtry.od === '' && filtry.do === ''
+          : dzisiajSerwera !== null &&
+            filtry.od === dzisiajSerwera &&
+            filtry.do === dataPlusDni(dzisiajSerwera, dni - 1);
+
+      btn.dataset.aktywny = pasuje ? 'tak' : 'nie';
+    }
+  }
+
+  /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */
+  function zastosujFiltry() {
+    filtry.nazwa = elFiltrNazwa.value.trim().toLocaleLowerCase('pl');
+    filtry.od = elFiltrOd.value;
+    filtry.do = elFiltrDo.value;
+    // Zbiory (stany, priorytety, klienci) sa aktualizowane na biezaco
+    // przez handlery checkboxow.
+
+    const ile = ileAktywnychFiltrow();
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+
+    odswiezPresety();
+    renderuj();
+  }
+
+  function wyczyscFiltry() {
+    elFiltrNazwa.value = '';
+    elFiltrOd.value = '';
+    elFiltrDo.value = '';
+    for (const input of elPanelFiltrow.querySelectorAll('input[type="checkbox"]')) {
+      input.checked = false;
+    }
+    filtry.stany.clear();
+    filtry.priorytety.clear();
+    filtry.klienci.clear();
+    zastosujFiltry();
+  }
+
+  /** Buduje zawartosc panelu filtrow ze slownikow. Wolane raz, po ich pobraniu. */
+  function zbudujPanelFiltrow() {
+    zbudujCheckboxy(elFiltrStany, jakoOpcje(slowniki.stany), filtry.stany);
+    zbudujCheckboxy(
+      elFiltrPriorytety,
+      slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
+      filtry.priorytety
+    );
+    zbudujCheckboxy(elFiltrKlienci, jakoOpcje(slowniki.klienci), filtry.klienci);
+    zbudujPresety();
+    odswiezPresety();
+  }
+
+  // ==========================================================================
+  // Start
+  // ==========================================================================
+
+  async function start() {
+    try {
+      // Slowniki musza byc PRZED budowaniem wierszy - z nich powstaja dropdowny
+      // i checkboxy filtrow, a stanZakonczony decyduje o grupie w sortowaniu.
+      const [pobraneSlowniki, czas, lista] = await Promise.all([
+        api.get('/api/slowniki'),
+        api.get('/api/czas'),
+        api.get('/api/zadania'),
+      ]);
+      slowniki = pobraneSlowniki;
+      dzisiajSerwera = czas.dzisiaj;
+
+      zbudujPanelFiltrow();
+
+      for (const z of lista) zadania.set(z.id, z);
+      renderuj();
+    } catch (e) {
+      pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
+    }
+  }
+
+  /**
+   * Pobiera liste zadan od nowa i przerysowuje tabele.
+   * Uzywane po operacjach, ktore zmieniaja dane hurtowo poza tym modulem -
+   * dzis to import z CSV, w przyszlosci moze byc synchronizacja czy cofniecie zmian.
+   */
+  async function przeladujZadania() {
+    try {
+      const lista = await api.get('/api/zadania');
+      zadania.clear();
+      for (const z of lista) zadania.set(z.id, z);
+      renderuj();
+    } catch (e) {
+      pokazStatus('Nie udało się odświeżyć listy: ' + e.message, 'blad');
+    }
+  }
+
+  elDodaj.addEventListener('click', dodajZadanie);
+  elEksport.addEventListener('click', eksportujCsv);
+  elWyczysc.addEventListener('click', wyczyscFiltry);
+
+  // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
+  elFiltrNazwa.addEventListener('input', zastosujFiltry);
+  elFiltrOd.addEventListener('change', zastosujFiltry);
+  elFiltrDo.addEventListener('change', zastosujFiltry);
+
+  /*
+    Inne moduly (public/js/csv-import.js) nie maja dostepu do wnetrza tego domkniecia,
+    wiec o hurtowej zmianie danych informuja zdarzeniem na dokumencie.
+    Luzne powiazanie: przyszly dziennik moze wyslac to samo zdarzenie.
+  */
+  document.addEventListener('dane-zadania-zmienione', przeladujZadania);
+
+  // Jeden handler na cala glowke tabeli zamiast osobnego na kazdy naglowek.
+  elNaglowki.addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-kolumna]');
+    if (th) przelaczSortowanie(th.dataset.kolumna);
+  });
+
+  // "Dni do terminu" zalezy od dzisiejszej daty, a karta potrafi byc otwarta przez
+  // kilka dni. Po powrocie do karty przeliczamy kolumne, zeby nie pokazywala wczorajszych liczb.
+  // Kolejnosc wierszy sie przez to nie zmienia - uplyw dnia przesuwa wszystkie terminy tak samo.
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) return;
+
+    for (const tr of elWiersze.children) odswiezWyliczone(tr);
+
+    // Przy okazji odswiezamy date serwera - inaczej po nocy preset "Dziś"
+    // wypelnialby pola wczorajsza data.
+    try {
+      const czas = await api.get('/api/czas');
+      if (czas.dzisiaj !== dzisiajSerwera) {
+        dzisiajSerwera = czas.dzisiaj;
+        odswiezPresety();
+      }
+    } catch (e) {
+      // Brak polaczenia nie jest tu powodem do alarmowania uzytkownika -
+      // presety po prostu zostaja na dacie z ostatniego udanego pobrania.
+    }
+  });
+
+  start();
+})();
