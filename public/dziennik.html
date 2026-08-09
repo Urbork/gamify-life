@@ -17,6 +17,40 @@
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
 
+    <!--
+      Panel filtrow - ten sam uklad i te same klasy CSS co na stronie zadan.
+      Liste nawykow buduje public/js/dziennik.js ze slownika z /api/slowniki,
+      zeby dopisanie nawyku w config/slowniki.js od razu pojawialo sie w filtrach.
+    -->
+    <details id="panel-filtrow" class="filtry">
+      <summary>
+        Filtry<span id="znacznik-filtrow" class="znacznik"></span>
+      </summary>
+
+      <div class="filtry-tresc">
+        <label class="filtr">
+          <span class="filtr-tytul">Szukaj w tekście</span>
+          <input type="search" id="filtr-szukaj" placeholder="np. Karolina" />
+        </label>
+
+        <!-- Dziennik ma tylko jedno pole daty, wiec zakres jest prostszy
+             niz w zadaniach (tam sprawdzamy termin ORAZ okres aktywnosci). -->
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Zakres dat</legend>
+          <div id="presety-dat" class="presety"></div>
+          <label class="zakres">od <input type="date" id="filtr-od" /></label>
+          <label class="zakres">do <input type="date" id="filtr-do" /></label>
+        </fieldset>
+
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Nawyk</legend>
+          <div id="filtr-nawyki" class="checkboxy"></div>
+        </fieldset>
+
+        <button type="button" id="przycisk-wyczysc">Wyczyść filtry</button>
+      </div>
+    </details>
+
     <!-- Podglad importu (dry-run) - ten sam mechanizm co na stronie zadan,
          rozni je tylko data-profil na przycisku wyzej. -->
     <section id="panel-importu" class="import" hidden>
@@ -66,6 +100,7 @@
 
     <script src="/js/api.js"></script>
     <script src="/js/csv.js"></script>
+    <script src="/js/filtr-dat.js"></script>
     <script src="/js/csv-import.js"></script>
     <script src="/js/dziennik.js"></script>
   </body>

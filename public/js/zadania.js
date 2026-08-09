@@ -76,33 +76,16 @@
       z powyzszym - dotyczy porzadkowania wierszy, a nie wartosci w kolumnach.
   */
 
-  const MS_W_DNIU = 86400000;
-
-  /**
-   * Znacznik czasu -> numer dnia (liczba pelnych dni od 1970-01-01, liczona w UTC).
-   * CZESC GODZINOWA JEST POMIJANA. Zwraca null dla pustej lub niepoprawnej wartosci.
-   *
-   * Liczymy w UTC, bo w strefie lokalnej doba przy zmianie czasu ma 23 albo 25 godzin
-   * i dzielenie roznicy milisekund przez 24h dawaloby czasem blad o jeden dzien.
-   */
-  function numerDnia(znacznik) {
-    if (!znacznik) return null;
-    const czesci = znacznik.slice(0, 10).split('-').map(Number);
-    if (czesci.length !== 3 || czesci.some(Number.isNaN)) return null;
-    return Date.UTC(czesci[0], czesci[1] - 1, czesci[2]) / MS_W_DNIU;
-  }
+  /*
+    Arytmetyka dat i mechanika presetow zyja we WSPOLNYM module public/js/filtr-dat.js -
+    korzysta z nich takze dziennik. Rozpakowanie do lokalnych stalych sprawia,
+    ze wszystkie wywolania nizej wygladaja tak samo jak przed wydzieleniem.
+  */
+  const { numerDnia, dataPlusDni, dzisiajLokalnie: dzisiajISO } = filtrDat;
 
   /** Numer dnia dla dzisiejszej daty (wg zegara komputera). */
   function numerDzisiaj() {
-    const t = new Date();
-    return Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) / MS_W_DNIU;
-  }
-
-  /** Dzisiejsza data jako 'YYYY-MM-DD' wedlug czasu LOKALNEGO (nie UTC - stad nie toISOString). */
-  function dzisiajISO() {
-    const t = new Date();
-    const dwie = (n) => String(n).padStart(2, '0');
-    return `${t.getFullYear()}-${dwie(t.getMonth() + 1)}-${dwie(t.getDate())}`;
+    return numerDnia(dzisiajISO());
   }
 
   /** Kolumna wyliczana: ile PELNYCH DNI zostalo do terminu (ujemne = po terminie). */
@@ -118,13 +101,6 @@
     const koniec = numerDnia(z.czas_zakonczenia);
     if (start === null || koniec === null) return null;
     return koniec - start;
-  }
-
-  /** 'YYYY-MM-DD' + n dni -> 'YYYY-MM-DD'. Liczone w UTC, wiec zmiana czasu nic nie psuje. */
-  function dataPlusDni(iso, dni) {
-    const numer = numerDnia(iso);
-    if (numer === null) return '';
-    return new Date((numer + dni) * MS_W_DNIU).toISOString().slice(0, 10);
   }
 
   /** Etykieta slowna priorytetu. Numer spoza slownika pokazujemy w nawiasach. */
@@ -155,17 +131,13 @@
   };
 
   /*
-    Presety zakresu dat. `dni` to liczba dni kalendarzowych liczona OD DZISIAJ WLACZNIE,
-    stad "Dziś" = 1 dzien, "Dziś + jutro" = 2 dni, "7 dni" = dzis .. dzis+6.
+    Presety zakresu dat skladamy z nazwanych klockow wspolnego modulu.
+    Zadania maja dodatkowo "Dziś + jutro", ktorego dziennik nie potrzebuje -
+    stad lista jest tutaj, a nie w module.
     Preset tylko wypelnia pola OD i DO - zadnego osobnego stanu nie trzymamy.
   */
-  const PRESETY_DAT = [
-    { etykieta: 'Wszystkie', dni: null },
-    { etykieta: 'Dziś', dni: 1 },
-    { etykieta: 'Dziś + jutro', dni: 2 },
-    { etykieta: '7 dni', dni: 7 },
-    { etykieta: '30 dni', dni: 30 },
-  ];
+  const P = filtrDat.PRESETY;
+  const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.DZIS_JUTRO, P.TYDZIEN, P.MIESIAC];
 
   function pasujeNazwa(z) {
     if (filtry.nazwa === '') return true;
@@ -861,44 +833,27 @@
   }
 
   function zbudujPresety() {
-    elPresety.replaceChildren(
-      ...PRESETY_DAT.map((preset) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = preset.etykieta;
-        btn.dataset.dni = preset.dni === null ? '' : preset.dni;
-
-        btn.addEventListener('click', () => {
-          if (preset.dni === null) {
-            elFiltrOd.value = '';
-            elFiltrDo.value = '';
-          } else {
-            // Zakres liczy sie od DZISIAJ WEDLUG SERWERA, wlacznie z dzisiejszym dniem.
-            elFiltrOd.value = dzisiajSerwera;
-            elFiltrDo.value = dataPlusDni(dzisiajSerwera, preset.dni - 1);
-          }
-          zastosujFiltry();
-        });
-
-        return btn;
-      })
+    // Zakres liczy sie od DZISIAJ WEDLUG SERWERA - stad funkcja, a nie wartosc:
+    // data moze sie odswiezyc po powrocie do karty nastepnego dnia.
+    filtrDat.zbudujPrzyciski(
+      elPresety,
+      PRESETY_DAT,
+      (zakres) => {
+        elFiltrOd.value = zakres.od;
+        elFiltrDo.value = zakres.do;
+        zastosujFiltry();
+      },
+      () => dzisiajSerwera
     );
   }
 
   /** Podswietla preset, ktory odpowiada aktualnie wpisanemu zakresowi (jesli ktorys). */
   function odswiezPresety() {
-    for (const btn of elPresety.querySelectorAll('button')) {
-      const dni = btn.dataset.dni === '' ? null : Number(btn.dataset.dni);
-
-      const pasuje =
-        dni === null
-          ? filtry.od === '' && filtry.do === ''
-          : dzisiajSerwera !== null &&
-            filtry.od === dzisiajSerwera &&
-            filtry.do === dataPlusDni(dzisiajSerwera, dni - 1);
-
-      btn.dataset.aktywny = pasuje ? 'tak' : 'nie';
-    }
+    filtrDat.odswiezPrzyciski(elPresety, {
+      od: filtry.od,
+      do: filtry.do,
+      dzisiaj: dzisiajSerwera,
+    });
   }
 
   /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */

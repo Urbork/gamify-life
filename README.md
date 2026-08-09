@@ -237,6 +237,55 @@ uwaga przy liczeniu statystyk, bo ta jedna kolumna jest odwrócona względem poz
 Kolumna `data` **nie ma** ograniczenia `UNIQUE`: jeden dzień może mieć więcej niż jeden wpis.
 Gdyby było inaczej, pojedyncza kolizja przerywałaby cały import (idzie w transakcji).
 
+### Filtry dziennika
+
+Ten sam potok co w zadaniach — `posortowane(filtrowane())` w `doWyswietlenia()` — i ten sam
+panel `<details>`, przycisk **Wyczyść filtry** oraz znacznik `— aktywne: N` przy zwiniętym
+panelu. Licznik pokazuje **„Pokazano X z Y wpisów"** wraz z zakresem dat tego, co widać.
+
+Trzy pola, łączone przez **ORAZ**:
+
+| Filtr | Działanie |
+| --- | --- |
+| **Zakres dat** | jedno pole `data` musi mieścić się w `[OD, DO]`; presety Wszystkie / Dziś / 7 dni / 30 dni |
+| **Szukaj w tekście** | fragment (bez rozróżniania wielkości liter) w **ośmiu** kolumnach naraz: `wdziecznosc`, `bledy`, `rozmowa`, `co_poszlo_dobrze`, `jutro_wazne`, `do_przemyslenia`, `trzy_slowa`, `nawyki` |
+| **Nawyk** | multi-select z 16 nawyków, **LUB** w obrębie zaznaczonych |
+
+Zakres dat jest tu **prostszy niż w zadaniach**: dziennik ma jedno pole daty, więc nie ma
+dwóch niezależnych warunków (termin / okres aktywności).
+
+> **Uwaga przy szukaniu:** posiłki (`sniadanie`, `obiad`, `kolacja`) **nie** są przeszukiwane —
+> tak wynika ze specyfikacji pola. Szukanie „kawa" da zero wyników, mimo że słowo występuje
+> w danych ponad 500 razy, właśnie dlatego, że siedzi wyłącznie w opisach posiłków.
+> Dopisanie ich to jedna linijka w `POLA_SZUKANIA` w [public/js/dziennik.js](public/js/dziennik.js).
+
+Filtr nawyku **rozbija pole `nawyki` po przecinkach i porównuje dokładnie**, zamiast szukać
+fragmentu w całym tekście. Dziś żadna nazwa nie jest fragmentem innej, ale gołe „zawiera"
+byłoby miną na przyszłość: wystarczyłby nawyk „Water" obok istniejącego „Drink Water",
+żeby filtr zaczął łapać oba naraz.
+
+Lista nawyków mieszka w `NAWYKI` w [config/slowniki.js](config/slowniki.js) i jest wystawiana
+przez `/api/slowniki`. **Nie jest słownikiem walidacyjnym** — pole `nawyki` to zwykły tekst,
+więc wpis może zawierać nazwę spoza listy i nadal będzie poprawny; lista służy tylko
+do zbudowania checkboxów. Jest tam też `Untitled` — artefakt eksportu z Notion (1 wystąpienie);
+zostawiony, żeby takie wpisy dało się odfiltrować i poprawić.
+
+Eksport CSV, tak jak w zadaniach, obejmuje **pełny zbiór** — filtry go nie okrajają.
+
+### Wspólna obsługa dat w filtrach
+
+Arytmetyka dat i mechanika presetów żyją w [public/js/filtr-dat.js](public/js/filtr-dat.js),
+używanym przez oba moduły. Moduł daje `numerDnia`, `dataPlusDni`, `dzisiajLokalnie`,
+nazwane presety (`WSZYSTKIE`, `DZIS`, `DZIS_JUTRO`, `TYDZIEN`, `MIESIAC`) oraz budowanie
+i podświetlanie przycisków.
+
+Presety są wystawione **pojedynczo**, a nie jako gotowa lista, bo zestawy się różnią:
+zadania mają „Dziś + jutro", dziennik nie. Każdy widok składa własną listę z tych samych klocków.
+
+Czego w module **nie ma**: reguł dopasowania wiersza do zakresu. Są różne w każdym module
+(zadania sprawdzają termin *oraz* okres aktywności, dziennik jedno pole `data`),
+więc siedzą w plikach widoków.
+
 ### Import dziennika
 
 Profil `dziennik` w [config/mapowanie-dziennika.js](config/mapowanie-dziennika.js) czyta
@@ -304,6 +353,7 @@ public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennik
 public/css/style.css         styl (paleta zbudowana pod jasne tło — patrz color-scheme)
 public/js/api.js             wspólny wrapper na fetch    — do użycia w każdym module
 public/js/csv.js             generowanie i pobieranie CSV — j.w.
+public/js/filtr-dat.js       arytmetyka dat i presety zakresu — j.w.
 public/js/csv-import.js      obsługa importu w przeglądarce
 public/js/zadania.js         render, sortowanie, filtry, edycja inline, eksport
 data/baza.db                 baza (tworzona automatycznie)
@@ -375,5 +425,3 @@ linijkę w `filtrowane()` oraz w `ileAktywnychFiltrow()`. Kontrolkę dorzuć do 
 w `index.html` i podepnij pod `zastosujFiltry()`. Reszta (licznik, znacznik aktywnych
 filtrów, znikanie wierszy po edycji) zadziała sama, bo wszystko przechodzi przez
 `doWyswietlenia()`.
-#   g a m i f y - l i f e  
- 

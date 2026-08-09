@@ -25,6 +25,22 @@
   const elDodaj = document.getElementById('przycisk-dodaj');
   const elEksport = document.getElementById('przycisk-eksport');
 
+  // Panel filtrow
+  const elPanelFiltrow = document.getElementById('panel-filtrow');
+  const elZnacznikFiltrow = document.getElementById('znacznik-filtrow');
+  const elFiltrSzukaj = document.getElementById('filtr-szukaj');
+  const elFiltrNawyki = document.getElementById('filtr-nawyki');
+  const elPresety = document.getElementById('presety-dat');
+  const elFiltrOd = document.getElementById('filtr-od');
+  const elFiltrDo = document.getElementById('filtr-do');
+  const elWyczysc = document.getElementById('przycisk-wyczysc');
+
+  // Slownik nawykow z /api/slowniki - z niego powstaja checkboxy filtra.
+  let nawykiSlownik = [];
+
+  // Dzisiejsza data wedlug SERWERA (GET /api/czas) - od niej licza sie presety.
+  let dzisiajSerwera = null;
+
   // ==========================================================================
   // Definicje kolumn
   // ==========================================================================
@@ -67,6 +83,101 @@
     'nastroj',
     'intencjonalnosc',
   ]);
+
+  // ==========================================================================
+  // Filtrowanie
+  // ==========================================================================
+
+  /*
+    Stan filtrow. Pusty zbior nawykow oznacza "nie filtruj po nawyku" - to naturalne
+    zachowanie listy checkboxow: nic nie zaznaczone = wszystko przechodzi.
+    Wszystkie pola lacza sie przez ORAZ, zaznaczenia w obrebie nawykow przez LUB.
+  */
+  const filtry = {
+    szukaj: '',
+    nawyki: new Set(),
+    od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
+    do: '',
+  };
+
+  // Dziennik nie potrzebuje presetu "Dziś + jutro" - wpisy dotycza dni, ktore juz byly.
+  const P = filtrDat.PRESETY;
+  const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.TYDZIEN, P.MIESIAC];
+
+  /*
+    Kolumny przeszukiwane jednym polem "Szukaj". Sklejamy je i szukamy fragmentu -
+    dzieki temu nie trzeba pamietac, w ktorej rubryce cos sie zapisalo.
+  */
+  const POLA_SZUKANIA = [
+    'wdziecznosc',
+    'bledy',
+    'rozmowa',
+    'co_poszlo_dobrze',
+    'jutro_wazne',
+    'do_przemyslenia',
+    'trzy_slowa',
+    'nawyki',
+  ];
+
+  /** Rozbija pole `nawyki` na pojedyncze nazwy. */
+  function nazwyNawykow(w) {
+    if (!w.nawyki) return [];
+    return w.nawyki
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function pasujeSzukaj(w) {
+    if (filtry.szukaj === '') return true;
+    const tresc = POLA_SZUKANIA.map((p) => w[p] ?? '')
+      .join(' \n ')
+      .toLocaleLowerCase('pl');
+    return tresc.includes(filtry.szukaj);
+  }
+
+  /*
+    Dopasowanie po nawyku. Rozbijamy pole na nazwy i porownujemy DOKLADNIE,
+    zamiast szukac fragmentu w calym tekscie.
+
+    Powod: dzis zadna nazwa nie jest fragmentem innej, ale gole `includes`
+    byloby mina na przyszlosc - wystarczyloby dopisac nawyk "Water" obok
+    istniejacego "Drink Water", zeby filtr zaczal lapac oba naraz.
+  */
+  function pasujeNawyk(w) {
+    if (filtry.nawyki.size === 0) return true;
+    const nazwy = nazwyNawykow(w);
+    return nazwy.some((n) => filtry.nawyki.has(n));
+  }
+
+  /*
+    Zakres dat. Dziennik ma tylko JEDNO pole daty, wiec regula jest prosta:
+    data wpisu musi miescic sie w [OD, DO]. Brak ktorejs granicy = zakres otwarty
+    z tej strony. To swiadomie prostsze niz w zadaniach, gdzie sprawdzamy termin
+    ORAZ okres aktywnosci - tam sa trzy pola datowe i dwa niezalezne warunki.
+  */
+  function pasujeZakresDat(w) {
+    const od = filtrDat.numerDnia(filtry.od);
+    const doDnia = filtrDat.numerDnia(filtry.do);
+    if (od === null && doDnia === null) return true;
+
+    const data = filtrDat.numerDnia(w.data);
+    if (data === null) return false; // wpis bez daty nie miesci sie w zadnym zakresie
+
+    return (od === null || data >= od) && (doDnia === null || data <= doDnia);
+  }
+
+  /** Wpisy spelniajace WSZYSTKIE aktywne filtry. */
+  function filtrowane(lista = [...wpisy.values()]) {
+    return lista.filter((w) => pasujeSzukaj(w) && pasujeNawyk(w) && pasujeZakresDat(w));
+  }
+
+  /** Ile pol filtrow jest aktywnych (do znacznika przy zwinietym panelu). */
+  function ileAktywnychFiltrow() {
+    return [filtry.szukaj !== '', filtry.nawyki.size > 0, filtry.od !== '' || filtry.do !== ''].filter(
+      Boolean
+    ).length;
+  }
 
   // ==========================================================================
   // Sortowanie
@@ -273,16 +384,30 @@
     (td.querySelector('select, input') || td).focus();
   }
 
+  /*
+    Potok wyswietlania: najpierw odsiew, potem porzadkowanie.
+    Eksport CSV CELOWO go nie uzywa - wola posortowane() bez argumentu, czyli
+    na calym zbiorze, zeby filtry nie okrajaly eksportowanego pliku.
+  */
+  function doWyswietlenia() {
+    return posortowane(filtrowane());
+  }
+
   function renderuj() {
     const fokus = zapamietajFokus();
-    elWiersze.replaceChildren(...posortowane().map(zbudujWiersz));
+    elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
     odtworzFokus(fokus);
     odswiezNaglowki();
     odswiezPodsumowanie();
   }
 
+  /**
+   * Czy zawartosc tabeli rozni sie od tej, ktora powinna byc?
+   * Wychwytuje nie tylko zmiane kolejnosci, ale i wypadniecie wiersza z filtra
+   * (np. po edycji daty poza wybrany zakres) - listy maja wtedy rozne dlugosci.
+   */
   function kolejnoscSieZmienila() {
-    const oczekiwana = posortowane().map((w) => w.id);
+    const oczekiwana = doWyswietlenia().map((w) => w.id);
     const obecna = [...elWiersze.children].map((tr) => Number(tr.dataset.id));
     return oczekiwana.length !== obecna.length || oczekiwana.some((id, i) => id !== obecna[i]);
   }
@@ -383,11 +508,7 @@
     const wiersze = wszystkie.map((w) => KOLUMNY.map((k) => w[k.pole]));
 
     // Data w nazwie pliku wg zegara przegladarki - tak samo jak przy eksporcie zadan.
-    const t = new Date();
-    const dwie = (n) => String(n).padStart(2, '0');
-    const dzis = `${t.getFullYear()}-${dwie(t.getMonth() + 1)}-${dwie(t.getDate())}`;
-
-    csv.pobierz(`dziennik-eksport-${dzis}.csv`, naglowki, wiersze);
+    csv.pobierz(`dziennik-eksport-${filtrDat.dzisiajLokalnie()}.csv`, naglowki, wiersze);
     pokazStatus(`wyeksportowano ${wszystkie.length}`, 'ok');
   }
 
@@ -417,9 +538,85 @@
       return;
     }
 
-    const daty = wszystkie.map((w) => w.data).filter(Boolean).sort();
+    const widoczne = filtrowane(wszystkie);
+    const daty = widoczne
+      .map((w) => w.data)
+      .filter(Boolean)
+      .sort();
     const zakres = daty.length > 0 ? ` (od ${daty[0]} do ${daty[daty.length - 1]})` : '';
-    elPodsumowanie.textContent = `Wpisów: ${wszystkie.length}${zakres}`;
+
+    elPodsumowanie.textContent = `Pokazano ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
+  }
+
+  // ==========================================================================
+  // Panel filtrow
+  // ==========================================================================
+
+  function zbudujCheckboxyNawykow() {
+    elFiltrNawyki.replaceChildren(
+      ...nawykiSlownik.map((nazwa) => {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+
+        input.addEventListener('change', () => {
+          if (input.checked) filtry.nawyki.add(nazwa);
+          else filtry.nawyki.delete(nazwa);
+          zastosujFiltry();
+        });
+
+        label.append(input, ' ' + nazwa);
+        return label;
+      })
+    );
+  }
+
+  function zbudujPresety() {
+    // Zakres liczy sie od DZISIAJ WEDLUG SERWERA - stad funkcja, a nie wartosc:
+    // data moze sie odswiezyc po powrocie do karty nastepnego dnia.
+    filtrDat.zbudujPrzyciski(
+      elPresety,
+      PRESETY_DAT,
+      (zakres) => {
+        elFiltrOd.value = zakres.od;
+        elFiltrDo.value = zakres.do;
+        zastosujFiltry();
+      },
+      () => dzisiajSerwera
+    );
+  }
+
+  function odswiezPresety() {
+    filtrDat.odswiezPrzyciski(elPresety, {
+      od: filtry.od,
+      do: filtry.do,
+      dzisiaj: dzisiajSerwera,
+    });
+  }
+
+  /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */
+  function zastosujFiltry() {
+    filtry.szukaj = elFiltrSzukaj.value.trim().toLocaleLowerCase('pl');
+    filtry.od = elFiltrOd.value;
+    filtry.do = elFiltrDo.value;
+    // Zbior nawykow aktualizuja na biezaco handlery checkboxow.
+
+    const ile = ileAktywnychFiltrow();
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+
+    odswiezPresety();
+    renderuj();
+  }
+
+  function wyczyscFiltry() {
+    elFiltrSzukaj.value = '';
+    elFiltrOd.value = '';
+    elFiltrDo.value = '';
+    for (const input of elPanelFiltrow.querySelectorAll('input[type="checkbox"]')) {
+      input.checked = false;
+    }
+    filtry.nawyki.clear();
+    zastosujFiltry();
   }
 
   // ==========================================================================
@@ -435,7 +632,22 @@
 
   async function start() {
     try {
-      await wczytaj();
+      // Slownik nawykow i data serwera musza byc PRZED zbudowaniem panelu filtrow.
+      const [slowniki, czas, lista] = await Promise.all([
+        api.get('/api/slowniki'),
+        api.get('/api/czas'),
+        api.get('/api/dziennik'),
+      ]);
+      nawykiSlownik = slowniki.nawyki ?? [];
+      dzisiajSerwera = czas.dzisiaj;
+
+      zbudujCheckboxyNawykow();
+      zbudujPresety();
+      odswiezPresety();
+
+      wpisy.clear();
+      for (const w of lista) wpisy.set(w.id, w);
+      renderuj();
     } catch (e) {
       pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
     }
@@ -443,6 +655,12 @@
 
   elDodaj.addEventListener('click', dodajWpis);
   elEksport.addEventListener('click', eksportujCsv);
+  elWyczysc.addEventListener('click', wyczyscFiltry);
+
+  // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
+  elFiltrSzukaj.addEventListener('input', zastosujFiltry);
+  elFiltrOd.addEventListener('change', zastosujFiltry);
+  elFiltrDo.addEventListener('change', zastosujFiltry);
 
   elNaglowki.addEventListener('click', (e) => {
     const th = e.target.closest('th[data-kolumna]');

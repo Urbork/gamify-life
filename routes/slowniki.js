@@ -13,6 +13,7 @@ const {
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
   KLIENCI,
+  NAWYKI,
 } = require('../config/slowniki');
 
 const router = express.Router();
@@ -25,6 +26,7 @@ router.get('/', (req, res) => {
     priorytety: PRIORYTETY,
     priorytetDomyslny: PRIORYTET_DOMYSLNY,
     klienci: KLIENCI,
+    nawyki: NAWYKI,
   });
 });
 
