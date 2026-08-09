@@ -303,10 +303,32 @@ th[data-kierunek='malejaco'] {
   width: 260px;
 }
 
+/*
+  Minimalne szerokosci tabel.
+
+  Bez nich `table { width: 100% }` przy waskim oknie sciska kolumny bez ustalonej
+  szerokosci - w tabeli zadan kolumna "Nazwa" schodzila do kilku liter na linie
+  ("Popra / wki / po / recen / zji"). Z min-width przegladarka zamiast tego
+  wlacza poziome przewijanie, co przy kilkunastu kolumnach jest jedynym
+  sensownym zachowaniem.
+
+  Wartosc dla zadan = suma szerokosci kolumn o stalej szerokosci (~1200px)
+  plus zapas na "Nazwa".
+*/
+#tabela-zadan {
+  min-width: 1500px;
+}
+
 /* Tabela dziennika ma 20 kolumn - bez tego zwezalaby je do nieczytelnosci,
    zamiast pozwolic na przewijanie w poziomie. */
 #tabela-dziennika {
   min-width: 2400px;
+}
+
+/* Dodatkowe zabezpieczenie na samej kolumnie: nawet gdyby ktos zmienil
+   min-width tabeli, nazwa nie zejdzie ponizej czytelnej szerokosci. */
+.kol-nazwa {
+  min-width: 260px;
 }
 
 /* Link nawigacyjny miedzy stronami. */

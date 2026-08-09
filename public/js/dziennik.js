@@ -74,16 +74,6 @@
     { pole: 'kolacja', typ: 'tekst', klasa: 'kol-tekst' },
   ];
 
-  // Pola liczbowe sortuja sie liczbowo, reszta tekstowo.
-  const POLA_LICZBOWE = new Set([
-    'id',
-    'godziny_snu',
-    'jakosc_snu',
-    'stres',
-    'nastroj',
-    'intencjonalnosc',
-  ]);
-
   // ==========================================================================
   // Filtrowanie
   // ==========================================================================
@@ -105,78 +95,18 @@
   const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.TYDZIEN, P.MIESIAC];
 
   /*
-    Kolumny przeszukiwane jednym polem "Szukaj". Sklejamy je i szukamy fragmentu -
-    dzieki temu nie trzeba pamietac, w ktorej rubryce cos sie zapisalo.
+    Predykaty filtrow siedza w public/js/reguly-dziennika.js - to czyste funkcje
+    bez DOM, wiec da sie je przetestowac skryptem (npm run test:smoke).
   */
-  const POLA_SZUKANIA = [
-    'wdziecznosc',
-    'bledy',
-    'rozmowa',
-    'co_poszlo_dobrze',
-    'jutro_wazne',
-    'do_przemyslenia',
-    'trzy_slowa',
-    'nawyki',
-  ];
-
-  /** Rozbija pole `nawyki` na pojedyncze nazwy. */
-  function nazwyNawykow(w) {
-    if (!w.nawyki) return [];
-    return w.nawyki
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  function pasujeSzukaj(w) {
-    if (filtry.szukaj === '') return true;
-    const tresc = POLA_SZUKANIA.map((p) => w[p] ?? '')
-      .join(' \n ')
-      .toLocaleLowerCase('pl');
-    return tresc.includes(filtry.szukaj);
-  }
-
-  /*
-    Dopasowanie po nawyku. Rozbijamy pole na nazwy i porownujemy DOKLADNIE,
-    zamiast szukac fragmentu w calym tekscie.
-
-    Powod: dzis zadna nazwa nie jest fragmentem innej, ale gole `includes`
-    byloby mina na przyszlosc - wystarczyloby dopisac nawyk "Water" obok
-    istniejacego "Drink Water", zeby filtr zaczal lapac oba naraz.
-  */
-  function pasujeNawyk(w) {
-    if (filtry.nawyki.size === 0) return true;
-    const nazwy = nazwyNawykow(w);
-    return nazwy.some((n) => filtry.nawyki.has(n));
-  }
-
-  /*
-    Zakres dat. Dziennik ma tylko JEDNO pole daty, wiec regula jest prosta:
-    data wpisu musi miescic sie w [OD, DO]. Brak ktorejs granicy = zakres otwarty
-    z tej strony. To swiadomie prostsze niz w zadaniach, gdzie sprawdzamy termin
-    ORAZ okres aktywnosci - tam sa trzy pola datowe i dwa niezalezne warunki.
-  */
-  function pasujeZakresDat(w) {
-    const od = filtrDat.numerDnia(filtry.od);
-    const doDnia = filtrDat.numerDnia(filtry.do);
-    if (od === null && doDnia === null) return true;
-
-    const data = filtrDat.numerDnia(w.data);
-    if (data === null) return false; // wpis bez daty nie miesci sie w zadnym zakresie
-
-    return (od === null || data >= od) && (doDnia === null || data <= doDnia);
-  }
 
   /** Wpisy spelniajace WSZYSTKIE aktywne filtry. */
   function filtrowane(lista = [...wpisy.values()]) {
-    return lista.filter((w) => pasujeSzukaj(w) && pasujeNawyk(w) && pasujeZakresDat(w));
+    return regulyDziennika.filtrowane(lista, filtry);
   }
 
   /** Ile pol filtrow jest aktywnych (do znacznika przy zwinietym panelu). */
   function ileAktywnychFiltrow() {
-    return [filtry.szukaj !== '', filtry.nawyki.size > 0, filtry.od !== '' || filtry.do !== ''].filter(
-      Boolean
-    ).length;
+    return regulyDziennika.ileAktywnych(filtry);
   }
 
   // ==========================================================================
@@ -184,37 +114,11 @@
   // ==========================================================================
 
   /*
-    Puste wartosci zawsze na koncu, takze przy sortowaniu malejaco - ta sama zasada
-    co w tabeli zadan. Wpis bez oceny nie jest ani najlepszy, ani najgorszy.
-    Remisy rozstrzyga id, zeby kolejnosc byla powtarzalna.
+    Reguly (puste na koncu takze przy malejaco, remisy po id) siedza
+    w public/js/reguly-dziennika.js.
   */
-  function pusta(w) {
-    return w === null || w === undefined || w === '';
-  }
-
   function posortowane(lista = [...wpisy.values()]) {
-    const { kolumna, kierunek } = sortowanie;
-
-    return [...lista].sort((a, b) => {
-      const wa = a[kolumna];
-      const wb = b[kolumna];
-
-      const pustaA = pusta(wa);
-      const pustaB = pusta(wb);
-      if (pustaA && pustaB) return a.id - b.id;
-      if (pustaA) return 1; // przed odwroceniem kierunku, wiec go nie dotyczy
-      if (pustaB) return -1;
-
-      let wynik;
-      if (POLA_LICZBOWE.has(kolumna)) wynik = wa - wb;
-      // Data w formacie YYYY-MM-DD i godzina HH:MM maja stala szerokosc,
-      // wiec kolejnosc alfabetyczna = kolejnosc chronologiczna.
-      else if (kolumna === 'data' || kolumna === 'pobudka') wynik = wa < wb ? -1 : wa > wb ? 1 : 0;
-      else wynik = String(wa).localeCompare(String(wb), 'pl');
-
-      if (wynik === 0) return a.id - b.id;
-      return kierunek === 'malejaco' ? -wynik : wynik;
-    });
+    return regulyDziennika.posortowane(lista, sortowanie);
   }
 
   function przelaczSortowanie(kolumna) {

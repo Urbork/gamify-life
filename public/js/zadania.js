@@ -81,27 +81,20 @@
     korzysta z nich takze dziennik. Rozpakowanie do lokalnych stalych sprawia,
     ze wszystkie wywolania nizej wygladaja tak samo jak przed wydzieleniem.
   */
-  const { numerDnia, dataPlusDni, dzisiajLokalnie: dzisiajISO } = filtrDat;
+  const { dataPlusDni, dzisiajLokalnie: dzisiajISO } = filtrDat;
 
-  /** Numer dnia dla dzisiejszej daty (wg zegara komputera). */
-  function numerDzisiaj() {
-    return numerDnia(dzisiajISO());
-  }
+  /*
+    Kolumny wyliczane, filtrowanie i sortowanie siedza w public/js/reguly-zadan.js -
+    to czyste funkcje bez DOM, wiec da sie je przetestowac skryptem (npm run test:smoke).
+    Ponizsze opakowania dokladaja biezacy stan widoku, dzieki czemu wszystkie
+    wywolania nizej wygladaja tak samo jak przed wydzieleniem.
+  */
 
   /** Kolumna wyliczana: ile PELNYCH DNI zostalo do terminu (ujemne = po terminie). */
-  function dniDoTerminu(z) {
-    const termin = numerDnia(z.termin);
-    if (termin === null) return null;
-    return termin - numerDzisiaj();
-  }
+  const dniDoTerminu = (z) => regulyZadan.dniDoTerminu(z, dzisiajISO());
 
   /** Kolumna wyliczana: ile PELNYCH DNI trwalo zadanie. Puste, gdy brakuje ktorejs z dat. */
-  function czasTrwania(z) {
-    const start = numerDnia(z.start_zadania);
-    const koniec = numerDnia(z.czas_zakonczenia);
-    if (start === null || koniec === null) return null;
-    return koniec - start;
-  }
+  const czasTrwania = regulyZadan.czasTrwania;
 
   /** Etykieta slowna priorytetu. Numer spoza slownika pokazujemy w nawiasach. */
   function etykietaPriorytetu(numer) {
@@ -139,93 +132,18 @@
   const P = filtrDat.PRESETY;
   const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.DZIS_JUTRO, P.TYDZIEN, P.MIESIAC];
 
-  function pasujeNazwa(z) {
-    if (filtry.nazwa === '') return true;
-    // Zwykly "zawiera", bez rozrozniania wielkosci liter.
-    return (z.nazwa || '').toLocaleLowerCase('pl').includes(filtry.nazwa);
-  }
-
-  function pasujeStan(z) {
-    return filtry.stany.size === 0 || filtry.stany.has(z.stan);
-  }
-
-  function pasujePriorytet(z) {
-    return filtry.priorytety.size === 0 || filtry.priorytety.has(z.priorytet);
-  }
-
-  function pasujeKlient(z) {
-    if (filtry.klienci.size === 0) return true;
-    // Zadanie bez klienta ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
-    return filtry.klienci.has(z.klient_kategoria);
-  }
-
-  /*
-    Dopasowanie do zakresu dat [OD, DO].
-
-    Zadanie pasuje, jesli spelnia CO NAJMNIEJ JEDEN z dwoch warunkow:
-
-      a) TERMIN jest wypelniony i miesci sie w zakresie;
-      b) AKTYWNOSC zadania nachodzi na zakres, czyli start jest wypelniony,
-         zaczyna sie nie pozniej niz DO, a konczy nie wczesniej niz OD.
-
-    Kazdy warunek sprawdzany jest NIEZALEZNIE - zadanie bez terminu moze pasowac
-    przez b), a zadanie bez startu przez a). Zadanie bez zadnej z trzech dat
-    nie pasuje nigdy (oba warunki wymagaja swojej daty).
-
-    PUSTY czas_zakonczenia = zadanie wciaz trwa, wiec warunek konca jest spelniony
-    (zadanie traktujemy jako otwarte, bez daty zamkniecia). Praktyczna roznica wobec
-    wariantu "trwa dokladnie do dzisiaj" pojawia sie tylko dla zakresu w calosci
-    w przyszlosci (OD > dzisiaj); zaden z presetow takiego zakresu nie tworzy.
-    Gdybys chcial wariant ucinany do dzisiaj, zamien `koniec === null` ponizej
-    na `koniec === null && numerDnia(dzisiajSerwera) >= od`.
-
-    Porownania ida na PELNYCH DNIACH KALENDARZOWYCH (numerDnia pomija godzine) -
-    tak samo jak kolumny wyliczane.
-  */
-  function pasujeZakresDat(z) {
-    const od = numerDnia(filtry.od);
-    const doDnia = numerDnia(filtry.do);
-    if (od === null && doDnia === null) return true; // zakres nieustawiony = brak filtra
-
-    const termin = numerDnia(z.termin);
-    const start = numerDnia(z.start_zadania);
-    const koniec = numerDnia(z.czas_zakonczenia);
-
-    const przezTermin =
-      termin !== null && (od === null || termin >= od) && (doDnia === null || termin <= doDnia);
-
-    const przezAktywnosc =
-      start !== null &&
-      (doDnia === null || start <= doDnia) &&
-      (koniec === null || od === null || koniec >= od);
-
-    return przezTermin || przezAktywnosc;
-  }
-
   /**
    * Zadania spelniajace WSZYSTKIE aktywne filtry.
+   * Reguly (w tym niuans pustego czas_zakonczenia) opisuje public/js/reguly-zadan.js.
    * @param {Array} lista domyslnie wszystkie zadania z lokalnej kopii.
    */
   function filtrowane(lista = [...zadania.values()]) {
-    return lista.filter(
-      (z) =>
-        pasujeNazwa(z) &&
-        pasujeStan(z) &&
-        pasujePriorytet(z) &&
-        pasujeKlient(z) &&
-        pasujeZakresDat(z)
-    );
+    return regulyZadan.filtrowane(lista, filtry);
   }
 
   /** Ile pol filtrow jest aktywnych (do znacznika przy zwinietym panelu). */
   function ileAktywnychFiltrow() {
-    return [
-      filtry.nazwa !== '',
-      filtry.stany.size > 0,
-      filtry.priorytety.size > 0,
-      filtry.klienci.size > 0,
-      filtry.od !== '' || filtry.do !== '',
-    ].filter(Boolean).length;
+    return regulyZadan.ileAktywnych(filtry);
   }
 
   // ==========================================================================
@@ -233,103 +151,18 @@
   // ==========================================================================
 
   /*
-    REGULY (w tej kolejnosci):
-    1. Zadania zakonczone zawsze na dole - niezaleznie od wybranej kolumny i kierunku.
-    2. W obrebie grupy: wybrana kolumna, rosnaco albo malejaco.
-    3. Puste wartosci zawsze na koncu swojej grupy, TAKZE przy sortowaniu malejaco.
-       (Zadanie bez terminu nie jest "najpilniejsze" ani "najmniej pilne" - jest nieokreslone,
-       wiec nie ma powodu, zeby wyplywalo na gore przy odwroceniu kierunku.)
-    4. Remisy rozstrzyga id rosnaco - dzieki temu kolejnosc jest zawsze taka sama
-       i wiersze nie zamieniaja sie miejscami przy kazdym renderowaniu.
+    Reguly sortowania (grupa "Zrobione" na dole, puste na koncu grupy, remisy po id)
+    oraz definicje kolumn siedza w public/js/reguly-zadan.js.
   */
-
-  /*
-    Definicje kolumn, po ktorych mozna sortowac. Klucz odpowiada atrybutowi
-    data-kolumna w naglowku tabeli (public/index.html).
-
-    Typy:
-      'liczba'   - zwykle odejmowanie
-      'tekst'    - localeCompare z polskim alfabetem
-      'znacznik' - data z godzina; format YYYY-MM-DDTHH:MM ma stala szerokosc,
-                   wiec kolejnosc alfabetyczna = kolejnosc chronologiczna
-  */
-  const KOLUMNY_SORTOWANIA = {
-    id: { typ: 'liczba', wartosc: (z) => z.id },
-    // Stan sortujemy wedlug kolejnosci ze slownika (Plan, Czeka, W trakcie...),
-    // a nie alfabetycznie - alfabetyczna kolejnosc stanow nic nie znaczy.
-    stan: {
-      typ: 'liczba',
-      wartosc: (z) => {
-        const i = slowniki.stany.indexOf(z.stan);
-        return i === -1 ? slowniki.stany.length : i; // stan spoza slownika laduje na koncu
-      },
-    },
-    nazwa: { typ: 'tekst', wartosc: (z) => z.nazwa },
-    // Po NUMERZE priorytetu, nie po etykiecie - alfabetycznie wyszloby
-    // Brak, Niski, Pilne, Sredni, Wysoki, czyli kolejnosc bez sensu.
-    priorytet: { typ: 'liczba', wartosc: (z) => z.priorytet },
-    klient_kategoria: { typ: 'tekst', wartosc: (z) => z.klient_kategoria },
-    start_zadania: { typ: 'znacznik', wartosc: (z) => z.start_zadania },
-    termin: { typ: 'znacznik', wartosc: (z) => z.termin },
-    dni_do_terminu: { typ: 'liczba', wartosc: dniDoTerminu },
-    czas_zakonczenia: { typ: 'znacznik', wartosc: (z) => z.czas_zakonczenia },
-    czas_trwania: { typ: 'liczba', wartosc: czasTrwania },
-  };
-
-  /**
-   * Brak wartosci: null, undefined albo pusty tekst.
-   * Zero NIE jest brakiem - priorytet 0 ("Brak") to prawidlowa wartosc do sortowania.
-   */
-  function pusta(w) {
-    return w === null || w === undefined || w === '';
-  }
-
-  /** Numer grupy: 0 = aktywne, 1 = zakonczone. Grupa ma zawsze pierwszenstwo przed kolumna. */
-  function grupa(z) {
-    return z.stan === slowniki.stanZakonczony ? 1 : 0;
-  }
-
-  function porownajWKolumnie(a, b) {
-    const definicja = KOLUMNY_SORTOWANIA[sortowanie.kolumna];
-    if (!definicja) return 0;
-
-    const wa = definicja.wartosc(a);
-    const wb = definicja.wartosc(b);
-
-    const pustaA = pusta(wa);
-    const pustaB = pusta(wb);
-    if (pustaA && pustaB) return 0;
-    if (pustaA) return 1; // puste na koniec - przed zwrotem kierunku, wiec go nie dotyczy
-    if (pustaB) return -1;
-
-    let wynik;
-    if (definicja.typ === 'tekst') {
-      wynik = String(wa).localeCompare(String(wb), 'pl'); // 'pl' - poprawna kolejnosc dla a/l/z itd.
-    } else if (definicja.typ === 'znacznik') {
-      wynik = wa < wb ? -1 : wa > wb ? 1 : 0;
-    } else {
-      wynik = wa - wb;
-    }
-
-    return sortowanie.kierunek === 'malejaco' ? -wynik : wynik;
-  }
 
   /**
    * Zwraca zadania w kolejnosci wyswietlania.
    * @param {Array} lista domyslnie WSZYSTKIE zadania. Parametr istnieje po to,
-   *   zeby po dodaniu filtrow mozna bylo posortowac podzbior do wyswietlenia,
-   *   a eksport dalej wolal te funkcje na calosci.
+   *   zeby posortowac podzbior do wyswietlenia, a eksport dalej wolal te funkcje
+   *   na calosci.
    */
   function posortowane(lista = [...zadania.values()]) {
-    return [...lista].sort((a, b) => {
-      const roznicaGrup = grupa(a) - grupa(b);
-      if (roznicaGrup !== 0) return roznicaGrup;
-
-      const wynik = porownajWKolumnie(a, b);
-      if (wynik !== 0) return wynik;
-
-      return a.id - b.id;
-    });
+    return regulyZadan.posortowane(lista, sortowanie, slowniki, dzisiajISO());
   }
 
   /** Obsluga klikniecia w naglowek: ta sama kolumna = odwrocenie, nowa = od rosnaco. */

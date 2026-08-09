@@ -16,6 +16,7 @@ npm install
 ```
 
 Instaluje trzy paczki: `express` (serwer HTTP), `better-sqlite3` (baza) i `nodemon` (tylko dev).
+Smoke test i kopia zapasowa nie potrzebują żadnych dodatkowych zależności.
 
 ## Uruchomienie
 
@@ -330,6 +331,92 @@ O poprawności wiersza decyduje wyłącznie `waliduj` — dostaje też **surowy*
 żeby móc zacytować w komunikacie wartość, która nie przeszła. Nowy profil dodajesz przez
 plik `config/mapowanie-*.js` i **jeden wpis** w rejestrze `PROFILE` w `routes/import.js`.
 
+## Smoke test
+
+```bash
+npm run test:smoke
+```
+
+Formalizuje sprawdzenia, które wcześniej robiło się ręcznie po każdej zmianie.
+Wypisuje `PASS`/`FAIL` dla każdego punktu i kończy się kodem `1`, gdy cokolwiek nie przeszło.
+
+**Kiedy uruchamiać:** przed każdym pushem po większej zmianie, a bezwzględnie po ruszeniu
+czegokolwiek w `public/js/reguly-*.js`, `lib/` albo w kolejności `app.use(...)` w `server.js`.
+
+Co pokrywa:
+
+| Obszar | Sprawdzenia |
+| --- | --- |
+| Zadania | 4 presety zakresu dat · sortowanie po 10 kolumnach × 2 kierunki z regułą „Zrobione na dole" · kolumny wyliczane (w tym `23:59 → 00:01` = 2 dni) · filtry nazwy, stanu i priorytetu `0` |
+| Dziennik | filtr nawyku (także że „Water" nie łapie „Drink Water") · szukanie z wielkością liter · własny zakres dat · sortowanie |
+| Import | oba profile odrzucają te same wiersze z tymi samymi powodami; transformacje Notion (`@March 2, 2024`, `7:30 → 07:30`, nawyki bez URL-i, literalne `null`) |
+| Endpointy | `PATCH /api/zadania/:id` z ciałem 300 kB → **413**, `PATCH /api/dziennik/:id` z tym samym ciałem → **200** |
+
+Ostatni punkt to **test kontrolny kolejności middleware**. Sam fakt, że dziennik przyjmuje
+duże ciało, niczego nie dowodzi — dopiero to, że *identyczne* ciało jest odrzucane na
+`/api/zadania`, potwierdza, że globalny `express.json()` nadal ma ciasny limit, a routery
+z własnym parserem faktycznie stoją przed nim. Bez tej pary błąd „Request entity too large"
+mógłby wrócić niezauważony.
+
+### Izolacja danych
+
+Skrypt **nie dotyka `data/baza.db`**. Tworzy własny plik w katalogu tymczasowym systemu,
+uruchamia na nim `server.js` jako osobny proces (`BAZA_DANYCH` + `PORT=3999`), a na koniec
+kasuje go razem z plikami `-wal` i `-shm`. Zmienna `BAZA_DANYCH` obsługiwana jest w
+[db/index.js](db/index.js) i istnieje wyłącznie po to — w normalnym użyciu się jej nie ustawia.
+
+Serwer działa jako **osobny proces**, a nie przez wywołania funkcji, bo test limitu 413
+dotyczy kolejności middleware i ma sens tylko przez prawdziwy stos HTTP.
+
+Reguły filtrowania i sortowania to kod przeglądarki. Test ładuje `public/js/reguly-*.js`
+w sandboksie (`vm`) — tak samo, jak przeglądarka ładuje kolejne `<script>`. Dzięki temu
+sprawdza **ten sam kod, który wykonuje aplikacja**, a nie jego kopię, która przechodziłaby
+też wtedy, gdy aplikacja jest zepsuta.
+
+## Kopia zapasowa CSV
+
+```bash
+npm run backup
+```
+
+Zapisuje `backups/zadania-RRRR-MM-DD.csv` i `backups/dziennik-RRRR-MM-DD.csv`, po czym
+kasuje kopie starsze niż **30 dni**. Katalog `backups/` jest w `.gitignore` — zawiera
+te same prywatne dane co baza.
+
+Skrypt czyta bazę **bezpośrednio**, więc działa również przy wyłączonej aplikacji.
+CSV, a nie kopia pliku `.db`, bo arkusz otworzysz za pięć lat niezależnie od tego,
+czy projekt jeszcze działa. (Na kopię 1:1 zostaje `VACUUM INTO` opisane niżej.)
+
+Retencja liczy się z **daty w nazwie pliku**, nie z czasu modyfikacji — skopiowanie
+albo przeniesienie folderu odświeża znaczniki czasu i przy retencji po `mtime`
+kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + data) są pomijane.
+
+### Codzienne uruchamianie — Harmonogram zadań Windows
+
+1. `Win + R` → `taskschd.msc` → Enter.
+2. W panelu po prawej: **Utwórz zadanie podstawowe**.
+3. Nazwa: `gamify-life backup` → **Dalej**.
+4. Wyzwalacz: **Codziennie** → **Dalej** → godzina np. `21:00` → **Dalej**.
+5. Akcja: **Uruchom program** → **Dalej**.
+6. Wypełnij trzy pola:
+   - **Program/skrypt:** `node`
+     (jeśli Harmonogram go nie znajdzie, podaj pełną ścieżkę — sprawdzisz ją komendą
+     `where node`, zwykle `C:\Program Files\nodejs\node.exe`)
+   - **Dodaj argumenty:** `scripts/backup.js`
+   - **Rozpocznij w:** `C:\Users\Jon\Documents\_gamify-life`
+7. **Dalej** → zaznacz **Otwórz okno Właściwości…** → **Zakończ**.
+8. W oknie właściwości, zakładka **Ogólne**: zaznacz **Uruchom niezależnie od tego, czy
+   użytkownik jest zalogowany**, jeśli backup ma działać także przy wylogowanym koncie.
+9. Zakładka **Warunki**: odznacz **Uruchamiaj tylko wtedy, gdy komputer jest zasilany
+   z sieci**, jeśli pracujesz na laptopie — inaczej zadanie nie odpali na baterii.
+
+> **Pole „Rozpocznij w" jest obowiązkowe.** Bez niego zadanie startuje w `C:\Windows\System32`,
+> a skrypt szuka bazy względem katalogu projektu i zakończy się błędem. To najczęstsza
+> przyczyna „zadanie się wykonało, ale kopii nie ma".
+
+Sprawdzenie po skonfigurowaniu: kliknij zadanie prawym → **Uruchom**, a potem zajrzyj
+do `backups/`. Kolumna **Wynik ostatniego uruchomienia** powinna pokazać `0x0`.
+
 ## Struktura projektu
 
 ```
@@ -354,6 +441,10 @@ public/css/style.css         styl (paleta zbudowana pod jasne tło — patrz col
 public/js/api.js             wspólny wrapper na fetch    — do użycia w każdym module
 public/js/csv.js             generowanie i pobieranie CSV — j.w.
 public/js/filtr-dat.js       arytmetyka dat i presety zakresu — j.w.
+public/js/reguly-zadan.js    czyste reguły zadań (filtry, sortowanie, wyliczenia)
+public/js/reguly-dziennika.js czyste reguły dziennika
+test/smoke.js                npm run test:smoke
+scripts/backup.js            npm run backup
 public/js/csv-import.js      obsługa importu w przeglądarce
 public/js/zadania.js         render, sortowanie, filtry, edycja inline, eksport
 data/baza.db                 baza (tworzona automatycznie)
