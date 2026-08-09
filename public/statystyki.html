@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Statystyki</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="pasek">
+      <h1>Statystyki</h1>
+      <nav class="nawigacja">
+        <a href="/index.html">← Zadania</a>
+        <a href="/dziennik.html">Dziennik →</a>
+      </nav>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+
+    <!--
+      Cala tresc buduje public/js/statystyki.js z danych pobranych przy wejsciu.
+      Nic nie jest cache'owane ani zapisywane - kazde wejscie liczy od nowa
+      z GET /api/zadania i GET /api/dziennik. Zadnych nowych endpointow.
+    -->
+    <div id="tresc" class="statystyki">
+      <p class="brak-danych">Wczytywanie…</p>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/filtr-dat.js"></script>
+    <script src="/js/reguly-zadan.js"></script>
+    <script src="/js/reguly-statystyk.js"></script>
+    <script src="/js/statystyki.js"></script>
+  </body>
+</html>

@@ -9,6 +9,10 @@
   --tekst-slaby: #888;
   --alarm: #b00020;
   --ok: #0a7a2f;
+  /* Uwaga, nie blad: cos wartego zauwazenia, ale nieblokujacego (duplikat daty).
+     Celowo inny kolor niz --alarm, ktory znaczy "nie zapisano". */
+  --uwaga: #b8860b;
+  --uwaga-tlo: #fff8e1;
 
   /*
     Cala paleta jest zbudowana pod JASNE tlo (ramki #ccc, naglowki #f0f0f0, tekst #111).
@@ -331,11 +335,120 @@ th[data-kierunek='malejaco'] {
   min-width: 260px;
 }
 
-/* Link nawigacyjny miedzy stronami. */
+/* --- strona statystyk --- */
+
+/*
+  Bez biblioteki wykresow - same liczby, tabele i jeden pasek proporcjonalny.
+  Karty ukladaja sie w rzedzie i zawijaja przy waskim oknie.
+*/
+.statystyki h2 {
+  font-size: 15px;
+  margin: 18px 0 8px;
+  border-bottom: 1px solid var(--ramka);
+  padding-bottom: 4px;
+}
+
+.statystyki h3 {
+  font-size: 13px;
+  margin: 14px 0 6px;
+  color: var(--tekst-slaby);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.karty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.karta {
+  border: 1px solid var(--ramka);
+  padding: 8px 12px;
+  min-width: 150px;
+}
+
+.karta .etykieta {
+  display: block;
+  font-size: 11px;
+  color: var(--tekst-slaby);
+  text-transform: uppercase;
+}
+
+.karta .liczba {
+  display: block;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+/* Doprecyzowanie pod liczba: z ilu rekordow policzona, jaki mianownik. */
+.karta .podstawa {
+  display: block;
+  font-size: 11px;
+  color: var(--tekst-slaby);
+}
+
+/* Tabele statystyk sa waskie - nie rozciagamy ich na cala szerokosc strony. */
+.statystyki table {
+  width: auto;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.statystyki td,
+.statystyki th {
+  padding: 2px 8px;
+}
+
+.statystyki td.liczbowa,
+.statystyki th.liczbowa {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Pasek proporcjonalny w komorce tabeli - zwykly div o zadanej szerokosci.
+  Sluzy do tego, zeby trend (np. spadek odsetka refleksji) bylo widac wzrokiem,
+  bez siegania po biblioteke wykresow.
+*/
+.pasek {
+  display: block;
+  height: 10px;
+  background: #3b7ddd;
+  min-width: 1px;
+}
+
+.pasek-tlo {
+  width: 120px;
+  background: #eee;
+}
+
+/* Ostrzezenie o odwroconej skali stresu - musi rzucac sie w oczy przy odczycie sredniej. */
+.odwrocona-skala {
+  border-left: 3px solid var(--uwaga);
+  background: var(--uwaga-tlo);
+  padding: 6px 10px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.brak-danych {
+  color: var(--tekst-slaby);
+  font-style: italic;
+}
+
+/* Linki nawigacyjne miedzy stronami. */
+.nawigacja {
+  display: flex;
+  gap: 10px;
+}
+
 .nawigacja a {
   color: #3b7ddd;
   text-decoration: none;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .nawigacja a:hover {
@@ -433,6 +546,16 @@ tr[data-stan='Blok'] td:first-child {
 /* Wiersz, ktorego zapis sie nie powiodl. */
 tr.blad-zapisu td {
   background: #ffecec;
+}
+
+/*
+  Miekkie ostrzezenie: inny wpis ma juz te date. To NIE jest blad - zapis sie udal,
+  a wiele wpisow na jeden dzien jest dozwolone. Stad zolty, a nie czerwony:
+  czerwony w tej tabeli znaczy "nie zapisano".
+*/
+td.duplikat-daty {
+  background: var(--uwaga-tlo);
+  box-shadow: inset 0 0 0 2px var(--uwaga);
 }
 
 .usun {
