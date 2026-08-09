@@ -25,6 +25,22 @@
   const elDodaj = document.getElementById('przycisk-dodaj');
   const elEksport = document.getElementById('przycisk-eksport');
 
+  // Panel filtrow
+  const elPanelFiltrow = document.getElementById('panel-filtrow');
+  const elZnacznikFiltrow = document.getElementById('znacznik-filtrow');
+  const elFiltrSzukaj = document.getElementById('filtr-szukaj');
+  const elFiltrNawyki = document.getElementById('filtr-nawyki');
+  const elPresety = document.getElementById('presety-dat');
+  const elFiltrOd = document.getElementById('filtr-od');
+  const elFiltrDo = document.getElementById('filtr-do');
+  const elWyczysc = document.getElementById('przycisk-wyczysc');
+
+  // Slownik nawykow z /api/slowniki - z niego powstaja checkboxy filtra.
+  let nawykiSlownik = [];
+
+  // Dzisiejsza data wedlug SERWERA (GET /api/czas) - od niej licza sie presety.
+  let dzisiajSerwera = null;
+
   // ==========================================================================
   // Definicje kolumn
   // ==========================================================================
@@ -58,52 +74,51 @@
     { pole: 'kolacja', typ: 'tekst', klasa: 'kol-tekst' },
   ];
 
-  // Pola liczbowe sortuja sie liczbowo, reszta tekstowo.
-  const POLA_LICZBOWE = new Set([
-    'id',
-    'godziny_snu',
-    'jakosc_snu',
-    'stres',
-    'nastroj',
-    'intencjonalnosc',
-  ]);
+  // ==========================================================================
+  // Filtrowanie
+  // ==========================================================================
+
+  /*
+    Stan filtrow. Pusty zbior nawykow oznacza "nie filtruj po nawyku" - to naturalne
+    zachowanie listy checkboxow: nic nie zaznaczone = wszystko przechodzi.
+    Wszystkie pola lacza sie przez ORAZ, zaznaczenia w obrebie nawykow przez LUB.
+  */
+  const filtry = {
+    szukaj: '',
+    nawyki: new Set(),
+    od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
+    do: '',
+  };
+
+  // Dziennik nie potrzebuje presetu "Dziś + jutro" - wpisy dotycza dni, ktore juz byly.
+  const P = filtrDat.PRESETY;
+  const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.TYDZIEN, P.MIESIAC];
+
+  /*
+    Predykaty filtrow siedza w public/js/reguly-dziennika.js - to czyste funkcje
+    bez DOM, wiec da sie je przetestowac skryptem (npm run test:smoke).
+  */
+
+  /** Wpisy spelniajace WSZYSTKIE aktywne filtry. */
+  function filtrowane(lista = [...wpisy.values()]) {
+    return regulyDziennika.filtrowane(lista, filtry);
+  }
+
+  /** Ile pol filtrow jest aktywnych (do znacznika przy zwinietym panelu). */
+  function ileAktywnychFiltrow() {
+    return regulyDziennika.ileAktywnych(filtry);
+  }
 
   // ==========================================================================
   // Sortowanie
   // ==========================================================================
 
   /*
-    Puste wartosci zawsze na koncu, takze przy sortowaniu malejaco - ta sama zasada
-    co w tabeli zadan. Wpis bez oceny nie jest ani najlepszy, ani najgorszy.
-    Remisy rozstrzyga id, zeby kolejnosc byla powtarzalna.
+    Reguly (puste na koncu takze przy malejaco, remisy po id) siedza
+    w public/js/reguly-dziennika.js.
   */
-  function pusta(w) {
-    return w === null || w === undefined || w === '';
-  }
-
   function posortowane(lista = [...wpisy.values()]) {
-    const { kolumna, kierunek } = sortowanie;
-
-    return [...lista].sort((a, b) => {
-      const wa = a[kolumna];
-      const wb = b[kolumna];
-
-      const pustaA = pusta(wa);
-      const pustaB = pusta(wb);
-      if (pustaA && pustaB) return a.id - b.id;
-      if (pustaA) return 1; // przed odwroceniem kierunku, wiec go nie dotyczy
-      if (pustaB) return -1;
-
-      let wynik;
-      if (POLA_LICZBOWE.has(kolumna)) wynik = wa - wb;
-      // Data w formacie YYYY-MM-DD i godzina HH:MM maja stala szerokosc,
-      // wiec kolejnosc alfabetyczna = kolejnosc chronologiczna.
-      else if (kolumna === 'data' || kolumna === 'pobudka') wynik = wa < wb ? -1 : wa > wb ? 1 : 0;
-      else wynik = String(wa).localeCompare(String(wb), 'pl');
-
-      if (wynik === 0) return a.id - b.id;
-      return kierunek === 'malejaco' ? -wynik : wynik;
-    });
+    return regulyDziennika.posortowane(lista, sortowanie);
   }
 
   function przelaczSortowanie(kolumna) {
@@ -273,16 +288,30 @@
     (td.querySelector('select, input') || td).focus();
   }
 
+  /*
+    Potok wyswietlania: najpierw odsiew, potem porzadkowanie.
+    Eksport CSV CELOWO go nie uzywa - wola posortowane() bez argumentu, czyli
+    na calym zbiorze, zeby filtry nie okrajaly eksportowanego pliku.
+  */
+  function doWyswietlenia() {
+    return posortowane(filtrowane());
+  }
+
   function renderuj() {
     const fokus = zapamietajFokus();
-    elWiersze.replaceChildren(...posortowane().map(zbudujWiersz));
+    elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
     odtworzFokus(fokus);
     odswiezNaglowki();
     odswiezPodsumowanie();
   }
 
+  /**
+   * Czy zawartosc tabeli rozni sie od tej, ktora powinna byc?
+   * Wychwytuje nie tylko zmiane kolejnosci, ale i wypadniecie wiersza z filtra
+   * (np. po edycji daty poza wybrany zakres) - listy maja wtedy rozne dlugosci.
+   */
   function kolejnoscSieZmienila() {
-    const oczekiwana = posortowane().map((w) => w.id);
+    const oczekiwana = doWyswietlenia().map((w) => w.id);
     const obecna = [...elWiersze.children].map((tr) => Number(tr.dataset.id));
     return oczekiwana.length !== obecna.length || oczekiwana.some((id, i) => id !== obecna[i]);
   }
@@ -383,11 +412,7 @@
     const wiersze = wszystkie.map((w) => KOLUMNY.map((k) => w[k.pole]));
 
     // Data w nazwie pliku wg zegara przegladarki - tak samo jak przy eksporcie zadan.
-    const t = new Date();
-    const dwie = (n) => String(n).padStart(2, '0');
-    const dzis = `${t.getFullYear()}-${dwie(t.getMonth() + 1)}-${dwie(t.getDate())}`;
-
-    csv.pobierz(`dziennik-eksport-${dzis}.csv`, naglowki, wiersze);
+    csv.pobierz(`dziennik-eksport-${filtrDat.dzisiajLokalnie()}.csv`, naglowki, wiersze);
     pokazStatus(`wyeksportowano ${wszystkie.length}`, 'ok');
   }
 
@@ -417,9 +442,85 @@
       return;
     }
 
-    const daty = wszystkie.map((w) => w.data).filter(Boolean).sort();
+    const widoczne = filtrowane(wszystkie);
+    const daty = widoczne
+      .map((w) => w.data)
+      .filter(Boolean)
+      .sort();
     const zakres = daty.length > 0 ? ` (od ${daty[0]} do ${daty[daty.length - 1]})` : '';
-    elPodsumowanie.textContent = `Wpisów: ${wszystkie.length}${zakres}`;
+
+    elPodsumowanie.textContent = `Pokazano ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
+  }
+
+  // ==========================================================================
+  // Panel filtrow
+  // ==========================================================================
+
+  function zbudujCheckboxyNawykow() {
+    elFiltrNawyki.replaceChildren(
+      ...nawykiSlownik.map((nazwa) => {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+
+        input.addEventListener('change', () => {
+          if (input.checked) filtry.nawyki.add(nazwa);
+          else filtry.nawyki.delete(nazwa);
+          zastosujFiltry();
+        });
+
+        label.append(input, ' ' + nazwa);
+        return label;
+      })
+    );
+  }
+
+  function zbudujPresety() {
+    // Zakres liczy sie od DZISIAJ WEDLUG SERWERA - stad funkcja, a nie wartosc:
+    // data moze sie odswiezyc po powrocie do karty nastepnego dnia.
+    filtrDat.zbudujPrzyciski(
+      elPresety,
+      PRESETY_DAT,
+      (zakres) => {
+        elFiltrOd.value = zakres.od;
+        elFiltrDo.value = zakres.do;
+        zastosujFiltry();
+      },
+      () => dzisiajSerwera
+    );
+  }
+
+  function odswiezPresety() {
+    filtrDat.odswiezPrzyciski(elPresety, {
+      od: filtry.od,
+      do: filtry.do,
+      dzisiaj: dzisiajSerwera,
+    });
+  }
+
+  /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */
+  function zastosujFiltry() {
+    filtry.szukaj = elFiltrSzukaj.value.trim().toLocaleLowerCase('pl');
+    filtry.od = elFiltrOd.value;
+    filtry.do = elFiltrDo.value;
+    // Zbior nawykow aktualizuja na biezaco handlery checkboxow.
+
+    const ile = ileAktywnychFiltrow();
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+
+    odswiezPresety();
+    renderuj();
+  }
+
+  function wyczyscFiltry() {
+    elFiltrSzukaj.value = '';
+    elFiltrOd.value = '';
+    elFiltrDo.value = '';
+    for (const input of elPanelFiltrow.querySelectorAll('input[type="checkbox"]')) {
+      input.checked = false;
+    }
+    filtry.nawyki.clear();
+    zastosujFiltry();
   }
 
   // ==========================================================================
@@ -435,7 +536,22 @@
 
   async function start() {
     try {
-      await wczytaj();
+      // Slownik nawykow i data serwera musza byc PRZED zbudowaniem panelu filtrow.
+      const [slowniki, czas, lista] = await Promise.all([
+        api.get('/api/slowniki'),
+        api.get('/api/czas'),
+        api.get('/api/dziennik'),
+      ]);
+      nawykiSlownik = slowniki.nawyki ?? [];
+      dzisiajSerwera = czas.dzisiaj;
+
+      zbudujCheckboxyNawykow();
+      zbudujPresety();
+      odswiezPresety();
+
+      wpisy.clear();
+      for (const w of lista) wpisy.set(w.id, w);
+      renderuj();
     } catch (e) {
       pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
     }
@@ -443,6 +559,12 @@
 
   elDodaj.addEventListener('click', dodajWpis);
   elEksport.addEventListener('click', eksportujCsv);
+  elWyczysc.addEventListener('click', wyczyscFiltry);
+
+  // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
+  elFiltrSzukaj.addEventListener('input', zastosujFiltry);
+  elFiltrOd.addEventListener('change', zastosujFiltry);
+  elFiltrDo.addEventListener('change', zastosujFiltry);
 
   elNaglowki.addEventListener('click', (e) => {
     const th = e.target.closest('th[data-kolumna]');

@@ -15,9 +15,16 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const { uruchomMigracje } = require('./migracje');
 
-// Baza lezy w data/baza.db w folderze projektu - przezywa restart komputera.
-const KATALOG_DANYCH = path.join(__dirname, '..', 'data');
-const SCIEZKA_BAZY = path.join(KATALOG_DANYCH, 'baza.db');
+/*
+  Baza lezy w data/baza.db w folderze projektu - przezywa restart komputera.
+
+  Zmienna srodowiskowa BAZA_DANYCH pozwala wskazac inny plik. Sluzy do tego,
+  zeby smoke test (npm run test:smoke) uruchamial serwer na wlasnej, tymczasowej
+  bazie i w zaden sposob nie dotykal prawdziwych danych. W normalnym uzyciu
+  zmiennej sie nie ustawia.
+*/
+const SCIEZKA_BAZY = process.env.BAZA_DANYCH || path.join(__dirname, '..', 'data', 'baza.db');
+const KATALOG_DANYCH = path.dirname(SCIEZKA_BAZY);
 
 // Tworzymy katalog przy pierwszym uruchomieniu (recursive = nie wywala sie, gdy juz istnieje).
 fs.mkdirSync(KATALOG_DANYCH, { recursive: true });

@@ -12,3 +12,7 @@ _test/
 
 # Lokalne ustawienia narzedzi - dotycza tej maszyny, nie projektu.
 .claude/settings.local.json
+
+# Kopie zapasowe CSV (npm run backup). Zawieraja te same prywatne dane
+# co baza, wiec traktujemy je tak samo jak data/ - nie trafiaja do repozytorium.
+backups/
