@@ -238,6 +238,63 @@ uwaga przy liczeniu statystyk, bo ta jedna kolumna jest odwrócona względem poz
 Kolumna `data` **nie ma** ograniczenia `UNIQUE`: jeden dzień może mieć więcej niż jeden wpis.
 Gdyby było inaczej, pojedyncza kolizja przerywałaby cały import (idzie w transakcji).
 
+### Plakietki ocen
+
+Cztery pola ocen (jakość snu, stres, nastrój, intencjonalność) są listami rozwijanymi
+z etykietą `liczba emoji opis`, np. `4 😴 Dobry`. **W bazie zapisywana jest wyłącznie liczba** —
+emoji i opis to warstwa prezentacji, więc kolumny zostają `INTEGER`-ami, a statystyki
+i sortowanie działają bez zmian. Zmiana słowa „Przeciętny" na „Średni" nie wymaga
+ruszania ani jednego rekordu.
+
+Opisy mieszkają w [config/mapowanie-ocen.js](config/mapowanie-ocen.js) i są wystawiane
+przez istniejący `/api/slowniki`. Puste pole jest poprawnym stanem — wyboru nie wymuszamy.
+
+Styl plakietki jest **neutralny** (jasnoszare tło, bez kolorowania wg wartości). Kolorowanie
+sugerowałoby „dobrą/złą" ocenę, a przy stresie — którego skala jest odwrócona — prowadziłoby
+wprost do błędnych wniosków. Opis słowny rozwiązuje ten problem lepiej: `0 🔥 Bardzo wysoki`
+nie da się odczytać opacznie.
+
+### Nawyki — edytowalna lista
+
+Lista nawyków mieszka w tabeli **`nawyki_slownik`** (migracja 4) i jest edytowalna z aplikacji.
+Kliknięcie komórki **Nawyki** otwiera panel z checkboxem przy każdej pozycji; zaznaczenie
+zapisuje się od razu, bez osobnego przycisku. Przy każdej pozycji ✏️ zmienia nazwę,
+a 🗑️ usuwa ją z listy wyboru. Na dole panelu dodajesz nową.
+
+Kolumna `dziennik.nawyki` **nadal jest zwykłym tekstem** z nazwami rozdzielonymi przecinkami —
+celowo nie ma tabeli łączącej. Wpisy mają prawo zawierać nazwy historyczne, których już nie ma
+w słowniku, a klucz obcy by to uniemożliwił.
+
+**Zmiana nazwy działa kaskadowo** na wszystkich wpisach dziennika. Dopasowanie idzie po
+**całych tokenach**, nie po podciągach:
+
+```
+tokeny = nawyki.split(',').map(trim)
+jeśli żaden token !== staraNazwa  →  wiersz w ogóle nie jest ruszany
+```
+
+Podmiana przez `REPLACE(nawyki, stara, nowa)` byłaby błędem: zmiana „Water" → „H2O"
+zepsułaby „Drink Water" na „Drink H2O", a „Drink Water" → „Woda" uszkodziłoby
+„Drink Water Extra". Nazwy z nawiasami i spacjami (`Duolingo (road to 3 years)`) też
+przechodzą bez szwanku. Wszystkie te przypadki są w smoke teście.
+
+Porównanie tokenu jest **dokładne**, z uwzględnieniem wielkości liter — inaczej zmiana nazwy
+normalizowałaby przy okazji zapis historyczny. Wykrywanie duplikatów przy dodawaniu i zmianie
+nazwy działa osobno i wielkości liter **nie** rozróżnia.
+
+**Usunięcie nie kaskaduje.** Nazwa znika tylko ze słownika; wpisy zachowują ją nietkniętą,
+bo historia ma pozostać wierna. Skutek uboczny: po takim nawyku nie da się już filtrować,
+choć nadal widać go w treści wpisów.
+
+> **Zabezpieczenie przed cichą utratą danych.** Panel pokazuje także nazwy obecne w danym
+> wpisie, a nieobecne w słowniku — usunięte oraz historyczne (np. `Untitled`) — oznaczone
+> jako **„(spoza listy)"**. Gdyby zapis składał się wyłącznie z zaznaczonych checkboxów,
+> takie nazwy znikałyby po cichu przy pierwszej edycji wiersza. Kolejność nazw w wierszu
+> jest zachowywana, a nowo zaznaczone dopisywane na końcu.
+
+Zasiew migracji to **15** nazw znalezionych przy imporcie — bez `Untitled`, które było
+artefaktem eksportu z Notion. Wpis, który je zawiera, został nietknięty.
+
 ### Ostrzeżenie o duplikacie daty
 
 Gdy inny wpis ma tę samą datę, komórka daty dostaje **żółte** obramowanie i podpowiedź
@@ -481,6 +538,7 @@ server.js                    punkt wejścia — bootstrap i montowanie modułów
 config/slowniki.js           stany, priorytety, klienci (jedno źródło prawdy)
 config/mapowanie-importu.js  profil importu zadań (nagłówki CSV -> kolumny)
 config/mapowanie-dziennika.js profil importu dziennika + transformacje Notion
+config/mapowanie-ocen.js     opisy słowne ocen (plakietki)
 db/index.js                  połączenie z SQLite (data/baza.db)
 db/migracje.js               wersjonowane migracje schematu
 lib/csv-parser.js            parser CSV                  — do użycia w każdym module
@@ -491,6 +549,7 @@ routes/slowniki.js           listy wyboru dla frontendu
 routes/czas.js               dzisiejsza data serwera (presety filtrów)
 routes/import.js             podgląd i zatwierdzenie importu (wszystkie profile)
 routes/dziennik.js           REST API dla dziennika
+routes/nawyki.js             REST API słownika nawyków
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
@@ -525,6 +584,10 @@ podając własny `config/mapowanie-*.js`.
 | `DELETE` | `/api/zadania/:id`  | usuwa zadanie                            |
 | `GET`    | `/api/slowniki`     | stany, priorytety, klienci               |
 | `GET`    | `/api/czas`         | dzisiejsza data serwera (`YYYY-MM-DD`)   |
+| `GET`    | `/api/nawyki`       | słownik nawyków                          |
+| `POST`   | `/api/nawyki`       | dodaje nazwę, odrzuca duplikat (409)     |
+| `PATCH`  | `/api/nawyki/:id`   | zmienia nazwę **i kaskadowo** poprawia wpisy |
+| `DELETE` | `/api/nawyki/:id`   | usuwa ze słownika, **nie** rusza wpisów  |
 | `GET`    | `/api/dziennik`     | lista wszystkich wpisów                  |
 | `POST`   | `/api/dziennik`     | tworzy wpis z dzisiejszą datą            |
 | `PATCH`  | `/api/dziennik/:id` | aktualizuje wybrane pola                 |

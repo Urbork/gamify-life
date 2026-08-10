@@ -13,8 +13,8 @@ const {
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
   KLIENCI,
-  NAWYKI,
 } = require('../config/slowniki');
+const { OCENY } = require('../config/mapowanie-ocen');
 
 const router = express.Router();
 
@@ -26,7 +26,9 @@ router.get('/', (req, res) => {
     priorytety: PRIORYTETY,
     priorytetDomyslny: PRIORYTET_DOMYSLNY,
     klienci: KLIENCI,
-    nawyki: NAWYKI,
+    // Opisy slowne ocen dziennika (plakietki w listach rozwijanych).
+    // Lista nawykow NIE jest tu wystawiana - mieszka w bazie, patrz GET /api/nawyki.
+    oceny: OCENY,
   });
 });
 

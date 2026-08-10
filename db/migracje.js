@@ -118,7 +118,58 @@ const MIGRACJE = [
     db.exec(`CREATE INDEX idx_dziennik_data ON dziennik (data)`);
   },
 
-  // --- 4: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 4: slownik nawykow ------------------------------------------------
+  (db) => {
+    /*
+      Lista nawykow przenosi sie ze statycznej tablicy w config/slowniki.js
+      do tabeli, zeby dalo sie ja edytowac z poziomu aplikacji.
+
+      Kolumna `dziennik.nawyki` NADAL jest zwyklym tekstem z nazwami rozdzielonymi
+      przecinkami - celowo nie robimy tabeli laczacej. Powod: wpisy maja prawo
+      zawierac nazwy historyczne, ktorych juz nie ma w slowniku (usuniety nawyk
+      nie znika z przeszlosci), a klucz obcy by to uniemozliwil.
+    */
+    db.exec(`
+      CREATE TABLE nawyki_slownik (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        -- UNIQUE pilnuje, zeby nie dalo sie zalozyc dwoch pozycji o tej samej nazwie.
+        -- Rozroznianie wielkosci liter obsluguje osobno routes/nawyki.js.
+        nazwa TEXT NOT NULL UNIQUE
+      )
+    `);
+
+    /*
+      Zasiew: 15 nazw znalezionych w danych przy imporcie z Notion.
+
+      NIE zasiewamy "Untitled" - to artefakt eksportu (jedno wystapienie),
+      wiec przy okazji pozbywamy sie go z listy wyboru. Wpisy dziennika,
+      ktore go zawieraja, zostaja nietkniete - historia ma byc wierna.
+
+      Wartosci wpisane WPROST, nie brane z config/slowniki.js: migracja to zapis
+      historii i ma znaczyc to samo za dwa lata, nawet gdy slownik sie zmieni.
+    */
+    const wstaw = db.prepare('INSERT INTO nawyki_slownik (nazwa) VALUES (?)');
+    const NAZWY = [
+      'Book or Movie',
+      'Breathing Exercises',
+      'Daily commit',
+      'Drawing',
+      'Drink Water',
+      'Duolingo (road to 3 years)',
+      'Exercise/Tai Chi/Swimming',
+      'Go For A Walk',
+      'Literalnie',
+      'Proktis-M',
+      'Sprawdzić Slack i Discord',
+      'Vitamins',
+      'Zapisać emocje (popołudnie)',
+      'Zapisać emocje (rano)',
+      'Zapisać emocje (wieczór)',
+    ];
+    for (const nazwa of NAZWY) wstaw.run(nazwa);
+  },
+
+  // --- 5: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {

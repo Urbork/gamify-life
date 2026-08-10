@@ -101,6 +101,23 @@
 
     <p id="podsumowanie" class="podsumowanie"></p>
 
+    <!--
+      Panel wyboru nawykow. Jeden na cala strone, pozycjonowany przy klikanej komorce.
+      Trzymany poza tabela, zeby nie rozpychal wiersza i nie byl przycinany
+      przez poziome przewijanie tabeli.
+    -->
+    <div id="panel-nawykow" class="panel-nawykow" hidden>
+      <div class="panel-naglowek">
+        <strong>Nawyki</strong>
+        <button type="button" id="zamknij-nawyki" class="usun" title="Zamknij">×</button>
+      </div>
+      <div id="lista-nawykow" class="lista-nawykow"></div>
+      <div class="panel-stopka">
+        <input type="text" id="nowy-nawyk" placeholder="nazwa nowego nawyku" />
+        <button type="button" id="dodaj-nawyk">+ Dodaj nawyk</button>
+      </div>
+    </div>
+
     <script src="/js/api.js"></script>
     <script src="/js/csv.js"></script>
     <script src="/js/filtr-dat.js"></script>

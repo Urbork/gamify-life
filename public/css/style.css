@@ -296,8 +296,21 @@ th[data-kierunek='malejaco'] {
 .kol-godzina {
   width: 90px;
 }
+/* Szerokosc pod plakietke "5 🌟 Znakomity", a nie pod sama cyfre. */
 .kol-ocena {
-  width: 72px;
+  width: 165px;
+}
+
+/*
+  Plakietka oceny. Styl NEUTRALNY - jasnoszare tlo i ramka, bez kolorowania
+  wg wartosci. Kolorowanie sugerowaloby ocene "dobra/zla", a przy stresie
+  (skala odwrocona) prowadzilo by wprost do blednych wnioskow.
+*/
+td select.plakietka {
+  background: #f4f4f5;
+  border: 1px solid var(--ramka);
+  border-radius: 10px;
+  padding: 1px 4px;
 }
 /* Pola refleksji bywaja dlugie - staly limit szerokosci zamiast rozpychania tabeli. */
 .kol-tekst {
@@ -324,9 +337,98 @@ th[data-kierunek='malejaco'] {
 }
 
 /* Tabela dziennika ma 20 kolumn - bez tego zwezalaby je do nieczytelnosci,
-   zamiast pozwolic na przewijanie w poziomie. */
+   zamiast pozwolic na przewijanie w poziomie.
+   Wartosc uwzglednia szersze kolumny ocen (plakietki zamiast samych cyfr). */
 #tabela-dziennika {
-  min-width: 2400px;
+  min-width: 2750px;
+}
+
+/* --- panel wyboru nawykow --- */
+
+/* Komorka nawykow nie jest polem tekstowym - klikniecie otwiera panel. */
+td.komorka-nawykow {
+  cursor: pointer;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+td.komorka-nawykow:hover {
+  outline: 1px solid #3b7ddd;
+  outline-offset: -1px;
+}
+
+td.komorka-nawykow:empty::before {
+  content: 'kliknij, aby wybrać';
+  color: var(--tekst-slaby);
+}
+
+.panel-nawykow {
+  position: absolute;
+  z-index: 10;
+  width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--ramka);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  font-size: 13px;
+}
+
+.panel-naglowek {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--ramka);
+}
+
+.pozycja-nawyku {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.pozycja-nawyku label {
+  cursor: pointer;
+  flex: 1;
+}
+
+/* Ikony pojawiaja sie dopiero pod kursorem - inaczej lista bylaby zaśmiecona. */
+.akcje-nawyku button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 12px;
+  opacity: 0.25;
+}
+
+.pozycja-nawyku:hover .akcje-nawyku button {
+  opacity: 1;
+}
+
+/* Nazwa obecna we wpisie, ale nieobecna w slowniku (nawyk usuniety albo historyczny). */
+.spoza-listy {
+  color: var(--uwaga);
+  font-size: 11px;
+}
+
+.panel-stopka {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ramka);
+}
+
+.panel-stopka input {
+  flex: 1;
+  font: inherit;
+  padding: 2px 4px;
 }
 
 /* Dodatkowe zabezpieczenie na samej kolumnie: nawet gdyby ktos zmienil

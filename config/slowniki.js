@@ -64,37 +64,17 @@ const KLIENCI = [
 ];
 
 /*
-  Nawyki sledzone w dzienniku - lista do filtrowania wpisow.
+  NAWYKI PRZENIESIONE DO BAZY.
 
-  UWAGA: to NIE jest slownik walidacyjny. Pole `nawyki` w bazie to zwykly tekst
-  z nazwami rozdzielonymi przecinkami, wypelniany przez import (patrz parsujNawyki
-  w config/mapowanie-dziennika.js) albo recznie. Ta lista sluzy wylacznie do zbudowania
-  checkboxow filtra - wpis moze zawierac nawyk spoza niej i nadal bedzie poprawny.
+  Lista nawykow byla tu wczesniej jako stala tablica. Od migracji 4 mieszka
+  w tabeli `nawyki_slownik`, bo ma dac sie edytowac z poziomu aplikacji
+  (dodawanie, zmiana nazwy, usuwanie). Obsluguje ja routes/nawyki.js,
+  a frontend pobiera ja przez GET /api/nawyki.
 
-  Kolejnosc alfabetyczna: przy 16 pozycjach latwiej znalezc konkretna niz przy
-  kolejnosci wg czestosci wystepowania.
-
-  "Untitled" to artefakt eksportu z Notion (1 wystapienie w danych). Zostaje na liscie,
-  zeby dalo sie takie wpisy odfiltrowac i poprawic - mozesz je usunac, gdy znikna.
+  Nie zostawiamy tu kopii listy - dwa zrodla prawdy predzej czy pozniej
+  by sie rozjechaly. Zasiew 15 nazw (bez artefaktu "Untitled") jest wpisany
+  wprost w migracji 4.
 */
-const NAWYKI = [
-  'Book or Movie',
-  'Breathing Exercises',
-  'Daily commit',
-  'Drawing',
-  'Drink Water',
-  'Duolingo (road to 3 years)',
-  'Exercise/Tai Chi/Swimming',
-  'Go For A Walk',
-  'Literalnie',
-  'Proktis-M',
-  'Sprawdzić Slack i Discord',
-  'Untitled',
-  'Vitamins',
-  'Zapisać emocje (popołudnie)',
-  'Zapisać emocje (rano)',
-  'Zapisać emocje (wieczór)',
-];
 
 /** Etykieta dla numeru priorytetu. Nieznany numer zwraca sam numer w nawiasach. */
 function etykietaPriorytetu(numer) {
@@ -110,5 +90,4 @@ module.exports = {
   PRIORYTET_DOMYSLNY,
   etykietaPriorytetu,
   KLIENCI,
-  NAWYKI,
 };

@@ -630,6 +630,138 @@ async function testujStatystyki(reguly) {
   );
 }
 
+async function testujNawyki() {
+  sekcja('SŁOWNIK NAWYKÓW');
+
+  const { status, tresc: slownik } = await zapytaj('GET', '/api/nawyki');
+  sprawdz('GET /api/nawyki odpowiada 200', status === 200);
+  sprawdz(
+    'migracja zasiala 15 nazw',
+    slownik.length === 15,
+    `otrzymano ${slownik.length}`
+  );
+  sprawdz(
+    '"Untitled" NIE zostal zasiany (artefakt eksportu)',
+    !slownik.some((n) => n.nazwa === 'Untitled')
+  );
+
+  // --- duplikaty ---
+  sprawdz(
+    'POST odrzuca duplikat identyczny',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'Vitamins' })).status === 409
+  );
+  sprawdz(
+    'POST odrzuca duplikat rozniacy sie wielkoscia liter',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'vitamins' })).status === 409
+  );
+  sprawdz(
+    'POST odrzuca pusta nazwe',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: '   ' })).status === 400
+  );
+  sprawdz(
+    'POST odrzuca nazwe z przecinkiem (rozdziela nazwy w dzienniku)',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'A, B' })).status === 400
+  );
+
+  /*
+    KASKADOWA ZMIANA NAZWY - dopasowanie CALEGO tokenu, nie podciagu.
+
+    Pulapki w zestawie ponizej:
+      - "Water" jest fragmentem "Drink Water",
+      - "Drink Water" jest prefiksem "Drink Water Extra",
+      - nazwa z nawiasami i spacjami musi przezyc bez zmian.
+    Podmiana przez REPLACE() na podciagach uszkodzilaby wszystkie trzy.
+  */
+  const { tresc: nowy } = await zapytaj('POST', '/api/nawyki', { nazwa: 'Water' });
+
+  const wpisyTestowe = [
+    'Drink Water, Vitamins',
+    'Water',
+    'Drink Water Extra, Drawing',
+    'Duolingo (road to 3 years), Water',
+  ];
+  const idWpisow = [];
+  for (const nawyki of wpisyTestowe) {
+    const { tresc } = await zapytaj('POST', '/api/dziennik');
+    await zapytaj('PATCH', `/api/dziennik/${tresc.id}`, { nawyki });
+    idWpisow.push(tresc.id);
+  }
+
+  const { tresc: wynik } = await zapytaj('PATCH', `/api/nawyki/${nowy.id}`, { nazwa: 'H2O' });
+
+  const { tresc: poZmianie } = await zapytaj('GET', '/api/dziennik');
+  const nawykiWpisu = (id) => poZmianie.find((w) => w.id === id).nawyki;
+
+  sprawdz(
+    'kaskada zmienila tylko wpisy z DOKLADNYM tokenem (2 z 4)',
+    wynik.zaktualizowanychWpisow === 2,
+    `zaktualizowano ${wynik.zaktualizowanychWpisow}`
+  );
+  sprawdz(
+    '"Drink Water" nietkniete przy zmianie "Water" (fragment innej nazwy)',
+    nawykiWpisu(idWpisow[0]) === 'Drink Water, Vitamins',
+    nawykiWpisu(idWpisow[0])
+  );
+  sprawdz(
+    'samodzielne "Water" zmienione na "H2O"',
+    nawykiWpisu(idWpisow[1]) === 'H2O',
+    nawykiWpisu(idWpisow[1])
+  );
+  sprawdz(
+    '"Drink Water Extra" nietkniete (prefiks)',
+    nawykiWpisu(idWpisow[2]) === 'Drink Water Extra, Drawing',
+    nawykiWpisu(idWpisow[2])
+  );
+  sprawdz(
+    'nazwa z nawiasami zachowana, token obok podmieniony',
+    nawykiWpisu(idWpisow[3]) === 'Duolingo (road to 3 years), H2O',
+    nawykiWpisu(idWpisow[3])
+  );
+
+  sprawdz(
+    'PATCH odrzuca zmiane na nazwe juz istniejaca',
+    (await zapytaj('PATCH', `/api/nawyki/${nowy.id}`, { nazwa: 'Drawing' })).status === 409
+  );
+
+  /*
+    DELETE usuwa TYLKO ze slownika. Wpisy dziennika zachowuja nazwe historyczna -
+    historia ma pozostac wierna temu, co bylo wtedy prawda.
+  */
+  const przedUsunieciem = nawykiWpisu(idWpisow[1]);
+  sprawdz(
+    'DELETE /api/nawyki/:id odpowiada 204',
+    (await zapytaj('DELETE', `/api/nawyki/${nowy.id}`)).status === 204
+  );
+
+  const { tresc: poUsunieciu } = await zapytaj('GET', '/api/nawyki');
+  sprawdz('nazwa znika ze slownika', !poUsunieciu.some((n) => n.nazwa === 'H2O'));
+
+  const { tresc: wpisyPoUsunieciu } = await zapytaj('GET', '/api/dziennik');
+  sprawdz(
+    'DELETE NIE rusza wpisow dziennika - nazwa historyczna zostaje',
+    wpisyPoUsunieciu.find((w) => w.id === idWpisow[1]).nawyki === przedUsunieciem,
+    wpisyPoUsunieciu.find((w) => w.id === idWpisow[1]).nawyki
+  );
+
+  // --- opisy ocen ---
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  sprawdz(
+    '/api/slowniki wystawia opisy wszystkich czterech ocen',
+    ['jakosc_snu', 'stres', 'nastroj', 'intencjonalnosc'].every(
+      (p) => Array.isArray(slowniki.oceny[p]) && slowniki.oceny[p].length > 0
+    )
+  );
+  sprawdz(
+    'skala stresu ma 6 stopni i zaczyna sie od 5 (odwrocona)',
+    slowniki.oceny.stres.length === 6 && slowniki.oceny.stres[0].wartosc === 5,
+    JSON.stringify(slowniki.oceny.stres.map((o) => o.wartosc))
+  );
+  sprawdz(
+    'lista nawykow NIE jest juz w /api/slowniki (mieszka w bazie)',
+    slowniki.nawyki === undefined
+  );
+}
+
 async function testujImport() {
   sekcja('IMPORT (regresja odrzucen)');
 
@@ -770,6 +902,7 @@ async function main() {
     await testujZadania(reguly, slowniki);
     await testujDziennik(reguly);
     await testujStatystyki(reguly);
+    await testujNawyki();
     await testujImport();
     await testujLimityCiala();
   } catch (e) {
