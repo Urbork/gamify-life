@@ -408,18 +408,24 @@ th[data-kierunek='malejaco'] {
 }
 
 /*
-  Pasek proporcjonalny w komorce tabeli - zwykly div o zadanej szerokosci.
+  Slupek proporcjonalny w komorce tabeli - zwykly element o zadanej szerokosci.
   Sluzy do tego, zeby trend (np. spadek odsetka refleksji) bylo widac wzrokiem,
   bez siegania po biblioteke wykresow.
+
+  UWAGA NA NAZWE: klasa "pasek" jest juz zajeta przez <header class="pasek">
+  na wszystkich stronach (pasek narzedzi nad tabela, na gorze pliku). Uzycie jej
+  tutaj po raz drugi nadpisywalo naglowek strony - stawal sie 10-pikselowym
+  niebieskim paskiem, a jego zawartosc wylewala sie na panel filtrow.
+  Stad osobna nazwa "slupek". Nie zmieniaj jej z powrotem.
 */
-.pasek {
+.slupek {
   display: block;
   height: 10px;
   background: #3b7ddd;
   min-width: 1px;
 }
 
-.pasek-tlo {
+.slupek-tlo {
   width: 120px;
   background: #eee;
 }

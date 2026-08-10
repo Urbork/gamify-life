@@ -79,9 +79,25 @@ function numerDnia(iso) {
   return Date.UTC(r, m - 1, d) / MS_W_DNIU;
 }
 
+/*
+  WSZYSTKIE daty w zestawie testowym musza byc liczone WZGLEDEM DZISIAJ.
+
+  Data wpisana na sztywno sprawia, ze test przechodzi albo nie w zaleznosci od dnia,
+  w ktorym go uruchomisz - a test, ktory czasem pada bez powodu, uczy ignorowania
+  czerwonych wynikow. (Tak sie tu juz raz zdarzylo: zadanie G mialo zaszyte
+  2026-08-10, wiec do 9 sierpnia "zaczynalo sie jutro", a od 10 sierpnia "dzisiaj",
+  i asercja presetu "Dziś" zmienila wynik z dnia na dzien.)
+*/
+
 /** Data przesunieta o n dni wzgledem dzisiaj, jako znacznik 'YYYY-MM-DDT00:00'. */
 function dzien(n) {
-  return new Date((numerDnia(DZIS) + n) * MS_W_DNIU).toISOString().slice(0, 10) + 'T00:00';
+  return dzienOGodzinie(n, '00:00');
+}
+
+/** To samo, ale z podana godzina - do przypadkow granicznych wokol polnocy. */
+function dzienOGodzinie(n, godzina) {
+  const data = new Date((numerDnia(DZIS) + n) * MS_W_DNIU).toISOString().slice(0, 10);
+  return `${data}T${godzina}`;
 }
 
 // --- reguly z przegladarki ------------------------------------------------
@@ -199,13 +215,18 @@ const ZADANIA = [
   { nazwa: 'D termin za 20 dni', stan: 'Blok', priorytet: 4, termin: dzien(20), start_zadania: '' },
   { nazwa: 'E zrobione dzis', stan: 'Zrobione', priorytet: 2, termin: dzien(0), start_zadania: '' },
   { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '' },
-  // Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
+  /*
+    Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
+    Start JUTRO (nie dzis), zeby zadanie bylo poza presetem "Dziś", a weszlo dopiero
+    do "Dziś + jutro" - to sprawdza niezaleznosc warunku aktywnosci od warunku terminu.
+    Daty licza sie wzgledem dzisiaj, wiec wynik nie zalezy od dnia uruchomienia testu.
+  */
   {
     nazwa: 'G trwanie przez polnoc',
     stan: 'Plan',
     priorytet: 2,
-    start_zadania: '2026-08-10T23:59',
-    czas_zakonczenia: '2026-08-12T00:01',
+    start_zadania: dzienOGodzinie(1, '23:59'),
+    czas_zakonczenia: dzienOGodzinie(3, '00:01'),
     termin: '',
   },
 ];

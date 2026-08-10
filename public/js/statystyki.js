@@ -93,10 +93,14 @@
     return t;
   }
 
-  /** Pasek proporcjonalny (0-100%) - zwykly div o zadanej szerokosci, bez biblioteki. */
-  function pasek(procentWartosc) {
-    const tlo = el('span', 'pasek pasek-tlo');
-    const wypelnienie = el('span', 'pasek');
+  /**
+   * Slupek proporcjonalny (0-100%) - zwykly element o zadanej szerokosci, bez biblioteki.
+   * Klasa "slupek", a NIE "pasek": ta druga nalezy do <header class="pasek">
+   * na wszystkich stronach i uzycie jej tutaj rozjezdzalo naglowek.
+   */
+  function slupek(procentWartosc) {
+    const tlo = el('span', 'slupek slupek-tlo');
+    const wypelnienie = el('span', 'slupek');
     wypelnienie.style.width = `${Math.max(0, Math.min(100, procentWartosc))}%`;
     tlo.appendChild(wypelnienie);
     return tlo;
@@ -257,7 +261,7 @@
             String(r.wartosc),
             String(r.ile),
             procent((100 * r.ile) / o.ile),
-            pasek((100 * r.ile) / najwiecej),
+            slupek((100 * r.ile) / najwiecej),
           ]),
           [true, true, true, false]
         )
@@ -283,7 +287,7 @@
           String(m.wpisow),
           String(m.zRefleksja),
           procent(m.procent),
-          pasek(m.procent),
+          slupek(m.procent),
         ]),
         [false, true, true, true, false]
       )
