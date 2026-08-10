@@ -238,6 +238,18 @@ uwaga przy liczeniu statystyk, bo ta jedna kolumna jest odwrócona względem poz
 Kolumna `data` **nie ma** ograniczenia `UNIQUE`: jeden dzień może mieć więcej niż jeden wpis.
 Gdyby było inaczej, pojedyncza kolizja przerywałaby cały import (idzie w transakcji).
 
+### Ostrzeżenie o duplikacie daty
+
+Gdy inny wpis ma tę samą datę, komórka daty dostaje **żółte** obramowanie i podpowiedź
+„inny wpis już ma tę datę (id X)". To **uwaga, nie walidacja** — zapis przechodzi normalnie,
+bo kolumna `data` celowo nie ma `UNIQUE` i wiele wpisów na jeden dzień jest dozwolone.
+Czerwony jest w tej tabeli zarezerwowany dla nieudanego zapisu, stąd inny kolor.
+
+Sprawdzenie działa na **wczytanej już lokalnej kopii danych** — bez dodatkowego zapytania
+do serwera. Przy każdym przeliczeniu skanowane są **wszystkie** wiersze, nie tylko edytowany:
+gdy wpis A odsunie się od daty wpisu B, to właśnie B przestaje być duplikatem, więc
+sprawdzenie samego A zostawiłoby przy B ostrzeżenie na zawsze.
+
 ### Filtry dziennika
 
 Ten sam potok co w zadaniach — `posortowane(filtrowane())` w `doWyswietlenia()` — i ten sam
@@ -331,6 +343,50 @@ O poprawności wiersza decyduje wyłącznie `waliduj` — dostaje też **surowy*
 żeby móc zacytować w komunikacie wartość, która nie przeszła. Nowy profil dodajesz przez
 plik `config/mapowanie-*.js` i **jeden wpis** w rejestrze `PROFILE` w `routes/import.js`.
 
+## Statystyki
+
+Strona **/statystyki.html** (link w nagłówku pozostałych stron). Bez biblioteki wykresów —
+liczby, tabele HTML i jeden pasek proporcjonalny (zwykły `div` o zadanej szerokości).
+
+Dane pobierane z istniejących `GET /api/zadania`, `GET /api/dziennik` i `GET /api/slowniki`;
+**żadnych nowych endpointów**, wszystkie obliczenia po stronie klienta. Strona **przelicza
+wszystko przy każdym wejściu** — nic nie jest cache'owane ani zapisywane, więc nie ma czego
+unieważniać. Obliczenia siedzą w [public/js/reguly-statystyk.js](public/js/reguly-statystyk.js)
+(czyste funkcje, bez DOM) i są objęte smoke testem.
+
+**Zadania:** liczba łącznie i wg stanu · wg klienta/kategorii (malejąco) · średni czas trwania ·
+odsetek zakończonych po terminie.
+
+**Dziennik:** liczba wpisów i zakres dat · sen (średnia, min, max, % wypełnienia) · cztery
+oceny (średnia + rozkład wartości) · tabela miesięczna.
+
+### Jak liczony jest odsetek „po terminie"
+
+- **Mianownik:** zadania mające wypełnione **oba** pola — `termin` i `czas_zakonczenia`.
+  Celowo **bez** filtrowania po `stan`: o zakończeniu świadczy tu wypełniona data, nie etykieta.
+- **Licznik:** te, w których `czas_zakonczenia` wypada po `termin`.
+- Porównanie na **pełnych dniach kalendarzowych**, spójnie z resztą aplikacji — zakończenie
+  o 23:00 w dniu terminu jest **na czas**.
+
+Interfejs pokazuje zawsze **„X z Y (Z%)"**, nigdy samego procentu: przy trzech zadaniach
+„33%" brzmi jak wniosek, a jest szumem. Gdy mianownik jest zerowy, zamiast dzielenia
+przez zero pojawia się „—" i wyjaśnienie.
+
+### Tabela miesięczna dziennika
+
+Dla każdego miesiąca **obecnego w danych** (klucz `YYYY-MM`, kolejność chronologiczna):
+liczba wpisów, liczba wpisów z refleksją i odsetek. „Z refleksją" znaczy **wypełnione
+co najmniej jedno** z pól: `wdziecznosc`, `bledy`, `rozmowa`, `co_poszlo_dobrze`,
+`jutro_wazne`, `do_przemyslenia`. Pusty tekst liczy się jako brak — edycja inline potrafi
+zostawić `''`, które w bazie nie jest `NULL`-em, a znaczy to samo.
+
+Miesiące bez ani jednego wpisu po prostu się nie pojawiają — nie zmyślamy wierszy z zerami
+dla okresów, w których dziennika nie prowadzono.
+
+> **Skala stresu jest odwrócona** (`0` = bardzo wysoki stres, `5` = brak stresu), w odróżnieniu
+> od pozostałych ocen `1–5`. Strona ostrzega o tym przy średnich i w nagłówku rozkładu,
+> bo bez tego „stres 2,68" czyta się dokładnie odwrotnie, niż znaczy.
+
 ## Smoke test
 
 ```bash
@@ -349,6 +405,7 @@ Co pokrywa:
 | --- | --- |
 | Zadania | 4 presety zakresu dat · sortowanie po 10 kolumnach × 2 kierunki z regułą „Zrobione na dole" · kolumny wyliczane (w tym `23:59 → 00:01` = 2 dni) · filtry nazwy, stanu i priorytetu `0` |
 | Dziennik | filtr nawyku (także że „Water" nie łapie „Drink Water") · szukanie z wielkością liter · własny zakres dat · sortowanie |
+| Statystyki | odsetek „po terminie" (mianownik, porównanie na dniach, pusty mianownik → `null` zamiast `NaN`) · tabela miesięczna · średnie pomijające braki |
 | Import | oba profile odrzucają te same wiersze z tymi samymi powodami; transformacje Notion (`@March 2, 2024`, `7:30 → 07:30`, nawyki bez URL-i, literalne `null`) |
 | Endpointy | `PATCH /api/zadania/:id` z ciałem 300 kB → **413**, `PATCH /api/dziennik/:id` z tym samym ciałem → **200** |
 
@@ -443,6 +500,9 @@ public/js/csv.js             generowanie i pobieranie CSV — j.w.
 public/js/filtr-dat.js       arytmetyka dat i presety zakresu — j.w.
 public/js/reguly-zadan.js    czyste reguły zadań (filtry, sortowanie, wyliczenia)
 public/js/reguly-dziennika.js czyste reguły dziennika
+public/js/reguly-statystyk.js czyste obliczenia statystyk
+public/statystyki.html       strona statystyk
+public/js/statystyki.js      renderowanie statystyk
 test/smoke.js                npm run test:smoke
 scripts/backup.js            npm run backup
 public/js/csv-import.js      obsługa importu w przeglądarce

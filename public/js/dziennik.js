@@ -302,7 +302,51 @@
     elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
     odtworzFokus(fokus);
     odswiezNaglowki();
+    odswiezDuplikatyDat();
     odswiezPodsumowanie();
+  }
+
+  /*
+    MIEKKIE ostrzezenie o duplikacie daty.
+
+    Kolumna `data` nie ma w bazie ograniczenia UNIQUE i to jest zamierzone -
+    jeden dzien moze miec wiecej niz jeden wpis. Dlatego to UWAGA, a nie blad:
+    zapis przechodzi normalnie, zmienia sie wylacznie wyglad komorki.
+
+    Sprawdzamy WYLACZNIE lokalna kopie danych (`wpisy`) - zadnego zapytania do serwera.
+
+    Przebiegamy po WSZYSTKICH wierszach, a nie tylko po edytowanym. Wymog
+    "znika, gdy duplikat przestaje istniec" tego wymaga: gdy wpis A odsunie sie
+    od daty wpisu B, to wlasnie B przestaje byc duplikatem. Sprawdzenie samego A
+    zostawiloby przy B ostrzezenie na zawsze.
+  */
+  function odswiezDuplikatyDat() {
+    // data -> lista id wszystkich wpisow z ta data (takze tych ukrytych przez filtry,
+    // bo duplikat jest duplikatem niezaleznie od tego, co akurat widac na ekranie).
+    const wgDaty = new Map();
+    for (const w of wpisy.values()) {
+      if (!w.data) continue;
+      if (!wgDaty.has(w.data)) wgDaty.set(w.data, []);
+      wgDaty.get(w.data).push(w.id);
+    }
+
+    for (const tr of elWiersze.children) {
+      const td = tr.querySelector('[data-pole="data"]');
+      if (!td) continue;
+
+      const id = Number(tr.dataset.id);
+      const w = wpisy.get(id);
+      const inne = w && w.data ? (wgDaty.get(w.data) || []).filter((x) => x !== id) : [];
+
+      td.classList.toggle('duplikat-daty', inne.length > 0);
+
+      if (inne.length > 0) {
+        const ktore = inne.length === 1 ? `id ${inne[0]}` : `id: ${inne.join(', ')}`;
+        td.title = `Uwaga: inny wpis już ma tę datę (${ktore}). To dozwolone — zapis się udał.`;
+      } else {
+        td.removeAttribute('title');
+      }
+    }
   }
 
   /**
@@ -354,8 +398,13 @@
       wpisy.set(id, zaktualizowany);
       tr.classList.remove('blad-zapisu');
 
-      if (kolejnoscSieZmienila()) renderuj();
-      else zaktualizujWiersz(tr);
+      if (kolejnoscSieZmienila()) {
+        renderuj(); // renderuj() samo odswieza znaczniki duplikatow
+      } else {
+        zaktualizujWiersz(tr);
+        // Sciezka bez przebudowy tabeli - znaczniki trzeba przeliczyc osobno.
+        odswiezDuplikatyDat();
+      }
 
       pokazStatus('zapisano', 'ok');
     } catch (e) {

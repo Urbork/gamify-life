@@ -79,9 +79,25 @@ function numerDnia(iso) {
   return Date.UTC(r, m - 1, d) / MS_W_DNIU;
 }
 
+/*
+  WSZYSTKIE daty w zestawie testowym musza byc liczone WZGLEDEM DZISIAJ.
+
+  Data wpisana na sztywno sprawia, ze test przechodzi albo nie w zaleznosci od dnia,
+  w ktorym go uruchomisz - a test, ktory czasem pada bez powodu, uczy ignorowania
+  czerwonych wynikow. (Tak sie tu juz raz zdarzylo: zadanie G mialo zaszyte
+  2026-08-10, wiec do 9 sierpnia "zaczynalo sie jutro", a od 10 sierpnia "dzisiaj",
+  i asercja presetu "Dziś" zmienila wynik z dnia na dzien.)
+*/
+
 /** Data przesunieta o n dni wzgledem dzisiaj, jako znacznik 'YYYY-MM-DDT00:00'. */
 function dzien(n) {
-  return new Date((numerDnia(DZIS) + n) * MS_W_DNIU).toISOString().slice(0, 10) + 'T00:00';
+  return dzienOGodzinie(n, '00:00');
+}
+
+/** To samo, ale z podana godzina - do przypadkow granicznych wokol polnocy. */
+function dzienOGodzinie(n, godzina) {
+  const data = new Date((numerDnia(DZIS) + n) * MS_W_DNIU).toISOString().slice(0, 10);
+  return `${data}T${godzina}`;
 }
 
 // --- reguly z przegladarki ------------------------------------------------
@@ -91,7 +107,12 @@ function zaladujReguly() {
   const sandbox = { console };
   vm.createContext(sandbox);
 
-  for (const plik of ['filtr-dat.js', 'reguly-zadan.js', 'reguly-dziennika.js']) {
+  for (const plik of [
+    'filtr-dat.js',
+    'reguly-zadan.js',
+    'reguly-dziennika.js',
+    'reguly-statystyk.js',
+  ]) {
     const kod = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', plik), 'utf8');
     vm.runInContext(kod, sandbox, { filename: plik });
   }
@@ -102,7 +123,10 @@ function zaladujReguly() {
     top-level `const` nie ladue na `window`). Dlatego wyciagamy je wyrazeniem
     wykonanym w tym samym kontekscie.
   */
-  return vm.runInContext('({ filtrDat, regulyZadan, regulyDziennika })', sandbox);
+  return vm.runInContext(
+    '({ filtrDat, regulyZadan, regulyDziennika, regulyStatystyk })',
+    sandbox
+  );
 }
 
 // --- serwer ---------------------------------------------------------------
@@ -191,13 +215,18 @@ const ZADANIA = [
   { nazwa: 'D termin za 20 dni', stan: 'Blok', priorytet: 4, termin: dzien(20), start_zadania: '' },
   { nazwa: 'E zrobione dzis', stan: 'Zrobione', priorytet: 2, termin: dzien(0), start_zadania: '' },
   { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '' },
-  // Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
+  /*
+    Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
+    Start JUTRO (nie dzis), zeby zadanie bylo poza presetem "Dziś", a weszlo dopiero
+    do "Dziś + jutro" - to sprawdza niezaleznosc warunku aktywnosci od warunku terminu.
+    Daty licza sie wzgledem dzisiaj, wiec wynik nie zalezy od dnia uruchomienia testu.
+  */
   {
     nazwa: 'G trwanie przez polnoc',
     stan: 'Plan',
     priorytet: 2,
-    start_zadania: '2026-08-10T23:59',
-    czas_zakonczenia: '2026-08-12T00:01',
+    start_zadania: dzienOGodzinie(1, '23:59'),
+    czas_zakonczenia: dzienOGodzinie(3, '00:01'),
     termin: '',
   },
 ];
@@ -464,6 +493,143 @@ async function testujDziennik(reguly) {
   );
 }
 
+async function testujStatystyki(reguly) {
+  sekcja('STATYSTYKI');
+
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  const { tresc: wpisy } = await zapytaj('GET', '/api/dziennik');
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+
+  const sz = reguly.regulyStatystyk.statystykiZadan(zadania, slowniki);
+  const sd = reguly.regulyStatystyk.statystykiDziennika(wpisy);
+
+  // --- zadania ---
+  sprawdz('liczba zadan lacznie', sz.lacznie === ZADANIA.length);
+  sprawdz(
+    'suma zadan wg stanu = liczba wszystkich',
+    sz.wgStanu.reduce((a, s) => a + s.ile, 0) === ZADANIA.length,
+    JSON.stringify(sz.wgStanu)
+  );
+  sprawdz(
+    'suma zadan wg klienta = liczba wszystkich (z pozycja "(brak)")',
+    sz.wgKlienta.reduce((a, s) => a + s.ile, 0) === ZADANIA.length
+  );
+
+  /*
+    W zestawie testowym tylko zadanie G ma start i koniec (10.08 -> 12.08 = 2 dni).
+    Srednia liczy sie ta sama funkcja co kolumna w tabeli.
+  */
+  sprawdz(
+    'sredni czas trwania liczony tylko z zadan majacych obie daty',
+    sz.czasTrwania.ile === 1 && sz.czasTrwania.srednia === 2,
+    JSON.stringify(sz.czasTrwania)
+  );
+
+  /*
+    Zadne zadanie w zestawie nie ma JEDNOCZESNIE terminu i daty zakonczenia
+    (G ma daty, ale nie ma terminu), wiec mianownik jest zerowy,
+    a procent MUSI byc null - nie NaN i nie 0.
+  */
+  sprawdz(
+    'po terminie: pusty mianownik daje procent null, nie NaN',
+    sz.poTerminie.zBadanych === 0 && sz.poTerminie.procent === null,
+    JSON.stringify(sz.poTerminie)
+  );
+
+  // Sztuczny zestaw pod sam wskaznik "po terminie" - liczony na dniach kalendarzowych.
+  const proba = [
+    // zakonczone dzien po terminie -> PO TERMINIE
+    { termin: '2026-03-10T09:00', czas_zakonczenia: '2026-03-11T09:00' },
+    // zakonczone tego samego dnia, ale pozniejsza godzina -> NA CZAS (liczymy dni)
+    { termin: '2026-03-10T09:00', czas_zakonczenia: '2026-03-10T23:00' },
+    // zakonczone przed terminem -> NA CZAS
+    { termin: '2026-03-10T09:00', czas_zakonczenia: '2026-03-01T09:00' },
+    // brak jednej z dat -> POZA mianownikiem
+    { termin: '2026-03-10T09:00', czas_zakonczenia: null },
+    { termin: null, czas_zakonczenia: '2026-03-10T09:00' },
+  ];
+  const wynikProby = reguly.regulyStatystyk.poTerminie(proba);
+  sprawdz(
+    'po terminie: mianownik to tylko rekordy z OBIEMA datami (3 z 5)',
+    wynikProby.zBadanych === 3,
+    JSON.stringify(wynikProby)
+  );
+  sprawdz(
+    'po terminie: 1 z 3 spoznione (33,3%)',
+    wynikProby.ile === 1 && Math.round(wynikProby.procent) === 33,
+    JSON.stringify(wynikProby)
+  );
+  sprawdz(
+    'po terminie: zakonczenie o 23:00 w dniu terminu to NIE spoznienie (porownanie na dniach)',
+    wynikProby.ile === 1
+  );
+
+  // --- dziennik ---
+  sprawdz('liczba wpisow dziennika', sd.lacznie === WPISY.length);
+  sprawdz('zakres dat od najstarszego do najnowszego', sd.odDaty === '2024-03-05' && sd.doDaty === '2025-01-20');
+
+  /*
+    Tabela miesieczna. W zestawie: 2024-03 ma 3 wpisy (wszystkie z refleksja),
+    2024-06 ma 1 wpis bez refleksji (samo sniadanie - to NIE jest pole refleksyjne),
+    2025-01 ma 1 wpis z refleksja.
+  */
+  sprawdzListe(
+    'miesiace w kolejnosci chronologicznej',
+    sd.miesiace.map((m) => m.miesiac),
+    ['2024-03', '2024-06', '2025-01']
+  );
+  sprawdzListe(
+    'liczba wpisow w miesiacach',
+    sd.miesiace.map((m) => m.wpisow),
+    [3, 1, 1]
+  );
+  sprawdzListe(
+    'wpisy z refleksja w miesiacach (sniadanie NIE liczy sie jako refleksja)',
+    sd.miesiace.map((m) => m.zRefleksja),
+    [3, 0, 1]
+  );
+  sprawdzListe(
+    'odsetek refleksji w miesiacach',
+    sd.miesiace.map((m) => Math.round(m.procent)),
+    [100, 0, 100]
+  );
+  sprawdz(
+    'miesiace bez wpisow nie pojawiaja sie w tabeli',
+    !sd.miesiace.some((m) => m.miesiac === '2024-04')
+  );
+
+  // Pole wypelnione pustym tekstem musi liczyc sie jako BRAK refleksji.
+  sprawdz(
+    'pusty tekst w polu refleksyjnym liczy sie jako brak',
+    reguly.regulyStatystyk.maRefleksje({ wdziecznosc: '   ', bledy: null }) === false
+  );
+  sprawdz(
+    'wypelnione choc jedno pole refleksyjne wystarczy',
+    reguly.regulyStatystyk.maRefleksje({ wdziecznosc: null, do_przemyslenia: 'cos' }) === true
+  );
+
+  // Srednie pomijaja braki i raportuja, z ilu rekordow policzone.
+  const ocenaStresu = sd.oceny.find((o) => o.pole === 'stres');
+  sprawdz('oceny obejmuja wszystkie cztery skale', sd.oceny.length === 4);
+  sprawdz(
+    'srednia raportuje liczbe rekordow, na ktorych sie opiera',
+    typeof ocenaStresu.ile === 'number'
+  );
+  const sr = reguly.regulyStatystyk.srednia(
+    [{ x: 2 }, { x: 4 }, { x: null }, { x: undefined }],
+    'x'
+  );
+  sprawdz(
+    'srednia pomija braki: [2,4,null,undefined] -> 3 z 2 rekordow',
+    sr.srednia === 3 && sr.ile === 2 && sr.min === 2 && sr.max === 4,
+    JSON.stringify(sr)
+  );
+  sprawdz(
+    'srednia z pustej listy -> null, nie NaN',
+    reguly.regulyStatystyk.srednia([], 'x').srednia === null
+  );
+}
+
 async function testujImport() {
   sekcja('IMPORT (regresja odrzucen)');
 
@@ -603,6 +769,7 @@ async function main() {
 
     await testujZadania(reguly, slowniki);
     await testujDziennik(reguly);
+    await testujStatystyki(reguly);
     await testujImport();
     await testujLimityCiala();
   } catch (e) {
