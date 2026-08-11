@@ -93,8 +93,6 @@
   /** Kolumna wyliczana: ile PELNYCH DNI zostalo do terminu (ujemne = po terminie). */
   const dniDoTerminu = (z) => regulyZadan.dniDoTerminu(z, dzisiajISO());
 
-  /** Kolumna wyliczana: ile PELNYCH DNI trwalo zadanie. Puste, gdy brakuje ktorejs z dat. */
-  const czasTrwania = regulyZadan.czasTrwania;
 
   /** Etykieta slowna priorytetu. Numer spoza slownika pokazujemy w nawiasach. */
   function etykietaPriorytetu(numer) {
@@ -285,6 +283,36 @@
     return td;
   }
 
+  /*
+    Trudnosc: 1-3, opcjonalna. Etykiety slowne, bo sama cyfra nic nie mowi.
+    Wartosci sa krotka, zamknieta lista, wiec wystarcza staly zestaw w kodzie -
+    inaczej niz stany czy klienci, ktore mieszkaja w slownikach.
+  */
+  const TRUDNOSCI = [
+    { wartosc: 1, etykieta: '1 Łatwe' },
+    { wartosc: 2, etykieta: '2 Średnie' },
+    { wartosc: 3, etykieta: '3 Trudne' },
+  ];
+
+  /** Komorka z recznie wpisywanym czasem trwania w godzinach (liczy sie do XP). */
+  function komorkaGodzin(z) {
+    const td = document.createElement('td');
+    td.className = 'kol-godziny';
+    td.dataset.pole = 'czas_trwania_godziny';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.step = '0.5'; // polgodziny to najczestsza jednostka przy szacowaniu
+    input.value = z.czas_trwania_godziny ?? '';
+    input.addEventListener('change', () =>
+      zapisz(td.closest('tr'), 'czas_trwania_godziny', input.value)
+    );
+
+    td.appendChild(input);
+    return td;
+  }
+
   /** Pusta komorka na wartosc wyliczana - wypelnia ja odswiezWyliczone(). */
   function komorkaWyliczona(nazwa) {
     const td = document.createElement('td');
@@ -334,12 +362,19 @@
         slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
         false
       ),
+      komorkaSelect(
+        z,
+        'trudnosc',
+        'kol-trudnosc',
+        TRUDNOSCI,
+        true // trudnosc jest opcjonalna - wolno ja zostawic pusta
+      ),
+      komorkaGodzin(z),
       komorkaSelect(z, 'klient_kategoria', 'kol-klient', jakoOpcje(slowniki.klienci), true),
       komorkaZnacznikCzasu(z, 'start_zadania'),
       komorkaZnacznikCzasu(z, 'termin'),
       komorkaWyliczona('dni_do_terminu'),
-      komorkaZnacznikCzasu(z, 'czas_zakonczenia'),
-      komorkaWyliczona('czas_trwania')
+      komorkaZnacznikCzasu(z, 'czas_zakonczenia')
     );
     tr.appendChild(komorkaUsun(z));
 
@@ -406,7 +441,7 @@
     return oczekiwana.length !== obecna.length || oczekiwana.some((id, i) => id !== obecna[i]);
   }
 
-  /** Przelicza obie kolumny wyliczane dla jednego wiersza na podstawie lokalnej kopii danych. */
+  /** Przelicza kolumne wyliczana i znacznik brakujacych danych do XP. */
   function odswiezWyliczone(tr) {
     const z = zadania.get(Number(tr.dataset.id));
     if (!z) return;
@@ -420,9 +455,30 @@
       doTerminu !== null && doTerminu < 0 && z.stan !== slowniki.stanZakonczony
     );
 
-    const trwanie = czasTrwania(z);
-    tr.querySelector('[data-wyliczane="czas_trwania"]').textContent =
-      trwanie === null ? '' : trwanie;
+    odswiezWskazowkeXp(tr, z);
+  }
+
+  /*
+    Delikatna wskazowka: zadanie jest zrobione, ale bez trudnosci albo czasu
+    nie da sie policzyc XP, wiec przepada. Zolty znacznik (nie czerwony - to nie blad,
+    zapis sie udal) na obu komorkach, ktore trzeba uzupelnic.
+
+    Sam wynik XP liczy serwer (lib/nagrody.js) i pokazuje strona Postać - tutaj
+    celowo NIE powtarzamy silnika, zeby nie mial dwoch implementacji.
+  */
+  function odswiezWskazowkeXp(tr, z) {
+    const zrobione = z.stan === slowniki.stanZakonczony;
+    const brakuje = !regulyZadan.maDaneDoXp(z);
+    const pokaz = zrobione && brakuje;
+
+    for (const pole of ['trudnosc', 'czas_trwania_godziny']) {
+      const td = tr.querySelector(`[data-pole="${pole}"]`);
+      if (!td) continue;
+
+      td.classList.toggle('brak-danych-xp', pokaz);
+      if (pokaz) td.title = 'Uzupełnij trudność i czas, by policzyć XP za to zadanie.';
+      else td.removeAttribute('title');
+    }
   }
 
   /** Synchronizuje wiersz z lokalna kopia danych, bez przebudowy tabeli. */
@@ -554,12 +610,13 @@
     'nazwa',
     'priorytet',
     'priorytet_etykieta',
+    'trudnosc',
+    'czas_trwania_godziny',
     'klient_kategoria',
     'start_zadania',
     'termin',
     'czas_zakonczenia',
     'dni_do_terminu',
-    'czas_trwania_dni',
   ];
 
   function eksportujCsv() {
@@ -578,14 +635,15 @@
       z.nazwa,
       z.priorytet,
       etykietaPriorytetu(z.priorytet),
+      z.trudnosc,
+      z.czas_trwania_godziny,
       z.klient_kategoria,
       z.start_zadania,
       z.termin,
       z.czas_zakonczenia,
-      // Obie kolumny wyliczane to MIGAWKA na moment eksportu - "dni do terminu"
+      // Kolumna wyliczana to MIGAWKA na moment eksportu - "dni do terminu"
       // liczy sie wzgledem dzisiejszej daty, wiec jutro ten sam plik wyszedlby inny.
       dniDoTerminu(z),
-      czasTrwania(z),
     ]);
 
     csv.pobierz(`zadania-eksport-${dzisiajISO()}.csv`, KOLUMNY_CSV, wiersze);

@@ -19,6 +19,7 @@ const czasRouter = require('./routes/czas');
 const importRouter = require('./routes/import');
 const dziennikRouter = require('./routes/dziennik');
 const nawykiRouter = require('./routes/nawyki');
+const postacRouter = require('./routes/postac');
 
 const PORT = process.env.PORT || 3000;
 
@@ -57,6 +58,8 @@ app.use('/api/slowniki', slownikiRouter);
 app.use('/api/czas', czasRouter);
 // Nazwy nawykow to kilkadziesiat bajtow - domyslny limit wystarcza z zapasem.
 app.use('/api/nawyki', nawykiRouter);
+// Router obsluguje /api/postac oraz /api/zakupy - stad montowanie na /api.
+app.use('/api', postacRouter);
 
 // --- Frontend -------------------------------------------------------------
 // Zwykle pliki statyczne, bez build stepu. Wejscie: public/index.html.

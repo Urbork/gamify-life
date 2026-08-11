@@ -64,10 +64,9 @@ Obok pojawią się pliki `baza.db-wal` i `baza.db-shm` (tryb WAL SQLite) — to 
   w każdy `tbody` w tabeli, więc obejmą też kolejne tabele (np. przyszły dziennik)
   bez dopisywania czegokolwiek.
 
-Kolumny **Dni do terminu** i **Czas trwania (dni)** są wyliczane w przeglądarce przy
-renderowaniu i **nie są zapisywane w bazie**. Pierwsza to `termin − dzisiaj`
-(wartość ujemna = po terminie, podświetlana na czerwono), druga to
-`zakończenie − start` (pusta, gdy brakuje którejś z dat).
+Kolumna **Dni do terminu** jest wyliczana w przeglądarce przy renderowaniu i **nie jest
+zapisywana w bazie** — to `termin − dzisiaj` (wartość ujemna = po terminie, podświetlana
+na czerwono).
 
 ### Daty z godziną
 
@@ -93,6 +92,26 @@ W bazie zapisany jest **numer**, nie etykieta — dzięki temu sortowanie jest n
 (0 < 1 < 2…, a nie alfabetycznie „Brak, Niski, Pilne, Średni, Wysoki"), a zmiana nazwy
 w słowniku nie wymaga ruszania danych. Lista mieszka w `PRIORYTETY`
 w [config/slowniki.js](config/slowniki.js).
+
+### Trudność i czas (h)
+
+Dwa pola opcjonalne, oba potrzebne do naliczenia XP:
+
+- **Trudność** — 1 Łatwe / 2 Średnie / 3 Trudne.
+- **Czas (h)** — ile godzin zadanie faktycznie zajęło, **wpisywane ręcznie**.
+
+**Trudność jest całkowicie niezależna od Priorytetu.** Priorytet mówi, jak pilne jest
+zadanie (zarządzanie); trudność — ile było warte (naliczanie XP). Oba zostają.
+
+Zadanie w stanie „Zrobione" bez któregoś z tych pól dostaje **żółty znacznik** na obu
+komórkach i podpowiedź „uzupełnij trudność i czas, by policzyć XP". To uwaga, nie błąd —
+zapis przechodzi, po prostu XP z tego zadania przepada.
+
+> **Usunięta kolumna „Czas trwania (dni)".** Liczyła się automatycznie z różnicy
+> `zakończenie − start`, czyli mówiła, ile dni zadanie było *otwarte* — a nie ile zajęło
+> pracy. Zastąpiło ją ręczne pole godzin. Skutek: średnia w statystykach zmieniła jednostkę
+> z **dni na godziny** i obejmuje tylko zadania z wypełnionym polem; historycznych nie da się
+> odtworzyć z dat. Kolumna zniknęła też z eksportu CSV i z kopii zapasowej.
 
 ### Sortowanie
 
@@ -462,6 +481,7 @@ Co pokrywa:
 | --- | --- |
 | Zadania | 4 presety zakresu dat · sortowanie po 10 kolumnach × 2 kierunki z regułą „Zrobione na dole" · kolumny wyliczane (w tym `23:59 → 00:01` = 2 dni) · filtry nazwy, stanu i priorytetu `0` |
 | Dziennik | filtr nawyku (także że „Water" nie łapie „Drink Water") · szukanie z wielkością liter · własny zakres dat · sortowanie |
+| Silnik XP | minimalne 1 XP · trzy progi terminowości · granica poziomu przy 500 XP · reset i prestiż przy 50 000 · odrzucenie zakupu ponad saldo · zgodność list pól po obu stronach |
 | Statystyki | odsetek „po terminie" (mianownik, porównanie na dniach, pusty mianownik → `null` zamiast `NaN`) · tabela miesięczna · średnie pomijające braki |
 | Import | oba profile odrzucają te same wiersze z tymi samymi powodami; transformacje Notion (`@March 2, 2024`, `7:30 → 07:30`, nawyki bez URL-i, literalne `null`) |
 | Endpointy | `PATCH /api/zadania/:id` z ciałem 300 kB → **413**, `PATCH /api/dziennik/:id` z tym samym ciałem → **200** |
@@ -531,6 +551,75 @@ kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + d
 Sprawdzenie po skonfigurowaniu: kliknij zadanie prawym → **Uruchom**, a potem zajrzyj
 do `backups/`. Kolumna **Wynik ostatniego uruchomienia** powinna pokazać `0x0`.
 
+## Postać — XP, poziomy i waluta
+
+Strona **/postac.html**. Pokazuje poziom, prestiż, pasek postępu, rozbicie źródeł XP
+oraz formularz wydawania waluty z listą zakupów.
+
+**Wszystko liczy się na żywo** z zadań i wpisów dziennika, przy każdym wejściu na stronę.
+Nie ma logu zdarzeń ani zapisanego „stanu XP" — dzięki temu poprawienie starego zadania
+albo wpisu natychmiast poprawia wynik historyczny, a cała dotychczasowa historia wlicza się
+sama, bez żadnego „aktywowania". Reguły siedzą w [lib/nagrody.js](lib/nagrody.js).
+
+Jedynym trwale zapisanym elementem jest **wydawanie** waluty (tabela `zakupy`) — zakupu
+nie da się odtworzyć z niczego innego, więc musi być zdarzeniem.
+
+### Naliczanie XP
+
+**Zadanie** (tylko `Zrobione`, tylko z wypełnioną trudnością i czasem):
+
+```
+bazowe = max(1, round(trudnosc × czas_trwania_godziny))
+xp     = max(1, round(bazowe × mnoznik_terminowosci))
+```
+
+`max(1, …)` sprawia, że ukończone zadanie **nigdy nie jest warte zera**.
+
+Mnożnik terminowości liczy się na **pełnych dniach kalendarzowych** (spójnie z resztą
+aplikacji — zakończenie o 23:00 w dniu terminu to nadal *na czas*):
+
+| Zapas = `termin − zakończenie` | Mnożnik |
+| --- | --- |
+| ≥ 3 dni | **×1,5** |
+| 0…2 dni | ×1 |
+| < 0 (po terminie) | ×0,5 |
+| brak którejś z dat | ×1 (neutralnie) |
+
+**Nawyki:** 3 XP za każdy odhaczony nawyk, sumowane po wszystkich wpisach.
+
+**Dziennik:** 5 XP za wpis z jakąkolwiek treścią + 10 XP za każde z sześciu wypełnionych
+pól refleksyjnych. Ten sam licznik pokazuje kolumna **Refleksje** („4/6") w tabeli dziennika.
+
+### Poziomy i prestiż
+
+Próg poziomu to **500 XP**, a po **100 poziomach** licznik wraca do 1 i rośnie prestiż:
+
+```
+prestiz    = floor(xp / 50000)
+xp_w_cyklu = xp % 50000
+poziom     = floor(xp_w_cyklu / 500) + 1
+```
+
+### Waluta
+
+`waluta_zarobiona = floor(XP / 2)`, pomniejszona o sumę kosztów z tabeli `zakupy`.
+**Nie da się wejść na minus** — zakup ponad stan konta jest odrzucany z komunikatem
+podającym, ile dokładnie brakuje. Cofnięcie zakupu zwraca walutę (saldo liczy się z sumy,
+więc usunięcie wiersza wystarczy).
+
+### Dlaczego silnik jest po stronie serwera
+
+W odróżnieniu od `reguly-*.js` z `public/js`, `lib/nagrody.js` **nie musi działać
+w przeglądarce** — frontend dostaje gotowe liczby z `GET /api/postac`. Dzięki temu smoke
+test sprawdza go zwykłym `require()`, bez sandboksu `vm` (ta sztuczka jest potrzebna tylko
+dla plików działających po obu stronach). Wszystkie funkcje są czyste, więc testy karmią je
+syntetycznymi przypadkami brzegowymi bez dotykania bazy.
+
+> **Jedna świadoma duplikacja.** Lista sześciu pól refleksyjnych istnieje w `lib/nagrody.js`
+> (serwer) i w `public/js/reguly-statystyk.js` (przeglądarka — licznik „4/6" i tabela
+> miesięczna). Granica serwer–przeglądarka wymusza kopię, więc zamiast refaktoru pilnuje jej
+> asercja w smoke teście: gdyby ktoś dopisał pole tylko w jednym miejscu, test to wychwyci.
+
 ## Struktura projektu
 
 ```
@@ -544,12 +633,14 @@ db/migracje.js               wersjonowane migracje schematu
 lib/csv-parser.js            parser CSV                  — do użycia w każdym module
 lib/daty.js                  parsowanie i normalizacja dat — j.w.
 lib/import.js                silnik importu (generyczny)  — j.w.
+lib/nagrody.js               silnik XP, poziomów i waluty (czyste funkcje)
 routes/zadania.js            REST API dla zadań
 routes/slowniki.js           listy wyboru dla frontendu
 routes/czas.js               dzisiejsza data serwera (presety filtrów)
 routes/import.js             podgląd i zatwierdzenie importu (wszystkie profile)
 routes/dziennik.js           REST API dla dziennika
 routes/nawyki.js             REST API słownika nawyków
+routes/postac.js             XP, poziom, waluta i zakupy
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
@@ -561,6 +652,8 @@ public/js/reguly-zadan.js    czyste reguły zadań (filtry, sortowanie, wyliczen
 public/js/reguly-dziennika.js czyste reguły dziennika
 public/js/reguly-statystyk.js czyste obliczenia statystyk
 public/statystyki.html       strona statystyk
+public/postac.html           strona postaci (XP, waluta)
+public/js/postac.js          renderowanie strony postaci
 public/js/statystyki.js      renderowanie statystyk
 test/smoke.js                npm run test:smoke
 scripts/backup.js            npm run backup
@@ -588,6 +681,10 @@ podając własny `config/mapowanie-*.js`.
 | `POST`   | `/api/nawyki`       | dodaje nazwę, odrzuca duplikat (409)     |
 | `PATCH`  | `/api/nawyki/:id`   | zmienia nazwę **i kaskadowo** poprawia wpisy |
 | `DELETE` | `/api/nawyki/:id`   | usuwa ze słownika, **nie** rusza wpisów  |
+| `GET`    | `/api/postac`       | XP, poziom, prestiż, waluta, rozbicie źródeł |
+| `GET`    | `/api/zakupy`       | lista wydatków                           |
+| `POST`   | `/api/zakupy`       | dodaje wydatek, odrzuca ponad stan konta |
+| `DELETE` | `/api/zakupy/:id`   | cofa zakup (waluta wraca)                |
 | `GET`    | `/api/dziennik`     | lista wszystkich wpisów                  |
 | `POST`   | `/api/dziennik`     | tworzy wpis z dzisiejszą datą            |
 | `PATCH`  | `/api/dziennik/:id` | aktualizuje wybrane pola                 |

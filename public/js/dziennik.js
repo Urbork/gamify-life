@@ -329,12 +329,31 @@
   // Renderowanie
   // ==========================================================================
 
+  /*
+    Licznik "4/6" - ile z szesciu pol refleksyjnych ma tresc.
+    Informacyjny, tylko do odczytu; te same pola licza sie do XP na stronie Postać.
+    Liste pol bierzemy z reguly-statystyk.js, zeby nie definiowac jej tu drugi raz.
+  */
+  function komorkaRefleksji(w) {
+    const td = document.createElement('td');
+    td.className = 'kol-refleksje';
+    td.dataset.wyliczane = 'refleksje';
+
+    const pola = regulyStatystyk.POLA_REFLEKSYJNE;
+    const ile = pola.filter((p) => regulyStatystyk.wypelnione(w[p])).length;
+
+    td.textContent = `${ile}/${pola.length}`;
+    td.title = `Wypełnione pola refleksyjne: ${ile} z ${pola.length}`;
+    return td;
+  }
+
   function zbudujWiersz(w) {
     const tr = document.createElement('tr');
     tr.dataset.id = w.id;
 
     tr.appendChild(komorkaId(w));
     for (const kolumna of KOLUMNY) tr.appendChild(komorkaDla(w, kolumna));
+    tr.appendChild(komorkaRefleksji(w));
     tr.appendChild(komorkaUsun(w));
 
     return tr;
@@ -447,6 +466,10 @@
       if (kontrolka) kontrolka.value = wartosc;
       else td.textContent = wartosc;
     }
+
+    // Licznik refleksji zalezy od tresci pol, wiec musi sie przeliczyc po zapisie.
+    const tdRefleksje = tr.querySelector('[data-wyliczane="refleksje"]');
+    if (tdRefleksje) tdRefleksje.replaceWith(komorkaRefleksji(w));
   }
 
   function przywrocKomorke(tr, pole) {

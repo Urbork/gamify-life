@@ -169,7 +169,38 @@ const MIGRACJE = [
     for (const nazwa of NAZWY) wstaw.run(nazwa);
   },
 
-  // --- 5: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 5: trudnosc i czas zadania + tabela zakupow -----------------------
+  (db) => {
+    /*
+      Dwa nowe pola zadania, oba OPCJONALNE - stad brak NOT NULL i brak wartosci
+      domyslnej. Zadanie bez nich jest poprawne, po prostu nie liczy sie do XP.
+
+      `trudnosc` jest CALKOWICIE NIEZALEZNA od `priorytet`. Priorytet mowi,
+      jak pilne jest zadanie (zarzadzanie), trudnosc - ile bylo warte (naliczanie XP).
+      Oba zostaja.
+    */
+    db.exec(`ALTER TABLE zadania ADD COLUMN trudnosc INTEGER`);
+    db.exec(`ALTER TABLE zadania ADD COLUMN czas_trwania_godziny REAL`);
+
+    /*
+      Zakupy to JEDYNA trwale zapisana czesc systemu nagrod.
+
+      Cala reszta (XP, poziom, prestiz, waluta zarobiona) liczy sie NA ZYWO
+      z zadan i wpisow dziennika, wiec poprawienie starego zadania automatycznie
+      poprawia wynik historyczny. Wydawanie waluty jest zdarzeniem, ktorego
+      nie da sie odtworzyc z niczego innego - dlatego tabela.
+    */
+    db.exec(`
+      CREATE TABLE zakupy (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazwa TEXT NOT NULL,
+        koszt INTEGER NOT NULL,
+        data  TEXT NOT NULL DEFAULT (date('now', 'localtime'))
+      )
+    `);
+  },
+
+  // --- 6: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {

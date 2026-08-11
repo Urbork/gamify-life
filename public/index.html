@@ -12,6 +12,7 @@
       <nav class="nawigacja">
         <a href="/dziennik.html">Dziennik →</a>
         <a href="/statystyki.html">Statystyki →</a>
+        <a href="/postac.html">Postać →</a>
       </nav>
       <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
@@ -106,6 +107,18 @@
           <th class="kol-stan" data-kolumna="stan">Stan</th>
           <th class="kol-nazwa" data-kolumna="nazwa">Nazwa</th>
           <th class="kol-priorytet" data-kolumna="priorytet">Priorytet</th>
+          <!-- Trudnosc jest NIEZALEZNA od priorytetu: priorytet = pilnosc (zarzadzanie),
+               trudnosc = waga zadania przy naliczaniu XP. -->
+          <th class="kol-trudnosc" data-kolumna="trudnosc" title="Waga zadania przy naliczaniu XP">
+            Trudność
+          </th>
+          <th
+            class="kol-godziny"
+            data-kolumna="czas_trwania_godziny"
+            title="Ile godzin faktycznie zajęło — wpisywane ręcznie, liczy się do XP"
+          >
+            Czas (h)
+          </th>
           <th class="kol-klient" data-kolumna="klient_kategoria">Klient / kategoria</th>
           <th class="kol-data" data-kolumna="start_zadania">Start</th>
           <th class="kol-data" data-kolumna="termin">Termin</th>
@@ -113,9 +126,6 @@
             Dni do terminu
           </th>
           <th class="kol-data" data-kolumna="czas_zakonczenia">Zakończenie</th>
-          <th class="kol-liczba" data-kolumna="czas_trwania" title="Wyliczane: zakończenie minus start">
-            Czas trwania (dni)
-          </th>
           <th class="kol-akcje"></th>
         </tr>
       </thead>

@@ -272,6 +272,21 @@ th[data-kierunek='malejaco'] {
 .kol-priorytet {
   width: 100px;
 }
+.kol-trudnosc {
+  width: 110px;
+}
+.kol-godziny {
+  width: 80px;
+}
+
+/*
+  Zadanie zrobione, ale bez trudnosci albo czasu - nie da sie policzyc XP.
+  Zolty, nie czerwony: zapis sie udal, to tylko podpowiedz, ze cos przepada.
+*/
+td.brak-danych-xp {
+  background: var(--uwaga-tlo);
+  box-shadow: inset 0 0 0 1px var(--uwaga);
+}
 .kol-klient {
   width: 180px;
 }
@@ -544,6 +559,99 @@ td.komorka-nawykow:empty::before {
 .brak-danych {
   color: var(--tekst-slaby);
   font-style: italic;
+}
+
+/* --- strona Postać --- */
+
+.wskaznik {
+  border: 1px solid var(--ramka);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.poziom-naglowek {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.poziom-numer {
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.prestiz {
+  font-size: 13px;
+  color: var(--tekst-slaby);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Pasek postepu do nastepnego poziomu - zwykly div, bez biblioteki. */
+.postep-tlo {
+  height: 14px;
+  background: #eee;
+  border: 1px solid var(--ramka);
+  margin-bottom: 4px;
+}
+
+.postep {
+  height: 100%;
+  background: #3b7ddd;
+  min-width: 1px;
+}
+
+.wskaznik .karty {
+  margin-top: 10px;
+}
+
+.formularz-zakupu {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.formularz-zakupu input {
+  font: inherit;
+  padding: 3px 5px;
+}
+
+.formularz-zakupu label {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tabele na stronie Postać sa waskie - nie rozciagamy ich na cala szerokosc. */
+#rozbicie table,
+#lista-zakupow table {
+  width: auto;
+  min-width: 0;
+}
+
+#rozbicie td,
+#rozbicie th,
+#lista-zakupow td,
+#lista-zakupow th {
+  padding: 2px 8px;
+}
+
+#rozbicie td.liczbowa,
+#rozbicie th.liczbowa,
+#lista-zakupow td.liczbowa,
+#lista-zakupow th.liczbowa {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Licznik wypelnionych pol refleksyjnych w dzienniku ("4/6"). */
+.kol-refleksje {
+  width: 70px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--tekst-slaby);
 }
 
 /* Linki nawigacyjne miedzy stronami. */

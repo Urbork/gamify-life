@@ -25,6 +25,10 @@ const POLA_EDYTOWALNE = [
   'stan',
   'nazwa',
   'priorytet',
+  // trudnosc jest NIEZALEZNA od priorytetu: priorytet mowi jak pilne,
+  // trudnosc - ile zadanie bylo warte przy naliczaniu XP.
+  'trudnosc',
+  'czas_trwania_godziny',
   'klient_kategoria',
   'start_zadania',
   'termin',
@@ -73,6 +77,32 @@ function znormalizuj(pole, wartosc) {
       );
     }
     return numer;
+  }
+
+  /*
+    Trudnosc i czas trwania sa OPCJONALNE - w odroznieniu od priorytetu wolno je
+    wyczyscic. Puste pole oznacza po prostu, ze zadanie nie liczy sie do XP.
+  */
+  if (pole === 'trudnosc' || pole === 'czas_trwania_godziny') {
+    if (wartosc === null || wartosc === undefined || wartosc === '') return null;
+
+    // To samo zawezenie typu co wyzej: Number('') i Number(null) daja 0.
+    const typPoprawny =
+      typeof wartosc === 'number' || (typeof wartosc === 'string' && wartosc.trim() !== '');
+    const liczba = typPoprawny ? Number(wartosc) : NaN;
+
+    if (pole === 'trudnosc') {
+      if (!Number.isInteger(liczba) || liczba < 1 || liczba > 3) {
+        throw blad(400, `Trudność musi być liczbą całkowitą 1-3, otrzymano "${wartosc}".`);
+      }
+      return liczba;
+    }
+
+    // Czas trwania jest REAL - dopuszczamy ulamki godzin (0.5h itd.).
+    if (!Number.isFinite(liczba) || liczba < 0) {
+      throw blad(400, `Czas trwania musi być liczbą nieujemną, otrzymano "${wartosc}".`);
+    }
+    return liczba;
   }
 
   // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i klienta).

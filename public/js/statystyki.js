@@ -125,10 +125,10 @@
     karty.appendChild(
       karta(
         'Średni czas trwania',
-        s.czasTrwania.srednia === null ? '—' : liczba(s.czasTrwania.srednia) + ' dni',
+        s.czasTrwania.srednia === null ? '—' : liczba(s.czasTrwania.srednia) + ' h',
         s.czasTrwania.ile > 0
-          ? `z ${s.czasTrwania.ile} zadań z obiema datami`
-          : 'brak zadań z datą startu i zakończenia'
+          ? `z ${s.czasTrwania.ile} zadań z wpisanym czasem`
+          : 'brak zadań z wpisanym czasem (h)'
       )
     );
 

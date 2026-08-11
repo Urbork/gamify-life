@@ -213,7 +213,16 @@ const ZADANIA = [
   { nazwa: 'B termin jutro', stan: 'Czeka', priorytet: 1, termin: dzien(1), start_zadania: '' },
   { nazwa: 'C termin za 5 dni', stan: 'W trakcie', priorytet: 2, termin: dzien(5), start_zadania: '' },
   { nazwa: 'D termin za 20 dni', stan: 'Blok', priorytet: 4, termin: dzien(20), start_zadania: '' },
-  { nazwa: 'E zrobione dzis', stan: 'Zrobione', priorytet: 2, termin: dzien(0), start_zadania: '' },
+  // Zrobione, z kompletem danych do XP: trudnosc 2 x 2h = 4 XP, termin dzis = mnoznik 1.
+  {
+    nazwa: 'E zrobione dzis',
+    stan: 'Zrobione',
+    priorytet: 2,
+    termin: dzien(0),
+    start_zadania: '',
+    trudnosc: 2,
+    czas_trwania_godziny: 2,
+  },
   { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '' },
   /*
     Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
@@ -228,6 +237,8 @@ const ZADANIA = [
     start_zadania: dzienOGodzinie(1, '23:59'),
     czas_zakonczenia: dzienOGodzinie(3, '00:01'),
     termin: '',
+    // Czas wpisany recznie - nie ma juz zwiazku z roznica dat powyzej.
+    czas_trwania_godziny: 4,
   },
 ];
 
@@ -271,14 +282,22 @@ async function testujZadania(reguly, slowniki) {
     'Dni do terminu: brak terminu -> null',
     reguly.regulyZadan.dniDoTerminu(znajdz('F bez zadnych dat'), DZIS) === null
   );
+  /*
+    Kolumna "Czas trwania (dni)" liczona z roznicy dat zostala USUNIETA -
+    zastapilo ja reczne pole `czas_trwania_godziny`. Zamiast niej sprawdzamy
+    wskaznik kompletnosci danych do XP.
+  */
   sprawdz(
-    'Czas trwania: 23:59 -> 00:01 to 2 dni kalendarzowe (godzina ignorowana)',
-    reguly.regulyZadan.czasTrwania(znajdz('G trwanie przez polnoc')) === 2,
-    `otrzymano ${reguly.regulyZadan.czasTrwania(znajdz('G trwanie przez polnoc'))}`
+    'maDaneDoXp: komplet trudnosci i czasu -> true',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 2, czas_trwania_godziny: 1.5 }) === true
   );
   sprawdz(
-    'Czas trwania: brak daty konca -> null',
-    reguly.regulyZadan.czasTrwania(znajdz('A termin dzis')) === null
+    'maDaneDoXp: brak czasu -> false',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 2 }) === false
+  );
+  sprawdz(
+    'maDaneDoXp: trudnosc 0 nie jest "brakiem" tylko wartoscia spoza zakresu',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 0, czas_trwania_godziny: 1 }) === true
   );
 
   // --- presety zakresu dat ---
@@ -344,7 +363,8 @@ async function testujZadania(reguly, slowniki) {
     'termin',
     'dni_do_terminu',
     'czas_zakonczenia',
-    'czas_trwania',
+    'trudnosc',
+    'czas_trwania_godziny',
   ];
 
   let regulaGrupyTrzyma = true;
@@ -516,12 +536,12 @@ async function testujStatystyki(reguly) {
   );
 
   /*
-    W zestawie testowym tylko zadanie G ma start i koniec (10.08 -> 12.08 = 2 dni).
-    Srednia liczy sie ta sama funkcja co kolumna w tabeli.
+    Sredni czas trwania liczy sie teraz z RECZNEGO pola `czas_trwania_godziny`
+    (w GODZINACH), a nie z roznicy dat. W zestawie maja je dwa zadania: 2h i 4h.
   */
   sprawdz(
-    'sredni czas trwania liczony tylko z zadan majacych obie daty',
-    sz.czasTrwania.ile === 1 && sz.czasTrwania.srednia === 2,
+    'sredni czas trwania w godzinach, tylko z zadan z wpisanym czasem',
+    sz.czasTrwania.ile === 2 && sz.czasTrwania.srednia === 3,
     JSON.stringify(sz.czasTrwania)
   );
 
@@ -628,6 +648,228 @@ async function testujStatystyki(reguly) {
     'srednia z pustej listy -> null, nie NaN',
     reguly.regulyStatystyk.srednia([], 'x').srednia === null
   );
+}
+
+async function testujSilnikXp() {
+  sekcja('SILNIK XP (lib/nagrody.js, w izolacji)');
+
+  /*
+    Silnik jest zwyklym modulem serwerowym, wiec testujemy go przez require(),
+    bez sandboksu vm. Ta sztuczka jest potrzebna tylko dla plikow z public/js,
+    ktore musza dzialac takze w przegladarce.
+
+    Wszystkie funkcje sa czyste, wiec karmimy je syntetycznymi przypadkami
+    brzegowymi - bez bazy, bez HTTP.
+  */
+  const nagrody = require('../lib/nagrody');
+  const zrobione = (o) => nagrody.xpZadania({ stan: 'Zrobione', ...o }).xp;
+
+  // --- XP zadania ---
+  sprawdz(
+    'trywialne zadanie daje 1 XP, nigdy 0',
+    zrobione({ trudnosc: 1, czas_trwania_godziny: 0.1 }) === 1
+  );
+  sprawdz(
+    'trudnosc 3 x 4h = 12 XP (bez dat, mnoznik 1)',
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 12
+  );
+  sprawdz(
+    'zadanie nie-Zrobione daje 0 XP',
+    nagrody.xpZadania({ stan: 'Plan', trudnosc: 3, czas_trwania_godziny: 4 }).xp === 0
+  );
+  sprawdz(
+    'brak trudnosci: 0 XP i flaga brakujaceDane',
+    nagrody.xpZadania({ stan: 'Zrobione', czas_trwania_godziny: 4 }).brakujaceDane === true
+  );
+  sprawdz(
+    'niedokonczone zadanie bez danych NIE jest oznaczone jako brakujace',
+    nagrody.xpZadania({ stan: 'Plan' }).brakujaceDane === false
+  );
+
+  // --- trzy progi terminowosci ---
+  const zDatami = (termin, koniec) =>
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4, termin, czas_zakonczenia: koniec });
+
+  sprawdz('mnoznik x1.5: zapas 5 dni -> 18 XP', zDatami('2026-03-10', '2026-03-05') === 18);
+  sprawdz(
+    'mnoznik x1.5: granica DOKLADNIE 3 dni zapasu -> 18 XP',
+    zDatami('2026-03-10', '2026-03-07') === 18
+  );
+  sprawdz('mnoznik x1: zapas 2 dni -> 12 XP', zDatami('2026-03-10', '2026-03-08') === 12);
+  sprawdz('mnoznik x1: ten sam dzien -> 12 XP', zDatami('2026-03-10', '2026-03-10') === 12);
+  sprawdz(
+    'mnoznik x1: godzina nie psuje - 23:00 w dniu terminu to nadal na czas',
+    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 12
+  );
+  sprawdz('mnoznik x0.5: dzien po terminie -> 6 XP', zDatami('2026-03-10', '2026-03-11') === 6);
+  sprawdz(
+    'mnoznik x1 gdy brakuje ktorejs z dat',
+    zDatami('2026-03-10', null) === 12 && zDatami(null, '2026-03-11') === 12
+  );
+  sprawdz(
+    'dolny limit dziala takze po zmniejszeniu przez x0.5',
+    zrobione({
+      trudnosc: 1,
+      czas_trwania_godziny: 0.1,
+      termin: '2026-03-10',
+      czas_zakonczenia: '2026-03-11',
+    }) === 1
+  );
+
+  // --- dziennik ---
+  sprawdz('pusty wpis nie daje XP', nagrody.xpWpisu({ data: '2026-01-01' }) === 0);
+  sprawdz('wpis z jednym polem refleksyjnym: 5 + 10 = 15', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 15);
+  sprawdz(
+    'wpis z kompletem szesciu pol: 5 + 60 = 65',
+    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 65
+  );
+  sprawdz(
+    'wpis bez refleksji, ale z trescia (samo sniadanie): 5 XP',
+    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 5
+  );
+  sprawdz('trzy nawyki: 3 x 3 = 9 XP', nagrody.xpNawykow({ nawyki: 'A, B, C' }) === 9);
+  sprawdz(
+    'licznik pol refleksyjnych 4/6',
+    nagrody.liczbaWypelnionychPol({ wdziecznosc: 'a', bledy: 'b', rozmowa: 'c', jutro_wazne: 'd' }) === 4
+  );
+  sprawdz(
+    'pusty tekst nie liczy sie jako wypelnione pole',
+    nagrody.liczbaWypelnionychPol({ wdziecznosc: '   ' }) === 0
+  );
+
+  // --- poziomy i prestiz ---
+  const p = nagrody.poziomZXp;
+  sprawdz('0 XP -> poziom 1, prestiz 0, do nastepnego 500', p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 500);
+  sprawdz('499 XP -> nadal poziom 1, brakuje 1 XP', p(499).poziom === 1 && p(499).xpDoNastepnego === 1);
+  sprawdz('DOKLADNIE 500 XP -> poziom 2', p(500).poziom === 2 && p(500).prestiz === 0);
+  sprawdz('49999 XP -> poziom 100, prestiz 0', p(49999).poziom === 100 && p(49999).prestiz === 0);
+  sprawdz(
+    'DOKLADNIE 50000 XP -> reset: prestiz 1, poziom 1',
+    p(50000).prestiz === 1 && p(50000).poziom === 1
+  );
+  sprawdz('50500 XP -> prestiz 1, poziom 2', p(50500).prestiz === 1 && p(50500).poziom === 2);
+
+  // --- waluta ---
+  sprawdz('waluta to polowa XP zaokraglona w dol', nagrody.walutaZarobiona(101) === 50);
+
+  const stan = nagrody.policzPostac(
+    [{ stan: 'Zrobione', trudnosc: 3, czas_trwania_godziny: 4 }],
+    [{ wdziecznosc: 'x', nawyki: 'A, B' }],
+    3
+  );
+  sprawdz(
+    'rozbicie zrodel: zadania 12, dziennik 15, nawyki 6',
+    stan.rozbicie.zadania === 12 && stan.rozbicie.dziennik === 15 && stan.rozbicie.nawyki === 6,
+    JSON.stringify(stan.rozbicie)
+  );
+  sprawdz(
+    'suma 33 XP, waluta 16 - 3 wydane = 13',
+    stan.calkowite_xp === 33 && stan.waluta_dostepna === 13,
+    JSON.stringify({ xp: stan.calkowite_xp, waluta: stan.waluta_dostepna })
+  );
+
+  /*
+    Lista pol refleksyjnych istnieje w DWOCH miejscach: lib/nagrody.js (serwer)
+    i public/js/reguly-statystyk.js (przegladarka, licznik "4/6" i tabela miesieczna).
+    Granica serwer-przegladarka wymusza kopie, wiec pilnujemy jej testem.
+  */
+  const reguly = zaladujReguly();
+  sprawdzListe(
+    'lista pol refleksyjnych identyczna po stronie serwera i przegladarki',
+    nagrody.POLA_REFLEKSYJNE,
+    reguly.regulyStatystyk.POLA_REFLEKSYJNE
+  );
+}
+
+async function testujPostac() {
+  sekcja('POSTAĆ I ZAKUPY (przez HTTP)');
+
+  const { status, tresc: postac } = await zapytaj('GET', '/api/postac');
+  sprawdz('GET /api/postac odpowiada 200', status === 200);
+  sprawdz(
+    'odpowiedz zawiera komplet pol',
+    ['calkowite_xp', 'poziom', 'prestiz', 'xp_do_nastepnego_poziomu', 'waluta_dostepna', 'rozbicie']
+      .every((k) => postac[k] !== undefined),
+    JSON.stringify(Object.keys(postac))
+  );
+  sprawdz(
+    'rozbicie sumuje sie do calkowitego XP',
+    postac.rozbicie.zadania + postac.rozbicie.nawyki + postac.rozbicie.dziennik ===
+      postac.calkowite_xp,
+    JSON.stringify(postac.rozbicie) + ' vs ' + postac.calkowite_xp
+  );
+
+  // --- zakupy ---
+  sprawdz('lista zakupow startuje pusta', (await zapytaj('GET', '/api/zakupy')).tresc.length === 0);
+
+  const dostepna = postac.waluta_dostepna;
+  sprawdz(
+    'zakup ponad stan konta jest ODRZUCONY',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: 'za drogie', koszt: dostepna + 1 })).status === 400
+  );
+  sprawdz(
+    'koszt zerowy i ujemny odrzucone',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: 'darmowe', koszt: 0 })).status === 400 &&
+      (await zapytaj('POST', '/api/zakupy', { nazwa: 'ujemne', koszt: -5 })).status === 400
+  );
+  sprawdz(
+    'pusta nazwa odrzucona',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: '  ', koszt: 1 })).status === 400
+  );
+
+  const { status: statusZakupu, tresc: zakup } = await zapytaj('POST', '/api/zakupy', {
+    nazwa: 'nagroda testowa',
+    koszt: 2,
+  });
+  sprawdz('zakup w ramach salda przechodzi', statusZakupu === 201 && zakup.koszt === 2);
+
+  const { tresc: poZakupie } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'waluta dostepna spadla o koszt zakupu',
+    poZakupie.waluta_dostepna === dostepna - 2,
+    `${poZakupie.waluta_dostepna} vs ${dostepna - 2}`
+  );
+  sprawdz(
+    'XP NIE zmienia sie przy wydawaniu waluty',
+    poZakupie.calkowite_xp === postac.calkowite_xp
+  );
+
+  sprawdz(
+    'DELETE cofa zakup',
+    (await zapytaj('DELETE', `/api/zakupy/${zakup.id}`)).status === 204
+  );
+  const { tresc: poCofnieciu } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'waluta wraca po cofnieciu zakupu',
+    poCofnieciu.waluta_dostepna === dostepna,
+    `${poCofnieciu.waluta_dostepna} vs ${dostepna}`
+  );
+
+  /*
+    Retroaktywnosc: XP liczy sie NA ZYWO, wiec zmiana starego zadania
+    natychmiast zmienia wynik - bez zadnego przeliczania czy "aktywowania".
+  */
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  const doZmiany = zadania.find((z) => z.nazwa === 'A termin dzis');
+  await zapytaj('PATCH', `/api/zadania/${doZmiany.id}`, {
+    stan: 'Zrobione',
+    trudnosc: 3,
+    czas_trwania_godziny: 10,
+  });
+
+  const { tresc: poEdycji } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'edycja starego zadania od razu podnosi XP (liczenie na zywo)',
+    poEdycji.calkowite_xp > postac.calkowite_xp,
+    `${poEdycji.calkowite_xp} vs ${postac.calkowite_xp}`
+  );
+
+  // Przywracamy zestaw testowy do stanu wyjsciowego.
+  await zapytaj('PATCH', `/api/zadania/${doZmiany.id}`, {
+    stan: 'Plan',
+    trudnosc: '',
+    czas_trwania_godziny: '',
+  });
 }
 
 async function testujNawyki() {
@@ -902,6 +1144,8 @@ async function main() {
     await testujZadania(reguly, slowniki);
     await testujDziennik(reguly);
     await testujStatystyki(reguly);
+    await testujSilnikXp();
+    await testujPostac();
     await testujNawyki();
     await testujImport();
     await testujLimityCiala();

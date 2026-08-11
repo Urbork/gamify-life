@@ -12,6 +12,7 @@
       <nav class="nawigacja">
         <a href="/index.html">← Zadania</a>
         <a href="/statystyki.html">Statystyki →</a>
+        <a href="/postac.html">Postać →</a>
       </nav>
       <button id="przycisk-dodaj" type="button">+ Dodaj wpis</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
@@ -90,6 +91,9 @@
           <th class="kol-tekst" data-kolumna="co_poszlo_dobrze">Co poszło dobrze</th>
           <th class="kol-tekst" data-kolumna="jutro_wazne">Jutro ważne</th>
           <th class="kol-tekst" data-kolumna="do_przemyslenia">Do przemyślenia</th>
+          <!-- Licznik wypelnionych pol refleksyjnych. Tylko do odczytu - informacyjny,
+               pokazuje ile z szesciu pol dzien ma opisanych. -->
+          <th class="kol-refleksje" title="Ile z sześciu pól refleksyjnych jest wypełnionych">Refleksje</th>
           <th class="kol-tekst" data-kolumna="sniadanie">Śniadanie</th>
           <th class="kol-tekst" data-kolumna="obiad">Obiad</th>
           <th class="kol-tekst" data-kolumna="kolacja">Kolacja</th>
@@ -121,6 +125,7 @@
     <script src="/js/api.js"></script>
     <script src="/js/csv.js"></script>
     <script src="/js/filtr-dat.js"></script>
+    <script src="/js/reguly-statystyk.js"></script>
     <script src="/js/reguly-dziennika.js"></script>
     <script src="/js/csv-import.js"></script>
     <script src="/js/dziennik.js"></script>

@@ -103,14 +103,19 @@ const regulyStatystyk = (() => {
   }
 
   /**
-   * Sredni czas trwania zadan zakonczonych (z wypelnionym startem i zakonczeniem).
-   * Liczy tą samą funkcja co kolumna "Czas trwania (dni)" w tabeli,
-   * wiec liczby na obu ekranach nie moga sie rozjechac.
+   * Sredni czas trwania zadan w GODZINACH.
+   *
+   * Liczy z RECZNIE wpisanego pola `czas_trwania_godziny`, ktore zastapilo dawna
+   * kolumne wyliczana z roznicy dat. Zmiana jednostki jest zamierzona: roznica dat
+   * mowila, ile dni zadanie bylo otwarte, a nie ile zajelo pracy.
+   *
+   * Skutek uboczny do zapamietania: srednia obejmuje wylacznie zadania, w ktorych
+   * to pole wypelniono. Historycznych zadan nie da sie z niego odtworzyc.
    */
   function sredniCzasTrwania(zadania) {
     const trwania = zadania
-      .map((z) => regulyZadan.czasTrwania(z))
-      .filter((v) => typeof v === 'number');
+      .map((z) => z.czas_trwania_godziny)
+      .filter((v) => typeof v === 'number' && Number.isFinite(v));
 
     if (trwania.length === 0) return { srednia: null, ile: 0 };
     return { srednia: trwania.reduce((a, b) => a + b, 0) / trwania.length, ile: trwania.length };

@@ -43,12 +43,24 @@ const regulyZadan = (() => {
     return termin - dzien;
   }
 
-  /** Ile pelnych dni trwalo zadanie. Puste, gdy brakuje ktorejs z dat. */
-  function czasTrwania(z) {
-    const start = numerDnia(z.start_zadania);
-    const koniec = numerDnia(z.czas_zakonczenia);
-    if (start === null || koniec === null) return null;
-    return koniec - start;
+  /*
+    USUNIETE: czasTrwania(z) liczone z dat start/koniec.
+
+    Zastapilo je RECZNE pole `czas_trwania_godziny`, wpisywane przy zadaniu.
+    Powod: roznica dat mowila tylko, ile dni zadanie bylo otwarte, a nie ile
+    faktycznie zajelo pracy - a to drugie jest potrzebne do naliczania XP.
+  */
+
+  /**
+   * Czy zadanie ma komplet danych potrzebnych do naliczenia XP?
+   *
+   * Sam wynik XP liczy serwer (lib/nagrody.js) - tutaj sprawdzamy wylacznie
+   * OBECNOSC pol, zeby interfejs mogl pokazac wskazowke. Powielanie calego
+   * silnika w przegladarce dalo by dwie implementacje tych samych regul.
+   */
+  function maDaneDoXp(z) {
+    const wypelnione = (w) => w !== null && w !== undefined && String(w).trim() !== '';
+    return wypelnione(z.trudnosc) && wypelnione(z.czas_trwania_godziny);
   }
 
   // ==========================================================================
@@ -188,7 +200,8 @@ const regulyZadan = (() => {
       termin: { typ: 'znacznik', wartosc: (z) => z.termin },
       dni_do_terminu: { typ: 'liczba', wartosc: (z) => dniDoTerminu(z, dzisiaj) },
       czas_zakonczenia: { typ: 'znacznik', wartosc: (z) => z.czas_zakonczenia },
-      czas_trwania: { typ: 'liczba', wartosc: czasTrwania },
+      czas_trwania_godziny: { typ: 'liczba', wartosc: (z) => z.czas_trwania_godziny },
+      trudnosc: { typ: 'liczba', wartosc: (z) => z.trudnosc },
     };
   }
 
@@ -249,7 +262,7 @@ const regulyZadan = (() => {
 
   return {
     dniDoTerminu,
-    czasTrwania,
+    maDaneDoXp,
     filtrowane,
     ileAktywnych,
     posortowane,
