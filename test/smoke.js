@@ -261,7 +261,8 @@ async function testujZadania(reguly, slowniki) {
     nazwa: '',
     stany: new Set(),
     priorytety: new Set(),
-    klienci: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
     od: '',
     do: '',
   });
@@ -358,7 +359,7 @@ async function testujZadania(reguly, slowniki) {
     'stan',
     'nazwa',
     'priorytet',
-    'klient_kategoria',
+    'obszar',
     'start_zadania',
     'termin',
     'dni_do_terminu',
@@ -531,8 +532,8 @@ async function testujStatystyki(reguly) {
     JSON.stringify(sz.wgStanu)
   );
   sprawdz(
-    'suma zadan wg klienta = liczba wszystkich (z pozycja "(brak)")',
-    sz.wgKlienta.reduce((a, s) => a + s.ile, 0) === ZADANIA.length
+    'suma zadan wg obszaru = liczba wszystkich (z pozycja "(brak)")',
+    sz.wgObszaru.reduce((a, s) => a + s.ile, 0) === ZADANIA.length
   );
 
   /*
@@ -1004,6 +1005,207 @@ async function testujNawyki() {
   );
 }
 
+async function testujProjekty() {
+  sekcja('PROJEKTY');
+
+  const { status, tresc: puste } = await zapytaj('GET', '/api/projekty');
+  sprawdz('GET /api/projekty odpowiada 200', status === 200);
+  sprawdz('lista startuje pusta', puste.length === 0);
+
+  const { tresc: projekt } = await zapytaj('POST', '/api/projekty');
+  await zapytaj('PATCH', `/api/projekty/${projekt.id}`, {
+    nazwa: 'Projekt testowy',
+    status: 'W trakcie',
+    opis: 'opis',
+  });
+
+  sprawdz(
+    'PATCH odrzuca status spoza slownika',
+    (await zapytaj('PATCH', `/api/projekty/${projekt.id}`, { status: 'Nieznany' })).status === 400
+  );
+
+  // Podpinamy dwa zadania, jedno konczymy - licznik ma pokazac 1/2.
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  const [a, b] = zadania;
+  await zapytaj('PATCH', `/api/zadania/${a.id}`, { projekt_id: projekt.id, stan: 'Zrobione' });
+  await zapytaj('PATCH', `/api/zadania/${b.id}`, { projekt_id: projekt.id, stan: 'Plan' });
+
+  const { tresc: zLicznikiem } = await zapytaj('GET', '/api/projekty');
+  const p = zLicznikiem.find((x) => x.id === projekt.id);
+  sprawdz(
+    'GET zwraca licznik zadan: 1 ukonczone z 2',
+    p.zadan_lacznie === 2 && p.zadan_ukonczonych === 1,
+    JSON.stringify({ lacznie: p.zadan_lacznie, ukonczonych: p.zadan_ukonczonych })
+  );
+
+  sprawdz(
+    'PATCH zadania odrzuca nieistniejacy projekt',
+    (await zapytaj('PATCH', `/api/zadania/${a.id}`, { projekt_id: 999999 })).status === 400
+  );
+
+  /*
+    KLUCZOWE: usuniecie projektu ma ODPIAC zadania, a nie je skasowac.
+    Realizuje to ON DELETE SET NULL z migracji 6.
+  */
+  const przedUsunieciem = (await zapytaj('GET', '/api/zadania')).tresc.length;
+  sprawdz(
+    'DELETE /api/projekty/:id odpowiada 204',
+    (await zapytaj('DELETE', `/api/projekty/${projekt.id}`)).status === 204
+  );
+
+  const { tresc: poUsunieciu } = await zapytaj('GET', '/api/zadania');
+  sprawdz(
+    'usuniecie projektu NIE kasuje zadan',
+    poUsunieciu.length === przedUsunieciem,
+    `${poUsunieciu.length} vs ${przedUsunieciem}`
+  );
+  sprawdz(
+    'usuniecie projektu ODPINA zadania (projekt_id = null)',
+    poUsunieciu.filter((z) => z.projekt_id !== null).length === 0,
+    JSON.stringify(poUsunieciu.map((z) => z.projekt_id))
+  );
+
+  // Przywracamy zestaw testowy.
+  for (const z of [a, b]) {
+    await zapytaj('PATCH', `/api/zadania/${z.id}`, { stan: z.stan });
+  }
+}
+
+async function testujQuestLog() {
+  sekcja('IMPORT quest-log (dwuprzebiegowy)');
+
+  const questLog = require('../config/mapowanie-quest-log');
+
+  // --- mapowania wartosci, w izolacji ---
+  sprawdzListe(
+    'statusy Notion -> nasze stany',
+    ['Backlog', 'Ready to Start', 'In Progress', 'Complete', 'Blocked', ''].map(
+      questLog.parsujStatus
+    ),
+    ['Plan', 'Czeka', 'W trakcie', 'Zrobione', 'Blok', 'Plan']
+  );
+  sprawdzListe(
+    'Impact -> priorytet (piec poziomow + puste)',
+    ['x10 High 🔺', 'x5 Semi-High', 'x2 Impact', 'x0.5 Semi-Low', 'x0.2 Low 🔻', ''].map(
+      questLog.parsujImpact
+    ),
+    [4, 3, 2, 1, 0, 2]
+  );
+  sprawdzListe(
+    'Difficulty Score -> trudnosc',
+    ['1 - Easy', '2 - Moderate', '3 - Hard', ''].map(questLog.parsujTrudnosc),
+    [1, 2, 3, null]
+  );
+  sprawdz('"4.0" -> 4 godziny', questLog.parsujGodziny('4.0') === 4);
+  sprawdz('wartosc nieliczbowa -> brak godzin', questLog.parsujGodziny('brak') === null);
+
+  sprawdz(
+    'Upstream z URL-em -> sama nazwa',
+    questLog.parsujUpstream('Nauka hiszpanskiego (https://notion.so/abc)') === 'Nauka hiszpanskiego'
+  );
+  sprawdz(
+    'Upstream bez URL-a tez dziala',
+    questLog.parsujUpstream('Nauka hiszpanskiego') === 'Nauka hiszpanskiego'
+  );
+  sprawdz(
+    'przy wielu relacjach bierzemy pierwsza',
+    questLog.parsujUpstream('Projekt A (https://x/1), Projekt B (https://x/2)') === 'Projekt A'
+  );
+
+  // --- dwuprzebiegowy import przez HTTP ---
+  const csv = [
+    'Name,Type,Status,Area,Difficulty Score,Impact,Time (Tasks Only),Do Date,Closing Date,Due Date (Optional),Upstream',
+    'Remont kuchni,Project,In Progress,,,,,,,,',
+    'Nauka hiszpanskiego,Project,Backlog,,,,,,,,',
+    'Kupic plytki,Task,Complete,Home,2 - Moderate,x5 Semi-High,4.0,2026-03-10,2026-03-05,,Remont kuchni (https://notion.so/1)',
+    'Lekcja 1,Task,In Progress,Knowledge,1 - Easy,x0.2 Low 🔻,1.5,2026-04-01,,,Nauka hiszpanskiego',
+    'Zadanie sierotka,Task,Backlog,Career,3 - Hard,x10 High 🔺,2,2026-05-01,,,Projekt ktorego nie ma',
+    'Zadanie luzne,Task,Backlog,,,,,,,,',
+    'Z nadpisanym terminem,Task,Complete,Health,1 - Easy,x2 Impact,1,2026-06-01,2026-06-02,2026-06-15,',
+    ',Task,Backlog,,,,,,,,',
+  ].join('\r\n');
+
+  const { status, tresc } = await zapytaj('POST', '/api/import/notion-quest-log/podglad', {
+    tresc: csv,
+  });
+  sprawdz('podglad quest-log odpowiada 200', status === 200);
+  sprawdz(
+    'podglad rozdziela projekty i zadania',
+    tresc.questLog.projektow === 2 && tresc.questLog.zadan === 5,
+    JSON.stringify(tresc.questLog)
+  );
+  sprawdz(
+    'wiersz bez "Name" odrzucony (1 sztuka)',
+    tresc.odrzuconych === 1,
+    JSON.stringify(tresc.odrzucone)
+  );
+  sprawdz(
+    'podglad liczy zadania z podpietym projektem i bez dopasowania',
+    tresc.questLog.zPodpietymProjektem === 2 && tresc.questLog.bezDopasowania === 1,
+    JSON.stringify(tresc.questLog)
+  );
+  sprawdzListe(
+    'brak dopasowania jest INFORMACJA - podaje nazwe nieznanego projektu',
+    tresc.questLog.nieznaneProjekty,
+    ['Projekt ktorego nie ma']
+  );
+
+  // --- zapis ---
+  const przedProjektow = (await zapytaj('GET', '/api/projekty')).tresc.length;
+  const przedZadan = (await zapytaj('GET', '/api/zadania')).tresc.length;
+
+  const zapis = await zapytaj('POST', '/api/import/notion-quest-log/zatwierdz', { tresc: csv });
+  sprawdz('zatwierdzenie odpowiada 201', zapis.status === 201);
+  sprawdz('zaimportowano 2 projekty + 5 zadan', zapis.tresc.zaimportowano === 7);
+
+  const { tresc: projekty } = await zapytaj('GET', '/api/projekty');
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  sprawdz('projekty dopisane', projekty.length === przedProjektow + 2);
+  sprawdz('zadania dopisane', zadania.length === przedZadan + 5);
+
+  const remont = projekty.find((p) => p.nazwa === 'Remont kuchni');
+  sprawdz('status projektu zmapowany: In Progress -> W trakcie', remont.status === 'W trakcie');
+
+  const plytki = zadania.find((z) => z.nazwa === 'Kupic plytki');
+  sprawdz(
+    'zadanie podpiete do projektu po nazwie z Upstream',
+    plytki.projekt_id === remont.id,
+    `${plytki.projekt_id} vs ${remont.id}`
+  );
+  sprawdz('Area -> obszar 1:1', plytki.obszar === 'Home');
+  sprawdz('Impact x5 Semi-High -> priorytet 3', plytki.priorytet === 3);
+  sprawdz('Difficulty 2 - Moderate -> trudnosc 2', plytki.trudnosc === 2);
+  sprawdz('Time 4.0 -> 4 godziny', plytki.czas_trwania_godziny === 4);
+  sprawdz(
+    'Do Date -> termin (a NIE start_zadania)',
+    plytki.termin === '2026-03-10T00:00' && plytki.start_zadania === null,
+    JSON.stringify({ termin: plytki.termin, start: plytki.start_zadania })
+  );
+  sprawdz('Closing Date -> czas_zakonczenia', plytki.czas_zakonczenia === '2026-03-05T00:00');
+
+  const nadpisany = zadania.find((z) => z.nazwa === 'Z nadpisanym terminem');
+  sprawdz(
+    'Due Date (Optional) NADPISUJE termin z Do Date',
+    nadpisany.termin === '2026-06-15T00:00',
+    nadpisany.termin
+  );
+
+  const sierotka = zadania.find((z) => z.nazwa === 'Zadanie sierotka');
+  sprawdz(
+    'brak dopasowania Upstream -> zadanie wchodzi BEZ projektu, nie jest odrzucane',
+    sierotka !== undefined && sierotka.projekt_id === null
+  );
+
+  const luzne = zadania.find((z) => z.nazwa === 'Zadanie luzne');
+  sprawdz('puste Area -> obszar zapasowy "Inne"', luzne.obszar === 'Inne');
+  sprawdz('pusty Impact -> priorytet 2', luzne.priorytet === 2);
+  sprawdz('pusty Status -> stan "Plan"', luzne.stan === 'Plan');
+
+  // Sprzatanie: usuwamy zaimportowane projekty i zadania.
+  for (const p of projekty) await zapytaj('DELETE', `/api/projekty/${p.id}`);
+  for (const z of zadania.slice(przedZadan)) await zapytaj('DELETE', `/api/zadania/${z.id}`);
+}
+
 async function testujImport() {
   sekcja('IMPORT (regresja odrzucen)');
 
@@ -1146,6 +1348,8 @@ async function main() {
     await testujStatystyki(reguly);
     await testujSilnikXp();
     await testujPostac();
+    await testujProjekty();
+    await testujQuestLog();
     await testujNawyki();
     await testujImport();
     await testujLimityCiala();

@@ -12,6 +12,7 @@
       <nav class="nawigacja">
         <a href="/dziennik.html">Dziennik →</a>
         <a href="/statystyki.html">Statystyki →</a>
+        <a href="/projekty.html">Projekty →</a>
         <a href="/postac.html">Postać →</a>
       </nav>
       <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
@@ -29,9 +30,9 @@
 
     <!--
       Panel filtrow. <details> daje zwijanie bez ani jednej linijki JS.
-      Listy checkboxow (stany, priorytety, klienci) buduje public/js/zadania.js
+      Listy checkboxow (stany, priorytety, obszary, projekty) buduje public/js/zadania.js
       ze slownikow z /api/slowniki - nie ma ich tu na sztywno, zeby dopisanie
-      klienta w config/slowniki.js od razu pojawialo sie w filtrach.
+      obszaru w config/slowniki.js od razu pojawialo sie w filtrach.
     -->
     <details id="panel-filtrow" class="filtry">
       <summary>
@@ -55,8 +56,13 @@
         </fieldset>
 
         <fieldset class="filtr filtr-szeroki">
-          <legend>Klient / kategoria</legend>
-          <div id="filtr-klienci" class="checkboxy"></div>
+          <legend>Obszar</legend>
+          <div id="filtr-obszary" class="checkboxy"></div>
+        </fieldset>
+
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Projekt</legend>
+          <div id="filtr-projekty" class="checkboxy"></div>
         </fieldset>
 
         <!--
@@ -119,7 +125,8 @@
           >
             Czas (h)
           </th>
-          <th class="kol-klient" data-kolumna="klient_kategoria">Klient / kategoria</th>
+          <th class="kol-obszar" data-kolumna="obszar">Obszar</th>
+          <th class="kol-projekt" data-kolumna="projekt_id" title="Projekt nadrzędny — kontener, nie daje XP">Projekt</th>
           <th class="kol-data" data-kolumna="start_zadania">Start</th>
           <th class="kol-data" data-kolumna="termin">Termin</th>
           <th class="kol-liczba" data-kolumna="dni_do_terminu" title="Wyliczane: termin minus dzisiaj">

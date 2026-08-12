@@ -41,27 +41,34 @@ const PRIORYTETY = [
 // jako DEFAULT kolumny. Zmiana tutaj wplywa tylko na nowe rekordy tworzone przez API.
 const PRIORYTET_DOMYSLNY = 2;
 
-// Lista klientow / kategorii. Celowo NIE jest walidowana twardo przez backend
-// (patrz routes/zadania.js) - to lista podpowiedzi. Dzieki temu dopisanie klienta
-// tutaj wystarczy, a stare rekordy z nieaktualnymi wartosciami nadal dzialaja.
-const KLIENCI = [
-  'Alfaram',
-  'Bieszczadzka Perełka',
-  'Dmuchańce Krosno',
-  'Forstal',
-  'Kurihara Miho',
-  'Laminex Composites',
-  'London Royal Massage',
-  'Nuva',
-  'Oliwny Zakątek',
-  'Shaggy Clean',
-  'Shoelace',
-  'Smokomoda',
-  'Tomguard',
-  'Rozwój / Kursy',
-  'Prywatne',
+/*
+  Obszary zycia - pole `obszar` w tabeli zadania (do migracji 6: `klient_kategoria`).
+
+  Pole zmienilo znaczenie: bylo lista klientow, jest lista obszarow zycia z Notion.
+  Nazwy zostaja PO ANGIELSKU, dokladnie tak jak w zrodle - dzieki temu import
+  z Notion mapuje je 1:1, bez tablicy tlumaczen, ktora trzeba by utrzymywac.
+
+  Celowo NIE jest walidowana twardo przez backend (patrz routes/zadania.js) -
+  to lista podpowiedzi. Wartosc spoza niej nadal sie zapisze i pokaze
+  z dopiskiem "(spoza listy)", wiec stare rekordy z nazwami klientow nie znikaja.
+*/
+const OBSZARY = [
+  'Mindset',
+  'Career',
+  'Knowledge',
+  'Creative',
+  'Health',
+  'Home',
+  'Lifestyle',
+  'Family',
+  'Finances',
+  'Fun/Relax',
+  'Travel',
   'Inne',
 ];
+
+// Wartosc zapasowa, gdy zrodlo nie podaje obszaru (uzywana przy imporcie).
+const OBSZAR_ZAPASOWY = 'Inne';
 
 /*
   NAWYKI PRZENIESIONE DO BAZY.
@@ -89,5 +96,6 @@ module.exports = {
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
   etykietaPriorytetu,
-  KLIENCI,
+  OBSZARY,
+  OBSZAR_ZAPASOWY,
 };

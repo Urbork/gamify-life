@@ -25,7 +25,7 @@
     stanZakonczony: 'Zrobione',
     priorytety: [],
     priorytetDomyslny: 2,
-    klienci: [],
+    obszary: [],
   };
 
   // Lokalna kopia stanu bazy. Zrodlo prawdy dla sortowania, kolumn wyliczanych,
@@ -48,7 +48,8 @@
   const elFiltrNazwa = document.getElementById('filtr-nazwa');
   const elFiltrStany = document.getElementById('filtr-stany');
   const elFiltrPriorytety = document.getElementById('filtr-priorytety');
-  const elFiltrKlienci = document.getElementById('filtr-klienci');
+  const elFiltrObszary = document.getElementById('filtr-obszary');
+  const elFiltrProjekty = document.getElementById('filtr-projekty');
   const elPresety = document.getElementById('presety-dat');
   const elFiltrOd = document.getElementById('filtr-od');
   const elFiltrDo = document.getElementById('filtr-do');
@@ -100,6 +101,24 @@
     return znaleziony ? znaleziony.etykieta : `(${numer})`;
   }
 
+  /*
+    Lista projektow z GET /api/projekty. Zadanie moze nie miec projektu
+    (opcja pusta w dropdownie) - projekt jest kontenerem, nie wymogiem.
+  */
+  let projekty = [];
+
+  /** Opcje dropdownu projektu: id jako wartosc, nazwa jako etykieta. */
+  function opcjeProjektow() {
+    return projekty.map((p) => ({ wartosc: p.id, etykieta: p.nazwa }));
+  }
+
+  /** Nazwa projektu po id - do eksportu CSV, gdzie samo id nic nie mowi. */
+  function nazwaProjektu(id) {
+    if (id === null || id === undefined) return null;
+    const p = projekty.find((x) => x.id === id);
+    return p ? p.nazwa : `(projekt ${id})`;
+  }
+
   // ==========================================================================
   // Filtrowanie
   // ==========================================================================
@@ -116,7 +135,8 @@
     nazwa: '',
     stany: new Set(),
     priorytety: new Set(), // liczby, nie teksty
-    klienci: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
     od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
     do: '',
   };
@@ -370,7 +390,8 @@
         true // trudnosc jest opcjonalna - wolno ja zostawic pusta
       ),
       komorkaGodzin(z),
-      komorkaSelect(z, 'klient_kategoria', 'kol-klient', jakoOpcje(slowniki.klienci), true),
+      komorkaSelect(z, 'obszar', 'kol-obszar', jakoOpcje(slowniki.obszary), true),
+      komorkaSelect(z, 'projekt_id', 'kol-projekt', opcjeProjektow(), true),
       komorkaZnacznikCzasu(z, 'start_zadania'),
       komorkaZnacznikCzasu(z, 'termin'),
       komorkaWyliczona('dni_do_terminu'),
@@ -612,7 +633,8 @@
     'priorytet_etykieta',
     'trudnosc',
     'czas_trwania_godziny',
-    'klient_kategoria',
+    'obszar',
+    'projekt',
     'start_zadania',
     'termin',
     'czas_zakonczenia',
@@ -637,7 +659,8 @@
       etykietaPriorytetu(z.priorytet),
       z.trudnosc,
       z.czas_trwania_godziny,
-      z.klient_kategoria,
+      z.obszar,
+      nazwaProjektu(z.projekt_id),
       z.start_zadania,
       z.termin,
       z.czas_zakonczenia,
@@ -752,7 +775,7 @@
     filtry.nazwa = elFiltrNazwa.value.trim().toLocaleLowerCase('pl');
     filtry.od = elFiltrOd.value;
     filtry.do = elFiltrDo.value;
-    // Zbiory (stany, priorytety, klienci) sa aktualizowane na biezaco
+    // Zbiory (stany, priorytety, obszary, projekty) sa aktualizowane na biezaco
     // przez handlery checkboxow.
 
     const ile = ileAktywnychFiltrow();
@@ -771,7 +794,8 @@
     }
     filtry.stany.clear();
     filtry.priorytety.clear();
-    filtry.klienci.clear();
+    filtry.obszary.clear();
+    filtry.projekty.clear();
     zastosujFiltry();
   }
 
@@ -783,7 +807,12 @@
       slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
       filtry.priorytety
     );
-    zbudujCheckboxy(elFiltrKlienci, jakoOpcje(slowniki.klienci), filtry.klienci);
+    zbudujCheckboxy(elFiltrObszary, jakoOpcje(slowniki.obszary), filtry.obszary);
+    zbudujCheckboxy(
+      elFiltrProjekty,
+      projekty.map((p) => ({ wartosc: p.id, etykieta: p.nazwa })),
+      filtry.projekty
+    );
     zbudujPresety();
     odswiezPresety();
   }
@@ -796,12 +825,15 @@
     try {
       // Slowniki musza byc PRZED budowaniem wierszy - z nich powstaja dropdowny
       // i checkboxy filtrow, a stanZakonczony decyduje o grupie w sortowaniu.
-      const [pobraneSlowniki, czas, lista] = await Promise.all([
+      const [pobraneSlowniki, pobraneProjekty, czas, lista] = await Promise.all([
         api.get('/api/slowniki'),
+        api.get('/api/projekty'),
         api.get('/api/czas'),
         api.get('/api/zadania'),
       ]);
       slowniki = pobraneSlowniki;
+      // Projekty musza byc przed budowaniem wierszy - z nich powstaje dropdown.
+      projekty = pobraneProjekty;
       dzisiajSerwera = czas.dzisiaj;
 
       zbudujPanelFiltrow();

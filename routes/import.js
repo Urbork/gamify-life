@@ -25,6 +25,7 @@ const { STANY } = require('../config/slowniki');
 const { przygotujImport, BladPliku } = require('../lib/import');
 const konfiguracja = require('../config/mapowanie-importu');
 const dziennikProfil = require('../config/mapowanie-dziennika');
+const questLog = require('../config/mapowanie-quest-log');
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ const KONFIGURACJA_ZADAN = {
       return `Nieznany stan "${rekord.stan ?? ''}". Dozwolone: ${STANY.join(', ')}.`;
     }
 
-    // klient_kategoria CELOWO bez walidacji wobec slownika - tak samo jak przy
+    // obszar CELOWO bez walidacji wobec slownika - tak samo jak przy
     // recznej edycji w tabeli. Wartosc spoza listy zostaje zaimportowana,
     // a w interfejsie pokaze sie z dopiskiem "(spoza listy)".
     return null;
@@ -98,8 +99,8 @@ function przygotuj(tresc, konfiguracjaProfilu) {
 // Kolumny zapisu sa wypisane TUTAJ, w kodzie. Z pliku pochodza wylacznie wartosci -
 // nazwa kolumny nigdy nie trafia do SQL-a z zewnatrz (ta sama zasada co whitelist w PATCH).
 const wstawZadanie = db.prepare(`
-  INSERT INTO zadania (nazwa, stan, klient_kategoria, priorytet, start_zadania, termin, czas_zakonczenia)
-  VALUES (@nazwa, @stan, @klient_kategoria, @priorytet, @start_zadania, @termin, @czas_zakonczenia)
+  INSERT INTO zadania (nazwa, stan, obszar, priorytet, start_zadania, termin, czas_zakonczenia)
+  VALUES (@nazwa, @stan, @obszar, @priorytet, @start_zadania, @termin, @czas_zakonczenia)
 `);
 
 // Cały import w jednej transakcji: albo wejda wszystkie poprawne wiersze, albo zaden.
@@ -108,7 +109,7 @@ const wstawWszystkie = db.transaction((wiersze) => {
     wstawZadanie.run({
       nazwa: dane.nazwa,
       stan: dane.stan,
-      klient_kategoria: dane.klient_kategoria ?? null,
+      obszar: dane.obszar ?? null,
       priorytet: dane.priorytet,
       start_zadania: dane.start_zadania ?? null,
       termin: dane.termin ?? null,
@@ -173,6 +174,109 @@ const wstawWszystkieWpisy = db.transaction((wiersze) => {
   return wiersze.length;
 });
 
+// --- profil quest-log (dwuprzebiegowy) ------------------------------------
+
+const wstawProjekt = db.prepare('INSERT INTO projekty (nazwa, status) VALUES (@nazwa, @status)');
+const wstawZadanieQL = db.prepare(`
+  INSERT INTO zadania
+    (nazwa, stan, obszar, priorytet, trudnosc, czas_trwania_godziny, termin, czas_zakonczenia, projekt_id)
+  VALUES
+    (@nazwa, @stan, @obszar, @priorytet, @trudnosc, @czas_trwania_godziny, @termin, @czas_zakonczenia, @projekt_id)
+`);
+
+/*
+  Przygotowanie importu quest-log: DWA PRZEBIEGI po tym samym pliku.
+
+  Przebieg 1 (Type = Project) i przebieg 2 (Type = Task) roznia sie mapowaniem,
+  wiec silnik dostaje dwie konfiguracje. Rozdzielaniem wierszy zajmuje sie
+  `filtrWierszy` w kazdym z podprofili.
+
+  POWIAZANIE zadan z projektami idzie po NAZWIE, nie po id - w podgladzie projekty
+  jeszcze nie istnieja w bazie, wiec nie maja id. Ten sam klucz (nazwa bez skrajnych
+  spacji, bez rozrozniania wielkosci liter) sluzy potem przy zapisie.
+
+  Brak dopasowania NIE jest bledem: zadanie wchodzi bez projektu, a licznik
+  `bezDopasowania` pokazuje w podgladzie, ilu to dotyczy.
+*/
+function przygotujQuestLog(tresc) {
+  const konfProjekty = { ...questLog.PROJEKTY, kolumnyIgnorowane: questLog.KOLUMNY_IGNOROWANE };
+  const konfZadania = { ...questLog.ZADANIA, kolumnyIgnorowane: questLog.KOLUMNY_IGNOROWANE };
+
+  const projekty = przygotuj(tresc, konfProjekty);
+  const zadania = przygotuj(tresc, konfZadania);
+
+  // Nazwy projektow z przebiegu 1 - po nich szukamy dopasowania w przebiegu 2.
+  const nazwyProjektow = new Set(projekty.gotowe.map((p) => questLog.kluczNazwy(p.dane.nazwa)));
+
+  let zPodpietymProjektem = 0;
+  let bezDopasowania = 0;
+  const nieznaneProjekty = new Set();
+
+  for (const { dane } of zadania.gotowe) {
+    const szukana = dane._upstream;
+    if (!szukana) continue; // zadanie bez relacji - luzne, nie liczy sie jako brak dopasowania
+
+    if (nazwyProjektow.has(questLog.kluczNazwy(szukana))) zPodpietymProjektem++;
+    else {
+      bezDopasowania++;
+      nieznaneProjekty.add(szukana);
+    }
+  }
+
+  return {
+    // Pola wspolne dla wszystkich profili - podglad w przegladarce ich uzywa.
+    separator: projekty.separator,
+    naglowki: projekty.naglowki,
+    nieznaneKolumny: zadania.nieznaneKolumny,
+    gotowe: [...projekty.gotowe, ...zadania.gotowe],
+    odrzucone: [...projekty.odrzucone, ...zadania.odrzucone].sort((a, b) => a.linia - b.linia),
+
+    // Rozbicie specyficzne dla tego profilu.
+    questLog: {
+      projektow: projekty.gotowe.length,
+      zadan: zadania.gotowe.length,
+      zPodpietymProjektem,
+      bezDopasowania,
+      nieznaneProjekty: [...nieznaneProjekty].slice(0, 20),
+    },
+
+    // Zachowane osobno, bo zapis musi wstawic projekty PRZED zadaniami.
+    _projekty: projekty.gotowe,
+    _zadania: zadania.gotowe,
+  };
+}
+
+/*
+  Zapis quest-log. Kolejnosc jest istotna: najpierw projekty, zeby dostaly id,
+  potem zadania, ktore te id podpinaja. Calosc w JEDNEJ transakcji - przerwanie
+  w polowie nie zostawi zadan wskazujacych na nieistniejace projekty.
+*/
+const zapiszQuestLog = db.transaction((wynik) => {
+  const idProjektu = new Map();
+
+  for (const { dane } of wynik._projekty) {
+    const id = wstawProjekt.run({ nazwa: dane.nazwa, status: dane.status }).lastInsertRowid;
+    idProjektu.set(questLog.kluczNazwy(dane.nazwa), id);
+  }
+
+  for (const { dane } of wynik._zadania) {
+    wstawZadanieQL.run({
+      nazwa: dane.nazwa,
+      stan: dane.stan,
+      obszar: dane.obszar ?? null,
+      priorytet: dane.priorytet,
+      trudnosc: dane.trudnosc ?? null,
+      czas_trwania_godziny: dane.czas_trwania_godziny ?? null,
+      termin: dane.termin ?? null,
+      czas_zakonczenia: dane.czas_zakonczenia ?? null,
+      // Brak dopasowania -> zadanie luzne. Nie przerywamy importu.
+      projekt_id: dane._upstream ? idProjektu.get(questLog.kluczNazwy(dane._upstream)) ?? null : null,
+    });
+  }
+
+  return wynik._projekty.length + wynik._zadania.length;
+});
+
 // --- rejestr profili ------------------------------------------------------
 
 /*
@@ -184,9 +288,30 @@ const wstawWszystkieWpisy = db.transaction((wiersze) => {
 
   Dodanie profilu = jeden wpis ponizej + plik config/mapowanie-*.js.
 */
+/*
+  Kazdy profil ma dwie funkcje:
+    przygotuj(tresc) -> wynik   (parsowanie i sprawdzenie, NIC nie zapisuje)
+    zapisz(wynik)    -> liczba  (zapis w transakcji)
+
+  Wiekszosc profili to jedno przejscie przez plik, wiec `przygotuj` jest cienkim
+  opakowaniem na silnik. Profil quest-log potrzebuje dwoch przebiegow i powiazania
+  miedzy nimi, dlatego ma wlasna implementacje - patrz nizej.
+
+  Dodanie profilu = jeden wpis ponizej + plik config/mapowanie-*.js.
+*/
 const PROFILE = {
-  zadania: { konfiguracja: KONFIGURACJA_ZADAN, zapisz: wstawWszystkie },
-  dziennik: { konfiguracja: KONFIGURACJA_DZIENNIKA, zapisz: wstawWszystkieWpisy },
+  zadania: {
+    przygotuj: (tresc) => przygotuj(tresc, KONFIGURACJA_ZADAN),
+    zapisz: (wynik) => wstawWszystkie(wynik.gotowe),
+  },
+  dziennik: {
+    przygotuj: (tresc) => przygotuj(tresc, KONFIGURACJA_DZIENNIKA),
+    zapisz: (wynik) => wstawWszystkieWpisy(wynik.gotowe),
+  },
+  'notion-quest-log': {
+    przygotuj: przygotujQuestLog,
+    zapisz: zapiszQuestLog,
+  },
 };
 
 /** Zwraca profil z URL-a albo rzuca bledem 404 z lista dostepnych. */
@@ -206,7 +331,7 @@ function profilZZadania(req) {
 
 router.post('/:profil/podglad', (req, res) => {
   const profil = profilZZadania(req);
-  const wynik = przygotuj(trescZZadania(req), profil.konfiguracja);
+  const wynik = profil.przygotuj(trescZZadania(req));
 
   res.json({
     separator: wynik.separator,
@@ -216,12 +341,14 @@ router.post('/:profil/podglad', (req, res) => {
     odrzuconych: wynik.odrzucone.length,
     gotowe: wynik.gotowe,
     odrzucone: wynik.odrzucone,
+    // Obecne tylko dla profilu quest-log (dwa rodzaje rekordow w jednym pliku).
+    questLog: wynik.questLog,
   });
 });
 
 router.post('/:profil/zatwierdz', (req, res) => {
   const profil = profilZZadania(req);
-  const wynik = przygotuj(trescZZadania(req), profil.konfiguracja);
+  const wynik = profil.przygotuj(trescZZadania(req));
 
   if (wynik.gotowe.length === 0) {
     const e = new Error('Nie ma żadnego poprawnego wiersza do zaimportowania.');
@@ -230,7 +357,7 @@ router.post('/:profil/zatwierdz', (req, res) => {
   }
 
   // Wiersze sa DOPISYWANE - nic istniejacego nie jest nadpisywane ani usuwane.
-  const zaimportowano = profil.zapisz(wynik.gotowe);
+  const zaimportowano = profil.zapisz(wynik);
 
   res.status(201).json({ zaimportowano, odrzuconych: wynik.odrzucone.length });
 });

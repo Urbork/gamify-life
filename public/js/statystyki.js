@@ -161,11 +161,11 @@
       )
     );
 
-    sekcja.appendChild(el('h3', null, 'Według klienta / kategorii'));
+    sekcja.appendChild(el('h3', null, 'Według obszaru'));
     sekcja.appendChild(
       tabela(
-        ['Klient / kategoria', 'Zadań', 'Udział'],
-        s.wgKlienta.map((w) => [
+        ['Obszar', 'Zadań', 'Udział'],
+        s.wgObszaru.map((w) => [
           w.klucz,
           String(w.ile),
           procent((100 * w.ile) / s.lacznie),

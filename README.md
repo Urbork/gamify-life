@@ -93,6 +93,32 @@ W bazie zapisany jest **numer**, nie etykieta — dzięki temu sortowanie jest n
 w słowniku nie wymaga ruszania danych. Lista mieszka w `PRIORYTETY`
 w [config/slowniki.js](config/slowniki.js).
 
+### Obszar
+
+Pole `obszar` (do migracji 6: `klient_kategoria`) trzyma obszar życia z Notion:
+Mindset, Career, Knowledge, Creative, Health, Home, Lifestyle, Family, Finances,
+Fun/Relax, Travel, Inne. Nazwy zostają **po angielsku**, dokładnie jak w źródle —
+dzięki temu import mapuje je 1:1, bez tablicy tłumaczeń do utrzymywania.
+
+Pole **nie jest walidowane ściśle**: wartość spoza listy zapisze się i pokaże
+z dopiskiem „(spoza listy)". Stare wartości — nazwy klientów — przetrwały zmianę
+nazwy kolumny nietknięte, właśnie dlatego.
+
+### Projekty
+
+Strona **/projekty.html**. Projekt jest **kontenerem** na zadania: sam z siebie
+**nie daje XP**, punkty liczą się wyłącznie z zadań, wpisów dziennika i nawyków.
+Licznik „X/Y ukończonych" liczy serwer jednym zapytaniem z `LEFT JOIN` — inaczej
+przy kilkudziesięciu projektach robiłaby się lawina zapytań.
+
+Zadanie przypisuje się do projektu dropdownem w kolumnie **Projekt**; jest też filtr
+multi-select po projekcie. Filtr działa po **id**, nie po nazwie — nazwa może się zmienić.
+
+> **Usunięcie projektu ODPINA zadania, nie kasuje ich.** Realizuje to
+> `ON DELETE SET NULL` na kluczu obcym (migracja 6). Zadanie jest bytem
+> samodzielnym, projekt tylko kontenerem — okno potwierdzenia mówi wprost,
+> ile zadań zostanie odpiętych.
+
 ### Trudność i czas (h)
 
 Dwa pola opcjonalne, oba potrzebne do naliczenia XP:
@@ -400,6 +426,60 @@ ponad 900 razy) jest traktowany jako brak wartości. Steruje tym `WARTOSCI_PUSTE
 
 Jedynym wymaganym polem jest `data`. Reszta może być pusta — to normalne w nowszych wpisach.
 
+### Import "notion-quest-log" (projekty + zadania)
+
+Profil w [config/mapowanie-quest-log.js](config/mapowanie-quest-log.js) czyta eksport
+bazy „Success Plan" z Notion, w której **projekty i zadania leżą w jednej tabeli**,
+rozróżnione kolumną `Type`.
+
+Import jest **dwuprzebiegowy** — ten sam plik przechodzi przez silnik dwa razy,
+za każdym razem z innym mapowaniem (rozdziela je `filtrWierszy`):
+
+1. `Type = "Project"` → tabela `projekty`,
+2. `Type = "Task"` → tabela `zadania`, podpięte przez kolumnę relacji `Upstream`.
+
+Wiązanie idzie **po nazwie projektu**, nie po id: w podglądzie projekty jeszcze nie
+istnieją w bazie, więc id nie mają. Przy zapisie najpierw wstawiane są projekty,
+z nich powstaje mapa `nazwa → id`, dopiero potem zadania — całość w jednej transakcji.
+Porównanie pomija skrajne spacje i wielkość liter.
+
+**Brak dopasowania nie jest błędem.** Zadanie wchodzi bez projektu, a podgląd pokazuje
+osobno: ile projektów, ile zadań, ile z podpiętym projektem i ile bez dopasowania
+(wraz z nazwami nieznanych projektów).
+
+#### Dlaczego `Do Date` → `termin`, a nie `start_zadania`
+
+W źródłowym Notion `Due Date (Optional)` jest wypełnione tylko w **4 rekordach na 582**,
+a faktyczną funkcję terminu pełnił `Do Date` — to po nim filtrowały widoki.
+
+Gdyby `Do Date` trafił na `start_zadania`, pole `termin` zostałoby puste niemal wszędzie.
+Mnożnik terminowości wymaga **jednocześnie** terminu i daty zakończenia, więc dla
+wszystkich **468 ukończonych** zadań wyniósłby neutralne ×1 — cała mechanika premii
+i kary za termin byłaby martwa, a XP zaniżone.
+
+`Due Date (Optional)` nadpisuje termin tam, gdzie jest wypełnione. Nadpisania **nie da się**
+zrobić dwoma nagłówkami wskazującymi na to samo pole: silnik przetwarza je po kolei,
+a pusta data ustawia `null` i skasowałaby wartość z `Do Date`. Dlatego data opcjonalna
+trafia do pola tymczasowego, a wybór robi hook `poWierszu`.
+
+#### Mapowanie wartości
+
+| Źródło | Cel | Uwagi |
+| --- | --- | --- |
+| `Status` | `stan` / `status` | Backlog→Plan, Ready to Start→Czeka, In Progress→W trakcie, Complete→Zrobione, Blocked→Blok, puste→Plan |
+| `Area` | `obszar` | 1:1, bez tłumaczenia; puste → `Inne` |
+| `Difficulty Score` | `trudnosc` | 1 - Easy→1, 2 - Moderate→2, 3 - Hard→3 |
+| `Impact` | `priorytet` | x10 High→4, x5 Semi-High→3, x2 Impact→2, x0.5 Semi-Low→1, x0.2 Low→0, puste→2 |
+| `Time (Tasks Only)` | `czas_trwania_godziny` | liczba |
+
+Wymagana jest wyłącznie niepusta kolumna `Name`. Reszta jest opcjonalna.
+
+> **Profil powstał ze specyfikacji, nie z pliku.** Eksportu „Success Plan" nie było
+> w projekcie w chwili pisania, więc nagłówki i wartości są **założone** — w szczególności
+> format kolumny relacji `Upstream`. Parser przyjmuje oba warianty, jakie stosuje Notion:
+> `Nazwa (https://…)` oraz samo `Nazwa`. Gdyby nagłówki się różniły, import zgłosi
+> „W pliku brakuje kolumn: Name" — poprawka to jedna linijka w pliku mapowania.
+
 ### Jak dodać własny profil importu
 
 `lib/import.js` jest generyczny i **nie zna** ani zadań, ani dziennika. Profil to obiekt
@@ -482,6 +562,7 @@ Co pokrywa:
 | Zadania | 4 presety zakresu dat · sortowanie po 10 kolumnach × 2 kierunki z regułą „Zrobione na dole" · kolumny wyliczane (w tym `23:59 → 00:01` = 2 dni) · filtry nazwy, stanu i priorytetu `0` |
 | Dziennik | filtr nawyku (także że „Water" nie łapie „Drink Water") · szukanie z wielkością liter · własny zakres dat · sortowanie |
 | Silnik XP | minimalne 1 XP · trzy progi terminowości · granica poziomu przy 500 XP · reset i prestiż przy 50 000 · odrzucenie zakupu ponad saldo · zgodność list pól po obu stronach |
+| Quest-log | mapowanie statusów i Impact (5 poziomów) · trudność · wiązanie projekt–zadanie po `Upstream` · brak dopasowania jako informacja · `DELETE` projektu odpina zadania |
 | Statystyki | odsetek „po terminie" (mianownik, porównanie na dniach, pusty mianownik → `null` zamiast `NaN`) · tabela miesięczna · średnie pomijające braki |
 | Import | oba profile odrzucają te same wiersze z tymi samymi powodami; transformacje Notion (`@March 2, 2024`, `7:30 → 07:30`, nawyki bez URL-i, literalne `null`) |
 | Endpointy | `PATCH /api/zadania/:id` z ciałem 300 kB → **413**, `PATCH /api/dziennik/:id` z tym samym ciałem → **200** |
@@ -634,6 +715,7 @@ lib/csv-parser.js            parser CSV                  — do użycia w każdy
 lib/daty.js                  parsowanie i normalizacja dat — j.w.
 lib/import.js                silnik importu (generyczny)  — j.w.
 lib/nagrody.js               silnik XP, poziomów i waluty (czyste funkcje)
+config/mapowanie-quest-log.js profil importu "Success Plan" (projekty + zadania)
 routes/zadania.js            REST API dla zadań
 routes/slowniki.js           listy wyboru dla frontendu
 routes/czas.js               dzisiejsza data serwera (presety filtrów)
@@ -641,6 +723,7 @@ routes/import.js             podgląd i zatwierdzenie importu (wszystkie profile
 routes/dziennik.js           REST API dla dziennika
 routes/nawyki.js             REST API słownika nawyków
 routes/postac.js             XP, poziom, waluta i zakupy
+routes/projekty.js           REST API projektów
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
@@ -653,6 +736,8 @@ public/js/reguly-dziennika.js czyste reguły dziennika
 public/js/reguly-statystyk.js czyste obliczenia statystyk
 public/statystyki.html       strona statystyk
 public/postac.html           strona postaci (XP, waluta)
+public/projekty.html         strona projektów
+public/js/projekty.js        renderowanie projektów
 public/js/postac.js          renderowanie strony postaci
 public/js/statystyki.js      renderowanie statystyk
 test/smoke.js                npm run test:smoke
@@ -685,6 +770,10 @@ podając własny `config/mapowanie-*.js`.
 | `GET`    | `/api/zakupy`       | lista wydatków                           |
 | `POST`   | `/api/zakupy`       | dodaje wydatek, odrzuca ponad stan konta |
 | `DELETE` | `/api/zakupy/:id`   | cofa zakup (waluta wraca)                |
+| `GET`    | `/api/projekty`     | projekty wraz z licznikiem `X/Y` zadań    |
+| `POST`   | `/api/projekty`     | nowy projekt                             |
+| `PATCH`  | `/api/projekty/:id` | aktualizuje nazwę, status, opis          |
+| `DELETE` | `/api/projekty/:id` | usuwa projekt, **odpina** zadania        |
 | `GET`    | `/api/dziennik`     | lista wszystkich wpisów                  |
 | `POST`   | `/api/dziennik`     | tworzy wpis z dzisiejszą datą            |
 | `PATCH`  | `/api/dziennik/:id` | aktualizuje wybrane pola                 |
@@ -692,7 +781,7 @@ podając własny `config/mapowanie-*.js`.
 | `POST`   | `/api/import/:profil/podglad`   | sprawdza plik CSV, **nic nie zapisuje** (dry-run) |
 | `POST`   | `/api/import/:profil/zatwierdz` | zapisuje poprawne wiersze (jedna transakcja)      |
 
-`:profil` to `zadania` albo `dziennik`.
+`:profil` to `zadania`, `dziennik` albo `notion-quest-log`.
 
 Oba endpointy importu przyjmują JSON `{ "tresc": "<zawartość pliku CSV>" }` —
 nie `multipart/form-data`. Przeglądarka czyta plik przez `File.text()`, dzięki czemu

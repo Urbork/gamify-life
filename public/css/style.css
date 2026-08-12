@@ -287,8 +287,17 @@ td.brak-danych-xp {
   background: var(--uwaga-tlo);
   box-shadow: inset 0 0 0 1px var(--uwaga);
 }
-.kol-klient {
-  width: 180px;
+.kol-obszar {
+  width: 140px;
+}
+.kol-projekt {
+  width: 170px;
+}
+.kol-opis {
+  width: 320px;
+}
+.kol-postep {
+  width: 130px;
 }
 /* Szersza niz przy samej dacie - datetime-local pokazuje jeszcze godzine. */
 .kol-data {
@@ -347,8 +356,14 @@ td select.plakietka {
   Wartosc dla zadan = suma szerokosci kolumn o stalej szerokosci (~1200px)
   plus zapas na "Nazwa".
 */
+/* Doszly kolumny Trudnosc, Czas (h), Projekt - stad wiecej niz wczesniej. */
 #tabela-zadan {
-  min-width: 1500px;
+  min-width: 1750px;
+}
+
+/* Tabela projektow ma szesc kolumn - miesci sie bez przewijania. */
+#tabela-projektow {
+  min-width: 0;
 }
 
 /* Tabela dziennika ma 20 kolumn - bez tego zwezalaby je do nieczytelnosci,

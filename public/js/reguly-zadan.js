@@ -88,10 +88,22 @@ const regulyZadan = (() => {
     return filtry.priorytety.size === 0 || filtry.priorytety.has(z.priorytet);
   }
 
-  function pasujeKlient(z, filtry) {
-    if (filtry.klienci.size === 0) return true;
-    // Zadanie bez klienta ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
-    return filtry.klienci.has(z.klient_kategoria);
+  function pasujeObszar(z, filtry) {
+    if (filtry.obszary.size === 0) return true;
+    // Zadanie bez obszaru ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
+    return filtry.obszary.has(z.obszar);
+  }
+
+  /*
+    Filtr po projekcie. Zbior zawiera ID projektow (liczby), nie nazwy:
+    nazwa moze sie zmienic albo powtorzyc, id jest stabilne.
+
+    Sprawdzenie `filtry.projekty` na istnienie, bo starsze wywolania (i testy)
+    moga podawac obiekt filtrow bez tego pola.
+  */
+  function pasujeProjekt(z, filtry) {
+    if (!filtry.projekty || filtry.projekty.size === 0) return true;
+    return filtry.projekty.has(z.projekt_id);
   }
 
   /*
@@ -141,7 +153,8 @@ const regulyZadan = (() => {
         pasujeNazwa(z, filtry) &&
         pasujeStan(z, filtry) &&
         pasujePriorytet(z, filtry) &&
-        pasujeKlient(z, filtry) &&
+        pasujeObszar(z, filtry) &&
+        pasujeProjekt(z, filtry) &&
         pasujeZakresDat(z, filtry)
     );
   }
@@ -152,7 +165,8 @@ const regulyZadan = (() => {
       filtry.nazwa !== '',
       filtry.stany.size > 0,
       filtry.priorytety.size > 0,
-      filtry.klienci.size > 0,
+      filtry.obszary.size > 0,
+      Boolean(filtry.projekty && filtry.projekty.size > 0),
       filtry.od !== '' || filtry.do !== '',
     ].filter(Boolean).length;
   }
@@ -195,7 +209,8 @@ const regulyZadan = (() => {
       // Po NUMERZE priorytetu, nie po etykiecie - alfabetycznie wyszloby
       // Brak, Niski, Pilne, Sredni, Wysoki, czyli kolejnosc bez sensu.
       priorytet: { typ: 'liczba', wartosc: (z) => z.priorytet },
-      klient_kategoria: { typ: 'tekst', wartosc: (z) => z.klient_kategoria },
+      obszar: { typ: 'tekst', wartosc: (z) => z.obszar },
+      projekt_id: { typ: 'liczba', wartosc: (z) => z.projekt_id },
       start_zadania: { typ: 'znacznik', wartosc: (z) => z.start_zadania },
       termin: { typ: 'znacznik', wartosc: (z) => z.termin },
       dni_do_terminu: { typ: 'liczba', wartosc: (z) => dniDoTerminu(z, dzisiaj) },

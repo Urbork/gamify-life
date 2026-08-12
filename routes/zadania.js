@@ -29,7 +29,9 @@ const POLA_EDYTOWALNE = [
   // trudnosc - ile zadanie bylo warte przy naliczaniu XP.
   'trudnosc',
   'czas_trwania_godziny',
-  'klient_kategoria',
+  'obszar',
+  // Przypisanie do projektu. FK z ON DELETE SET NULL - patrz migracja 6.
+  'projekt_id',
   'start_zadania',
   'termin',
   'czas_zakonczenia',
@@ -105,7 +107,25 @@ function znormalizuj(pole, wartosc) {
     return liczba;
   }
 
-  // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i klienta).
+  /*
+    Przypisanie do projektu. Puste = zadanie luzne, poza projektem.
+    Istnienie projektu pilnuje klucz obcy w bazie - blad SQLite zamieniamy
+    nizej na czytelna odpowiedz 400.
+  */
+  if (pole === 'projekt_id') {
+    if (wartosc === null || wartosc === undefined || wartosc === '') return null;
+
+    const typPoprawny =
+      typeof wartosc === 'number' || (typeof wartosc === 'string' && wartosc.trim() !== '');
+    const numer = typPoprawny ? Number(wartosc) : NaN;
+
+    if (!Number.isInteger(numer) || numer <= 0) {
+      throw blad(400, `Niepoprawne id projektu "${wartosc}".`);
+    }
+    return numer;
+  }
+
+  // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i obszaru).
   if (wartosc === null || wartosc === undefined || wartosc === '') {
     if (pole === 'nazwa') return '';
     if (pole === 'stan') throw blad(400, 'Pole "stan" nie moze byc puste.');
@@ -135,7 +155,7 @@ function znormalizuj(pole, wartosc) {
     throw blad(400, `Nieznany stan "${tekst}". Dozwolone: ${STANY.join(', ')}.`);
   }
 
-  // `klient_kategoria` NIE jest walidowany wobec listy - to lista podpowiedzi,
+  // `obszar` NIE jest walidowany wobec listy - to lista podpowiedzi,
   // a stare rekordy maja prawo zawierac wartosci, ktorych juz nie ma w slowniku.
 
   return tekst;
@@ -199,7 +219,17 @@ router.patch('/:id', (req, res) => {
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
   const przypisania = pola.map((p) => `${p} = @${p}`).join(', ');
-  db.prepare(`UPDATE zadania SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
+
+  try {
+    db.prepare(`UPDATE zadania SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
+  } catch (e) {
+    // Klucz obcy odrzuca przypisanie do nieistniejacego projektu - zamieniamy
+    // surowy blad SQLite na czytelny komunikat dla interfejsu.
+    if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+      throw blad(400, `Nie ma projektu o id ${doZapisu.projekt_id}.`);
+    }
+    throw e;
+  }
 
   res.json(pobierzJedno.get(id));
 });

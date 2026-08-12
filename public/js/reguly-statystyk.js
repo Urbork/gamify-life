@@ -136,14 +136,14 @@ const regulyStatystyk = (() => {
       if (!znane.has(klucz)) wgStanu.push({ klucz, ile });
     }
 
-    const wgKlienta = zliczWedlug(zadania, 'klient_kategoria', '(brak)').sort(
+    const wgObszaru = zliczWedlug(zadania, 'obszar', '(brak)').sort(
       (a, b) => b.ile - a.ile || a.klucz.localeCompare(b.klucz, 'pl')
     );
 
     return {
       lacznie: zadania.length,
       wgStanu,
-      wgKlienta,
+      wgObszaru,
       czasTrwania: sredniCzasTrwania(zadania),
       poTerminie: poTerminie(zadania),
     };

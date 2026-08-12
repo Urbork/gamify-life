@@ -200,7 +200,53 @@ const MIGRACJE = [
     `);
   },
 
-  // --- 6: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 6: obszar zamiast klienta + projekty ------------------------------
+  (db) => {
+    /*
+      KOLEJNOSC KROKOW JEST WYMUSZONA:
+      1. zmiana nazwy kolumny - zeby reszta tej migracji i wszystkie przyszle
+         widzialy juz finalna nazwe;
+      2. utworzenie tabeli `projekty`;
+      3. dopiero potem kolumna z kluczem obcym - klucz nie moze wskazywac
+         na tabele, ktora jeszcze nie istnieje.
+    */
+
+    /*
+      Pole zmienia znaczenie: bylo lista klientow, jest lista obszarow zycia.
+      RENAME COLUMN zachowuje dane, wiec stare wartosci (Alfaram, Nuva...)
+      zostaja w bazie. Wobec nowej listy pokaza sie w interfejsie z dopiskiem
+      "(spoza listy)" - pole nadal NIE jest walidowane scisle.
+    */
+    db.exec(`ALTER TABLE zadania RENAME COLUMN klient_kategoria TO obszar`);
+
+    db.exec(`
+      CREATE TABLE projekty (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazwa      TEXT NOT NULL,
+        -- Te same piec wartosci co stan zadania - jedna skala dla obu poziomow.
+        status     TEXT NOT NULL DEFAULT 'Plan',
+        opis       TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+      )
+    `);
+
+    /*
+      ON DELETE SET NULL: usuniecie projektu ODPINA zadania, a nie kasuje ich.
+      Zadanie jest bytem samodzielnym, projekt tylko kontenerem.
+
+      Dziala pod dwoma warunkami, oba sa spelnione:
+      - PRAGMA foreign_keys = ON przy kazdym polaczeniu (db/index.js),
+      - ADD COLUMN z REFERENCES wymaga domyslnej wartosci NULL - nasza taka jest.
+    */
+    db.exec(`
+      ALTER TABLE zadania
+        ADD COLUMN projekt_id INTEGER REFERENCES projekty(id) ON DELETE SET NULL
+    `);
+
+    db.exec(`CREATE INDEX idx_zadania_projekt ON zadania (projekt_id)`);
+  },
+
+  // --- 7: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {
