@@ -34,6 +34,17 @@
   const elFiltrOd = document.getElementById('filtr-od');
   const elFiltrDo = document.getElementById('filtr-do');
   const elWyczysc = document.getElementById('przycisk-wyczysc');
+  const elOgraniczenie = document.getElementById('ograniczenie-widoku');
+  const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
+  const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
+
+  /*
+    Powyzej tylu wpisow dziennik startuje ograniczony do ostatnich DNI_DOMYSLNEGO_WIDOKU.
+    Ponizej pokazuje wszystko - przy krotkiej liscie ograniczenie nic nie daje,
+    a wypelnione pole "od" na starcie tylko myli.
+  */
+  const PROG_OGRANICZENIA_WIDOKU = 100;
+  const DNI_DOMYSLNEGO_WIDOKU = 30;
 
   // Slowniki z /api/slowniki - stad biora sie opisy ocen (plakietki w dropdownach).
   let slowniki = { oceny: {} };
@@ -395,6 +406,29 @@
     odswiezNaglowki();
     odswiezDuplikatyDat();
     odswiezPodsumowanie();
+    odswiezOgraniczenie();
+  }
+
+  /*
+    Baner o ograniczonym widoku - odpowiednik tego ze strony zadan.
+
+    Pokazuje sie tylko wtedy, gdy zakres dat naprawde chowa wpisy, wiec po
+    wyczyszczeniu filtrow albo przy krotkiej liscie znika sam. Przycisk wola
+    wyczyscFiltry(), bo etykieta obiecuje "wszystkie" - musi zdjac takze
+    wyszukiwarke i nawyki, inaczej pokazalby mniej, niz zapowiada liczba.
+  */
+  function odswiezOgraniczenie() {
+    const wszystkie = [...wpisy.values()];
+    const widoczne = doWyswietlenia().length;
+    const ukryte = wszystkie.length - widoczne;
+
+    // Baner mowi o ZAKRESIE DAT, wiec pokazujemy go tylko, gdy to on odsiewa.
+    elOgraniczenie.hidden = ukryte === 0 || elFiltrOd.value === '';
+    if (elOgraniczenie.hidden) return;
+
+    elOgraniczenieTekst.textContent =
+      `Widok ograniczony od ${elFiltrOd.value} — ukryto ${ukryte} starszych wpisów. `;
+    elPokazWszystkie.textContent = `Pokaż wszystkie (${wszystkie.length})`;
   }
 
   /*
@@ -893,13 +927,38 @@
       nawykiSlownik = pobraneNawyki;
       dzisiajSerwera = czas.dzisiaj;
 
+      /*
+        DOMYSLNE OGRANICZENIE WIDOKU - ostatnie 30 dni.
+
+        Przy 823 wpisach pelna tabela to ~45 000 elementow i ~250 ms na kazde
+        przerysowanie, a renderuj() leci przy kazdym nacisnieciu klawisza
+        w wyszukiwarce. Samo filtrowanie i sortowanie zajmuja ponizej 1 ms -
+        koszt siedzi w budowaniu DOM, wiec pomaga wylacznie mniej wierszy.
+
+        Ograniczenie robi ZWYKLY filtr zakresu dat, ten sam, ktory obsluguja presety:
+        pole "od" jest widocznie wypelnione, wiec od razu widac, czemu starszych
+        wpisow nie ma, a "Wyczysc filtry" pokazuje wszystko.
+
+        Ustawiamy PRZED zbudowaniem presetow, zeby podswietlily wlasciwy zakres.
+      */
+      if (lista.length > PROG_OGRANICZENIA_WIDOKU && dzisiajSerwera) {
+        elFiltrOd.value = filtrDat.dataPlusDni(dzisiajSerwera, -(DNI_DOMYSLNEGO_WIDOKU - 1));
+      }
+
       zbudujCheckboxyNawykow();
       zbudujPresety();
       odswiezPresety();
 
       wpisy.clear();
       for (const w of lista) wpisy.set(w.id, w);
-      renderuj();
+
+      /*
+        Start idzie przez zastosujFiltry(), a nie prosto przez renderuj().
+        Tutaj jest to WARUNEK DZIALANIA domyslnego ograniczenia: filtrowanie czyta
+        zakres z obiektu `filtry`, a przepisuje go tam wylacznie zastosujFiltry().
+        Samo wypelnienie pola "od" nie odsialoby ani jednego wiersza.
+      */
+      zastosujFiltry();
     } catch (e) {
       pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
     }
@@ -908,6 +967,7 @@
   elDodaj.addEventListener('click', dodajWpis);
   elEksport.addEventListener('click', eksportujCsv);
   elWyczysc.addEventListener('click', wyczyscFiltry);
+  elPokazWszystkie.addEventListener('click', wyczyscFiltry);
 
   // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
   elFiltrSzukaj.addEventListener('input', zastosujFiltry);

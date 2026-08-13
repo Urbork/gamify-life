@@ -51,6 +51,39 @@ h1 {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+  /*
+    Zawijanie, a nie przewijanie: pasek zadan ma juz nawigacje, trzy przyciski
+    i liste wyboru zrodla importu, wiec na wezszym oknie musi sie zlamac do drugiej
+    linii zamiast rozpychac strone w poziomie. Gdy wszystko sie miesci, nic nie zmienia.
+  */
+  flex-wrap: wrap;
+}
+
+/*
+  Baner o ograniczonym widoku. Ma byc widoczny, ale nie alarmujacy - to informacja,
+  a nie blad; stad ten sam zolty odcien co miekkie ostrzezenie o duplikacie daty,
+  a nie czerwien. Stoi tuz nad tabela, zeby czytalo sie go razem z brakujacymi wierszami.
+*/
+.ograniczenie {
+  margin: 8px 0;
+  padding: 6px 10px;
+  background: #fffbe6;
+  border: 1px solid #e0d28a;
+}
+
+.ograniczenie button {
+  margin-left: 4px;
+}
+
+/*
+  Etykieta i lista wyboru zrodla importu trzymaja sie razem przy zawijaniu paska.
+  Nie ma tu wlasnej ramki ani kolorow - reszta interfejsu jest tak samo surowa.
+*/
+.wybor-profilu {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 button {

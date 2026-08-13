@@ -191,6 +191,58 @@ OD i DO — zawsze widać, jaki zakres jest naprawdę użyty, i można go ręczn
 > Zamiana to jedna linijka opisana w komentarzu przy `pasujeZakresDat`
 > w [public/js/zadania.js](public/js/zadania.js).
 
+### Domyślne ograniczenie widoku
+
+Przy większych zbiorach obie tabele startują **ograniczone**, bo pełne przerysowanie
+zaczyna być odczuwalne:
+
+| Strona | Widok domyślny | Próg włączenia |
+| --- | --- | --- |
+| Zadania | tylko **aktywne** (stan inny niż `Zrobione`) | powyżej 100 zadań |
+| Dziennik | ostatnie **30 dni** | powyżej 100 wpisów |
+
+Poniżej progu ograniczenie się nie włącza — przy krótkiej liście nic nie przyspiesza,
+a filtr zaznaczony na starcie tylko myli.
+
+**Ograniczenie robi zwykły filtr**, ten sam, który jest w panelu: na stronie zadań
+zaznaczone są wszystkie stany poza `Zrobione`, w dzienniku wypełnione jest pole **od**.
+Panel filtrów pokazuje więc prawdę o tym, co widać, znacznik „aktywne: 1" się zapala,
+a **Wyczyść filtry** działa jako pokazanie wszystkiego. Nad tabelą stoi dodatkowo żółty
+pasek z liczbą ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak
+zrobionych zadań nigdy nie wyglądał jak utrata danych.
+
+Wybór **nie jest zapamiętywany**: po odświeżeniu strona wraca do widoku domyślnego.
+W projekcie nie ma stanu trzymanego po stronie przeglądarki i ta zmiana tego nie wprowadza.
+
+> **Eksport, kopia zapasowa i XP zawsze widzą pełny zbiór** — niezależnie od tego,
+> co jest na ekranie. Eksport woła `posortowane()` z pominięciem `filtrowane()`, backup
+> czyta prosto z bazy (`SELECT * FROM zadania ORDER BY id`), a XP liczy serwer
+> w `routes/postac.js`. Pilnują tego asercje w `test/smoke.js`.
+
+#### Skąd te progi — pomiar
+
+Ograniczenie powstało po pomiarze, nie „na wyczucie". Na zbiorze 537 zadań / 823 wpisów:
+
+| Etap | Czas | Udział |
+| --- | --- | --- |
+| fetch + JSON | 7,5 ms | 2% |
+| filtrowanie, sortowanie, kolumny wyliczane | poniżej 1 ms | <0,5% |
+| **budowa DOM** | **212–453 ms** | **~75%** |
+| wstawienie do drzewa | 24–87 ms | ~20% |
+
+Koszt siedzi w budowaniu DOM, a konkretnie w **opcjach list rozwijanych**: każdy wiersz
+zadania ma pięć `<select>`, a lista projektów to 42 pozycje — razem **37 053 elementów
+`<option>`** na stronie. Mikrotest: 537 wierszy z pięcioma pustymi `<select>` to 16,5 ms,
+te same wiersze z kompletem opcji — 125,7 ms.
+
+Efekt ograniczenia: zadania **537 → 74 wiersze, ~290 ms → ~30 ms**; dziennik
+**823 → 19 wierszy, ~250 ms → ~8 ms**. Ma to znaczenie, bo `renderuj()` przebudowuje
+całe `<tbody>` przy **każdym naciśnięciu klawisza** w polu filtra.
+
+Gdyby to przestało wystarczać, następnym krokiem jest tworzenie `<select>` dopiero
+przy kliknięciu komórki (do tego czasu zwykły tekst) — to uderza w faktyczną przyczynę,
+czyli liczbę elementów `<option>`.
+
 ### Eksport do CSV
 
 Przycisk **Eksportuj do CSV** pobiera plik `zadania-eksport-RRRR-MM-DD.csv`
@@ -214,14 +266,45 @@ w jedną kolumnę. Wtedy albo użyj w Excelu *Dane → Tekst jako kolumny*, albo
 
 ### Import z CSV
 
-Przycisk **Importuj z CSV** wczytuje plik wyeksportowany z innego narzędzia
-(domyślnie: eksport z Notion). Import jest **dwuetapowy**:
+Przycisk **Importuj z CSV** wczytuje plik wyeksportowany z innego narzędzia.
+Import jest **dwuetapowy**:
 
-1. wybór pliku → `POST /api/import/podglad` — plik jest parsowany i sprawdzany,
+1. wybór pliku → `POST /api/import/:profil/podglad` — plik jest parsowany i sprawdzany,
    ale **nic nie trafia do bazy**;
 2. podgląd pokazuje „X gotowych do zaimportowania, Y odrzuconych" plus tabelkę
    odrzuconych wierszy z numerem linii w pliku i konkretnym powodem;
-3. dopiero **Zatwierdź import** → `POST /api/import/zatwierdz` zapisuje dane.
+3. dopiero **Zatwierdź import** → `POST /api/import/:profil/zatwierdz` zapisuje dane.
+
+#### Wybór źródła
+
+Na stronie zadań przed przyciskiem stoi lista **Źródło**, bo ta sama tabela przyjmuje
+pliki z dwóch miejsc:
+
+| Opcja | Kiedy jej użyć |
+| --- | --- |
+| **Zadania — eksport z tej aplikacji** | plik z przycisku „Eksportuj do CSV" obok; nagłówki `Nazwa zadania`, `Stan`, `Obszar`, `Termin`… |
+| **Notion Success Plan — projekty + zadania** | eksport bazy „Success Plan" z Notion; z jednego pliku powstają **i projekty, i zadania**, powiązane kolumną `Upstream` |
+
+Wybrana wartość trafia wprost do adresu jako `:profil` — router i tak działał
+parametrem, więc doszedł sam wybór, bez zmian po stronie serwera.
+
+**Strona dziennika listy nie ma**: ma jeden profil, podany atrybutem `data-profil`
+na przycisku. `public/js/csv-import.js` obsługuje oba sposoby — najpierw patrzy na listę,
+a gdy jej nie ma, sięga po atrybut.
+
+Dwie rzeczy, które łatwo przeoczyć przy dwóch źródłach na jednej stronie:
+
+- podgląd wypisuje **nazwę użytego profilu**, żeby plik wczytany nie tym mapowaniem
+  (same odrzucone wiersze) dało się od razu rozpoznać;
+- lista jest **zablokowana, dopóki podgląd jest otwarty**, a zatwierdzenie idzie profilem
+  zapamiętanym przy podglądzie. Inaczej przestawienie listy między jednym krokiem a drugim
+  zapisałoby dane według innego mapowania niż to, które przed chwilą było na ekranie.
+
+Po zapisie moduł importu wysyła zdarzenie `dane-<tabela>-zmienione` **osobno dla każdej
+ruszonej tabeli** (mapa `ZMIENIANE_TABELE`). Nazwa zdarzenia celowo nie bierze się z nazwy
+profilu: `notion-quest-log` pisze do **dwóch** tabel naraz, więc strona zadań przeładowuje
+zarówno listę zadań, jak i projekty — bez tego nowy projekt siedziałby w bazie, ale nie dało
+by się go wybrać w kolumnie **Projekt** aż do odświeżenia strony.
 
 Zaimportowane zadania są **dopisywane** — nic istniejącego nie jest nadpisywane ani usuwane.
 Cały import idzie w jednej transakcji: albo wejdą wszystkie poprawne wiersze, albo żaden.
@@ -241,9 +324,28 @@ Chcesz wczytać plik z innego źródła (albo własny eksport z tej aplikacji, k
 nagłówki techniczne)? Dopisz wpisy do `MAPOWANIE_KOLUMN` — kilka nagłówków może
 wskazywać na to samo pole.
 
-**Formaty dat** próbowane po kolei: `YYYY-MM-DD`, `Month D, YYYY` (np. `August 8, 2026` —
-domyślny format Notion), `DD.MM.YYYY`. Puste pole to brak daty, a nie błąd.
-Godzina jest uzupełniana jako `00:00`.
+**Formaty dat** próbowane po kolei (`lib/daty.js`):
+
+| Format | Skąd | Godzina |
+| --- | --- | --- |
+| `YYYY-MM-DD` | postać z naszej bazy | `00:00` |
+| `Month D, YYYY` | `August 8, 2026` — eksport Notion | `00:00` |
+| `DD.MM.YYYY` | zapis polski | `00:00` |
+| `DD/MM/YYYY` | eksport „Success Plan" | `00:00` |
+| `DD/MM/YYYY HH:MM (GMT+X)` | eksport „Success Plan" | **zachowana** |
+
+Dzień jest **pierwszy** — amerykańskiego `MM/DD/YYYY` te eksporty nie używają.
+W ostatnim wariancie **strefa jest pomijana, a godzina zachowywana bez przeliczania**:
+w źródle to czas lokalny autora i tak samo jest czytany w aplikacji. Przeliczanie na UTC
+przesunęłoby część wpisów na sąsiedni dzień, a wszystkie porównania dat w aplikacji
+idą na pełnych dniach kalendarzowych.
+
+**Zakres dat** (`19/10/2024 → 20/10/2024`, także z godzinami po obu stronach) jest
+skracany do **daty początkowej**. Nasze kolumny są pojedynczymi punktami w czasie,
+a to po dacie początkowej filtrowały widoki w Notion. Cięcie idzie po samym znaku
+strzałki (U+2192), więc nie zależy od tego, ile takich zakresów przyniesie kolejny eksport.
+
+Puste pole to brak daty, a nie błąd.
 
 **Wiersz jest odrzucany**, gdy: nazwa jest pusta, stan nie pasuje **dokładnie** do słownika
 (wielkość liter ma znaczenie), albo data jest w nierozpoznanym formacie. Odrzucenie dotyczy
@@ -474,11 +576,41 @@ trafia do pola tymczasowego, a wybór robi hook `poWierszu`.
 
 Wymagana jest wyłącznie niepusta kolumna `Name`. Reszta jest opcjonalna.
 
-> **Profil powstał ze specyfikacji, nie z pliku.** Eksportu „Success Plan" nie było
-> w projekcie w chwili pisania, więc nagłówki i wartości są **założone** — w szczególności
-> format kolumny relacji `Upstream`. Parser przyjmuje oba warianty, jakie stosuje Notion:
-> `Nazwa (https://…)` oraz samo `Nazwa`. Gdyby nagłówki się różniły, import zgłosi
-> „W pliku brakuje kolumn: Name" — poprawka to jedna linijka w pliku mapowania.
+#### Jak czytana jest kolumna `Upstream`
+
+Notion eksportuje relację jako `Nazwa (https://app.notion.com/p/…)`. Bierzemy **wszystko
+przed końcowym nawiasem z URL-em**; wariant bez URL-a też przechodzi.
+
+Pole jest traktowane jako **pojedyncza wartość** — w 372 zadaniach z relacją nie ma ani
+jednego z dwoma URL-ami, więc zadanie ma najwyżej jeden projekt.
+
+> **Nie dzielimy po przecinku.** Pierwotna wersja parsera tak robiła i rozrywała nazwy
+> projektów, które przecinek zawierają — „Stan, ale trudniejszy" czy „The Ultimate React
+> Course 2024: React, Next.js, Redux & More". Nawias obcinany jest wyłącznie na **końcu**
+> wartości, bo nazwa projektu sama może zawierać nawiasy. Trim jest konieczny: nazwy mają
+> końcowe spacje, a przed nawiasem bywa podwójna spacja.
+
+#### Weryfikacja na prawdziwym eksporcie
+
+Profil powstał ze specyfikacji, ale został **sprawdzony na prawdziwym pliku**
+(582 wiersze, 56 kolumn — wariant `…_all.csv`; krótszy plik bez `_all` ma tylko 6 kolumn
+i do importu się nie nadaje). Wynik podglądu:
+
+| | |
+| --- | --- |
+| projekty | 41 |
+| zadania | 541 |
+| zadania z podpiętym projektem | 371 |
+| bez dopasowania | 1 |
+| wiersze odrzucone | 0 |
+
+Jedyne niedopasowanie to zadanie, którego `Upstream` wskazuje na **inne zadanie**,
+nie na projekt. To zachowanie poprawne: zadanie wchodzi bez projektu, a podgląd pokazuje
+nazwę jako informację, nie jako błąd.
+
+Weryfikacja wykryła trzy rozbieżności wobec specyfikacji — brakujące formaty dat
+z ukośnikami, zakresy ze strzałką i cięcie `Upstream` po przecinku. Wszystkie trzy
+są opisane wyżej i pokryte asercjami w `test/smoke.js`.
 
 ### Jak dodać własny profil importu
 

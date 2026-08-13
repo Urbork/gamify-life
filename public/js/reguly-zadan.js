@@ -275,6 +275,30 @@ const regulyZadan = (() => {
     });
   }
 
+  // ==========================================================================
+  // Domyslne ograniczenie widoku
+  // ==========================================================================
+
+  /*
+    Ktore stany sa zaznaczone przy otwarciu strony.
+
+    Tabela z 537 wierszami buduje ~37 000 elementow <option> (piec list rozwijanych
+    na wiersz, w tym lista projektow), co daje ~290 ms na KAZDE przerysowanie -
+    a renderuj() leci przy kazdym nacisnieciu klawisza w filtrze nazwy.
+    Ograniczenie do samych aktywnych schodzi do ~30 ms.
+
+    Ograniczenie realizujemy ZWYKLYM FILTREM STANU, a nie osobna warstwa nad nim:
+    dzieki temu panel filtrow pokazuje prawde o tym, co widac, znacznik filtrow
+    sie zapala, a "Wyczysc filtry" dziala jako pokazanie wszystkiego. Gdyby odsiew
+    siedzial obok filtrow, po pol roku wygladaloby to jak zgubione dane.
+
+    Zwracamy WSZYSTKIE stany poza koncowym - a nie sztywna liste - zeby dopisanie
+    stanu do config/slowniki.js od razu wchodzilo do widoku domyslnego.
+  */
+  function domyslneStany(slowniki) {
+    return (slowniki.stany || []).filter((s) => s !== slowniki.stanZakonczony);
+  }
+
   return {
     dniDoTerminu,
     maDaneDoXp,
@@ -282,5 +306,6 @@ const regulyZadan = (() => {
     ileAktywnych,
     posortowane,
     kolumnySortowania,
+    domyslneStany,
   };
 })();

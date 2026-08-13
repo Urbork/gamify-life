@@ -1071,6 +1071,176 @@ async function testujProjekty() {
   }
 }
 
+/*
+  Parser dat z pliku. lib/daty.js jest czystym modulem serwerowym, wiec - podobnie
+  jak lib/nagrody.js - wystarczy zwykly require(), bez vm i bez wstawania serwera.
+
+  Formaty z ukosnikami i zakres ze strzalka trafily tu po weryfikacji profilu
+  quest-log na PRAWDZIWYM eksporcie "Success Plan" - specyfikacja, z ktorej profil
+  powstal, nie wspominala ani o jednym, ani o drugim.
+*/
+/*
+  Domyslne ograniczenie widoku.
+
+  Powod jest wydajnosciowy: przy 537 zadaniach tabela buduje ~37 000 elementow
+  <option> (piec list rozwijanych na wiersz) i przerysowanie kosztuje ~290 ms,
+  a leci ono przy KAZDYM nacisnieciu klawisza w filtrze nazwy. Sam odsiew
+  i sortowanie zajmuja ponizej 1 ms - caly koszt to budowanie DOM.
+
+  Testujemy DWIE rzeczy, bo obie latwo zepsuc niezaleznie:
+  1. ze widok domyslny naprawde odsiewa zakonczone,
+  2. ze eksport, backup i XP nadal widza PELNY zbior - to zasada obowiazujaca
+     od poczatku projektu i ograniczenie widoku nie ma prawa jej naruszyc.
+*/
+async function testujDomyslneOgraniczenie(reguly) {
+  sekcja('DOMYSLNE OGRANICZENIE WIDOKU');
+
+  const { regulyZadan } = reguly;
+  const slownikiTestowe = {
+    stany: ['Plan', 'Czeka', 'W trakcie', 'Zrobione', 'Blok'],
+    stanZakonczony: 'Zrobione',
+  };
+
+  sprawdzListe(
+    'widok domyslny to wszystkie stany poza zakonczonym',
+    ['Plan', 'Czeka', 'W trakcie', 'Blok'],
+    regulyZadan.domyslneStany(slownikiTestowe)
+  );
+
+  /*
+    Lista jest WYLICZANA ze slownika, nie wpisana na sztywno - dopisanie stanu
+    w config/slowniki.js ma od razu wchodzic do widoku domyslnego, bez ruszania
+    kodu strony. Gdyby ktos zamienil to na stala liste, ta asercja pekniе.
+  */
+  sprawdzListe(
+    'nowy stan ze slownika wchodzi do widoku domyslnego sam',
+    ['Plan', 'Odlozone'],
+    regulyZadan.domyslneStany({ stany: ['Plan', 'Odlozone', 'Zrobione'], stanZakonczony: 'Zrobione' })
+  );
+
+  // Odsiew liczony PRAWDZIWA funkcja filtrujaca, a nie powtorzona logika testu.
+  const zadaniaTestowe = [
+    { id: 1, nazwa: 'aktywne', stan: 'Plan' },
+    { id: 2, nazwa: 'zrobione', stan: 'Zrobione' },
+    { id: 3, nazwa: 'w toku', stan: 'W trakcie' },
+  ];
+  const filtryDomyslne = {
+    nazwa: '',
+    od: '',
+    do: '',
+    stany: new Set(regulyZadan.domyslneStany(slownikiTestowe)),
+    priorytety: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
+  };
+  sprawdzListe(
+    'widok domyslny chowa zakonczone, reszte zostawia',
+    [1, 3],
+    regulyZadan.filtrowane(zadaniaTestowe, filtryDomyslne, null).map((z) => z.id)
+  );
+
+  /*
+    PELNY ZBIOR MIMO OGRANICZONEGO WIDOKU.
+
+    Eksport CSV i backup czytaja dane niezaleznie od filtrow (eksport wola
+    posortowane() bez argumentu, backup idzie prosto do bazy zapytaniem
+    "SELECT * FROM zadania ORDER BY id"), a XP liczy serwer w routes/postac.js.
+    Wspolnym warunkiem jest to, ze GET /api/zadania nie ogranicza niczego
+    po stronie serwera - gdyby ktos "pomogl" wydajnosci, dodajac tam LIMIT
+    albo domyslny filtr, ucielby jednoczesnie eksport, backup i XP.
+  */
+  const wszystkie = (await zapytaj('GET', '/api/zadania')).tresc;
+  const zakonczone = wszystkie.filter((z) => z.stan === 'Zrobione');
+  sprawdz(
+    'GET /api/zadania zwraca takze zadania zakonczone (zrodlo eksportu i backupu)',
+    zakonczone.length > 0,
+    `zakonczonych: ${zakonczone.length} z ${wszystkie.length}`
+  );
+
+  // XP musi rosnac od zadania ZAKONCZONEGO, czyli takiego, ktorego widok domyslny nie pokazuje.
+  const przed = (await zapytaj('GET', '/api/postac')).tresc;
+  const nowe = await zapytaj('POST', '/api/zadania', { nazwa: 'XP z ukrytego zadania' });
+  await zapytaj('PATCH', `/api/zadania/${nowe.tresc.id}`, {
+    stan: 'Zrobione',
+    trudnosc: 3,
+    czas_trwania_godziny: 2,
+    czas_zakonczenia: dzienOGodzinie(0, '12:00'),
+  });
+  const po = (await zapytaj('GET', '/api/postac')).tresc;
+
+  sprawdz(
+    'XP liczy zadania ukryte w widoku domyslnym',
+    po.calkowite_xp > przed.calkowite_xp,
+    `przed: ${przed.calkowite_xp}, po: ${po.calkowite_xp}`
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.tresc.id}`);
+}
+
+async function testujParserDat() {
+  sekcja('PARSER DAT (lib/daty.js, w izolacji)');
+
+  const { parsujDateTolerancyjnie } = require('../lib/daty');
+
+  // --- formaty znane wczesniej: nie moga sie zepsuc po dolozeniu ukosnikow ---
+  sprawdzListe(
+    'formaty sprzed zmiany dzialaja bez zmian',
+    ['2026-08-13T00:00', '2026-08-08T00:00', '2026-08-13T00:00'],
+    ['2026-08-13', 'August 8, 2026', '13.08.2026'].map(parsujDateTolerancyjnie)
+  );
+
+  // --- nowy format 1: sama data z ukosnikami (377x w kolumnie Do Date) ---
+  sprawdz(
+    'DD/MM/YYYY -> dzien jest pierwszy, nie miesiac',
+    parsujDateTolerancyjnie('29/02/2024') === '2024-02-29T00:00'
+  );
+  sprawdz(
+    'DD/MM/YYYY: dzien powyzej 12 nie jest czytany jako miesiac',
+    parsujDateTolerancyjnie('19/10/2024') === '2024-10-19T00:00'
+  );
+
+  /*
+    Nowy format 2: data z godzina i strefa (477x w Closing Date, 175x w Do Date).
+    Strefe pomijamy, godzine ZACHOWUJEMY bez przeliczania - inaczej czesc wpisow
+    przesunelaby sie na sasiedni dzien.
+  */
+  sprawdz(
+    'DD/MM/YYYY HH:MM (GMT+X) -> godzina zachowana, strefa pominieta',
+    parsujDateTolerancyjnie('02/03/2024 13:25 (GMT+1)') === '2024-03-02T13:25'
+  );
+  sprawdz(
+    'godzina jednocyfrowa "9:00" -> "09:00"',
+    parsujDateTolerancyjnie('24/08/2024 9:00 (GMT+2)') === '2024-08-24T09:00'
+  );
+  sprawdz(
+    'GMT+2 czytane tak samo jak GMT+1 (bez przesuwania godziny)',
+    parsujDateTolerancyjnie('28/05/2024 13:00 (GMT+2)') === '2024-05-28T13:00'
+  );
+
+  /*
+    Zakres dat z Notion (strzalka U+2192): bierzemy date POCZATKOWA.
+    Ciecie jest po samym znaku strzalki, wiec dziala dla obu wariantow -
+    z godzinami i bez - niezaleznie od tego, ile takich zakresow bedzie dalej.
+  */
+  sprawdz(
+    'zakres "data → data" -> data poczatkowa',
+    parsujDateTolerancyjnie('19/10/2024 → 20/10/2024') === '2024-10-19T00:00'
+  );
+  sprawdz(
+    'zakres z godzinami i strefami -> poczatek wraz z godzina',
+    parsujDateTolerancyjnie('04/08/2024 14:00 (GMT+2) → 07/08/2024 13:00 (GMT+2)') ===
+      '2024-08-04T14:00'
+  );
+
+  // --- wartosci bledne nadal odrzucane: tolerancja nie moze znaczyc "cokolwiek" ---
+  sprawdz('31/02/2024 to nieistniejacy dzien -> null', parsujDateTolerancyjnie('31/02/2024') === null);
+  sprawdz(
+    'godzina 25:00 -> null',
+    parsujDateTolerancyjnie('02/03/2024 25:00 (GMT+1)') === null
+  );
+  sprawdz('tekst bez daty -> null', parsujDateTolerancyjnie('kiedys w przyszlosci') === null);
+}
+
 async function testujQuestLog() {
   sekcja('IMPORT quest-log (dwuprzebiegowy)');
 
@@ -1107,10 +1277,48 @@ async function testujQuestLog() {
     'Upstream bez URL-a tez dziala',
     questLog.parsujUpstream('Nauka hiszpanskiego') === 'Nauka hiszpanskiego'
   );
+  /*
+    Przecinek w nazwie projektu. Wczesniej Upstream byl ciety po przecinku i te dwie
+    nazwy rozpadaly sie na kawalki ("Stan" / " ale trudniejszy"), przez co zadania
+    nie dopinaly sie do projektu. Oba przypadki pochodza z prawdziwego eksportu.
+  */
   sprawdz(
-    'przy wielu relacjach bierzemy pierwsza',
-    questLog.parsujUpstream('Projekt A (https://x/1), Projekt B (https://x/2)') === 'Projekt A'
+    'przecinek w nazwie projektu nie rozrywa Upstream',
+    questLog.parsujUpstream(
+      'Stan, ale trudniejszy  (https://app.notion.com/p/Stan-ale-trudniejszy-4f5c?pvs=21)'
+    ) === 'Stan, ale trudniejszy'
   );
+  sprawdz(
+    'dwukropek i przecinki w dlugiej nazwie kursu',
+    questLog.parsujUpstream(
+      'The Ultimate React Course 2024: React, Next.js, Redux & More (https://app.notion.com/p/x?pvs=21)'
+    ) === 'The Ultimate React Course 2024: React, Next.js, Redux & More'
+  );
+  /*
+    Nawias obcinamy tylko na koncu wartosci - nazwa projektu sama moze zawierac
+    nawiasy i te musza przetrwac.
+  */
+  sprawdz(
+    'nawias wewnatrz nazwy zostaje, koncowy link znika',
+    questLog.parsujUpstream('Projekt (etap 2) (https://x/1)') === 'Projekt (etap 2)'
+  );
+
+  /*
+    Higiena listy kolumn ignorowanych - 46 pozycji utrzymywanych recznie.
+    Testu "czy pokrywa caly plik" tu NIE MA i byc nie moze: prawdziwy eksport lezy
+    w _test/, ktore jest poza repozytorium. Sprawdzamy to, co da sie sprawdzic bez
+    pliku - ze lista nie ma powtorzen i nie zachodzi na mapowanie.
+  */
+  const ignorowane = questLog.KOLUMNY_IGNOROWANE;
+  sprawdz(
+    'lista kolumn ignorowanych bez powtorzen',
+    new Set(ignorowane).size === ignorowane.length,
+    JSON.stringify(ignorowane.filter((n, i) => ignorowane.indexOf(n) !== i))
+  );
+  const kolizje = ignorowane.filter(
+    (n) => n in questLog.ZADANIA.mapowanie || n in questLog.PROJEKTY.mapowanie
+  );
+  sprawdz('kolumna ignorowana nie jest jednoczesnie mapowana', kolizje.length === 0, JSON.stringify(kolizje));
 
   // --- dwuprzebiegowy import przez HTTP ---
   const csv = [
@@ -1349,6 +1557,8 @@ async function main() {
     await testujSilnikXp();
     await testujPostac();
     await testujProjekty();
+    await testujDomyslneOgraniczenie(reguly);
+    await testujParserDat();
     await testujQuestLog();
     await testujNawyki();
     await testujImport();

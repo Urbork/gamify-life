@@ -17,6 +17,31 @@
       </nav>
       <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
+      <!--
+        Wybor profilu importu. Wartosci odpowiadaja kluczom rejestru PROFILE
+        w routes/import.js - endpoint /api/import/:profil przyjmuje je wprost,
+        wiec dodanie profilu to jedna opcja tutaj plus wpis w routes.
+
+        Strona dziennika NIE ma tego wyboru: ma jeden profil, podany przez
+        data-profil na przycisku. Oba sposoby obsluguje public/js/csv-import.js.
+      -->
+      <label class="wybor-profilu">
+        Źródło:
+        <select id="profil-importu" title="Skąd pochodzi plik, który chcesz wczytać">
+          <option
+            value="zadania"
+            title="Plik z przycisku „Eksportuj do CSV” na tej stronie. Nagłówki: Nazwa zadania, Stan, Obszar, Termin…"
+          >
+            Zadania — eksport z tej aplikacji
+          </option>
+          <option
+            value="notion-quest-log"
+            title="Eksport bazy „Success Plan” z Notion. Wczytuje projekty i zadania z jednego pliku i wiąże je po kolumnie Upstream."
+          >
+            Notion Success Plan — projekty + zadania
+          </option>
+        </select>
+      </label>
       <button id="przycisk-import" type="button" data-profil="zadania">Importuj z CSV</button>
       <!--
         Ukryty input pliku: przycisk wyzej wywoluje go programowo, zeby oba
@@ -105,6 +130,17 @@
         <button type="button" id="przycisk-anuluj-import">Anuluj</button>
       </div>
     </section>
+
+    <!--
+      Informacja o domyslnym ograniczeniu widoku. Ukryta, gdy nic nie jest ukryte.
+      Istnieje po to, zeby brak zrobionych zadan nie wygladal jak utrata danych -
+      mowi wprost, ile wierszy jest schowanych, i daje jeden przycisk na pokazanie
+      wszystkiego. Samo ograniczenie robi zwykly filtr stanu, widoczny w panelu wyzej.
+    -->
+    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
+      <span id="ograniczenie-tekst"></span>
+      <button type="button" id="przycisk-pokaz-wszystkie"></button>
+    </p>
 
     <table id="tabela-zadan">
       <thead id="naglowki" title="Kliknij nagłówek, aby posortować">

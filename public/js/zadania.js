@@ -54,6 +54,16 @@
   const elFiltrOd = document.getElementById('filtr-od');
   const elFiltrDo = document.getElementById('filtr-do');
   const elWyczysc = document.getElementById('przycisk-wyczysc');
+  const elOgraniczenie = document.getElementById('ograniczenie-widoku');
+  const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
+  const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
+
+  /*
+    Powyzej tylu zadan widok startuje ograniczony do aktywnych. Ponizej - pokazuje
+    wszystko, bo przy krotkiej liscie ograniczenie nic nie przyspiesza, a filtr
+    zaznaczony na starcie bez powodu tylko dezorientuje.
+  */
+  const PROG_OGRANICZENIA_WIDOKU = 100;
 
   // Dzisiejsza data wedlug SERWERA (GET /api/czas) - od niej licza sie presety zakresu.
   // Pobierana przy starcie i odswiezana po powrocie do karty.
@@ -448,6 +458,33 @@
     odtworzFokus(fokus);
     odswiezNaglowki();
     odswiezPodsumowanie();
+    odswiezOgraniczenie();
+  }
+
+  /*
+    Baner o ograniczonym widoku.
+
+    Pokazuje sie tylko wtedy, gdy filtr stanu naprawde chowa zrobione zadania -
+    czyli w widoku domyslnym. Gdy uzytkownik sam zaznaczy "Zrobione" albo wyczysci
+    filtry, baner znika, bo nie ma juz o czym informowac.
+
+    Przycisk wola wyczyscFiltry(), a nie samo odznaczenie stanow: etykieta obiecuje
+    "wszystkie", wiec musi zdjac rowniez pozostale filtry, inaczej klikniecie
+    pokazaloby mniej, niz zapowiada liczba w nawiasie.
+  */
+  function odswiezOgraniczenie() {
+    const wszystkie = [...zadania.values()];
+    const chowaZrobione = filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony);
+    const ukryte = chowaZrobione
+      ? wszystkie.filter((z) => z.stan === slowniki.stanZakonczony).length
+      : 0;
+
+    elOgraniczenie.hidden = ukryte === 0;
+    if (elOgraniczenie.hidden) return;
+
+    elOgraniczenieTekst.textContent =
+      `Widok ograniczony do aktywnych zadań — ukryto ${ukryte} zrobionych. `;
+    elPokazWszystkie.textContent = `Pokaż wszystkie (${wszystkie.length})`;
   }
 
   /**
@@ -730,6 +767,15 @@
         const label = document.createElement('label');
         const input = document.createElement('input');
         input.type = 'checkbox';
+        /*
+          Stan pola bierzemy ZE ZBIORU, a nie zostawiamy pustego.
+
+          Bez tej linijki przebudowa checkboxow (po imporcie projektow albo przy
+          starcie z domyslnym ograniczeniem widoku) rysowala je odznaczone, mimo ze
+          zbior filtrow byl niepusty - interfejs pokazywal wtedy co innego,
+          niz naprawde odsiewalo filtrowanie.
+        */
+        input.checked = zbior.has(o.wartosc);
 
         input.addEventListener('change', () => {
           // Do zbioru wklada my ORYGINALNA wartosc (liczbe dla priorytetu, tekst dla
@@ -836,10 +882,33 @@
       projekty = pobraneProjekty;
       dzisiajSerwera = czas.dzisiaj;
 
+      /*
+        DOMYSLNE OGRANICZENIE WIDOKU - musi byc PRZED zbudujPanelFiltrow(),
+        bo checkboxy biora stan zaznaczenia z tego zbioru.
+
+        Przy 537 zadaniach pelna tabela to ~37 000 elementow <option> i ~290 ms
+        na kazde przerysowanie (a renderuj() leci przy kazdym nacisnieciu klawisza
+        w filtrze nazwy). Sam odsiew i sortowanie zajmuja ponizej 1 ms - caly koszt
+        siedzi w budowaniu DOM, wiec jedyne, co pomaga, to mniej wierszy.
+
+        Zbior zostaje pusty, gdy zadan jest malo: przy kilkunastu wierszach
+        ograniczenie nic nie daje, a filtr na starcie tylko myli.
+      */
+      if (lista.length > PROG_OGRANICZENIA_WIDOKU) {
+        for (const stan of regulyZadan.domyslneStany(slowniki)) filtry.stany.add(stan);
+      }
+
       zbudujPanelFiltrow();
 
       for (const z of lista) zadania.set(z.id, z);
-      renderuj();
+
+      /*
+        Start idzie przez zastosujFiltry(), a nie prosto przez renderuj():
+        to ono przepisuje pola formularza do obiektu `filtry` i odswieza znacznik
+        przy zwinietym panelu. Przy domyslnym ograniczeniu widoku ma to znaczenie -
+        inaczej odsiew dzialalby, ale zwiniety panel twierdzilby, ze filtrow nie ma.
+      */
+      zastosujFiltry();
     } catch (e) {
       pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
     }
@@ -861,9 +930,33 @@
     }
   }
 
+  /**
+   * Pobiera projekty od nowa: odswieza dropdown w kolumnie Projekt i liste
+   * w filtrach. Potrzebne, bo profil importu "notion-quest-log" tworzy projekty
+   * razem z zadaniami - bez tego nowy projekt bylby w bazie, ale nie do wybrania,
+   * a zadanie do niego przypisane pokazywaloby puste pole az do odswiezenia strony.
+   *
+   * Zaznaczenia w filtrze przezywaja przebudowe, bo zbudujCheckboxy ustawia
+   * `checked` ze zbioru filtry.projekty, a nie zostawia pol pustych.
+   */
+  async function przeladujProjekty() {
+    try {
+      projekty = await api.get('/api/projekty');
+      zbudujCheckboxy(
+        elFiltrProjekty,
+        projekty.map((p) => ({ wartosc: p.id, etykieta: p.nazwa })),
+        filtry.projekty
+      );
+      renderuj();
+    } catch (e) {
+      pokazStatus('Nie udało się odświeżyć projektów: ' + e.message, 'blad');
+    }
+  }
+
   elDodaj.addEventListener('click', dodajZadanie);
   elEksport.addEventListener('click', eksportujCsv);
   elWyczysc.addEventListener('click', wyczyscFiltry);
+  elPokazWszystkie.addEventListener('click', wyczyscFiltry);
 
   // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
   elFiltrNazwa.addEventListener('input', zastosujFiltry);
@@ -876,6 +969,7 @@
     Luzne powiazanie: przyszly dziennik moze wyslac to samo zdarzenie.
   */
   document.addEventListener('dane-zadania-zmienione', przeladujZadania);
+  document.addEventListener('dane-projekty-zmienione', przeladujProjekty);
 
   // Jeden handler na cala glowke tabeli zamiast osobnego na kazdy naglowek.
   elNaglowki.addEventListener('click', (e) => {

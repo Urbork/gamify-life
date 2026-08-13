@@ -69,6 +69,16 @@
     </section>
 
     <!--
+      Informacja o domyslnym ograniczeniu widoku (ostatnie 30 dni). Ukryta, gdy nic
+      nie jest ukryte. Istnieje po to, zeby brak starszych wpisow nie wygladal jak
+      utrata danych. Samo ograniczenie robi zwykly filtr zakresu dat, widoczny wyzej.
+    -->
+    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
+      <span id="ograniczenie-tekst"></span>
+      <button type="button" id="przycisk-pokaz-wszystkie"></button>
+    </p>
+
+    <!--
       Naglowki statyczne, wiersze buduje public/js/dziennik.js.
       data-kolumna = klucz sortowania; naglowek bez tego atrybutu jest nieklikalny.
       Domyslne sortowanie: data malejaco (najnowszy wpis u gory).

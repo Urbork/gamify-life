@@ -2,9 +2,15 @@
   Import z CSV - strona przegladarki.
 
   PRZEPLYW (dwuetapowy, celowo)
-  1. wybor pliku  -> File.text() -> POST /api/import/podglad
+  1. wybor pliku  -> File.text() -> POST /api/import/:profil/podglad
   2. podglad      -> ile wierszy wejdzie, ktore odpadaja i dlaczego
-  3. zatwierdzenie-> POST /api/import/zatwierdz z TA SAMA trescia pliku
+  3. zatwierdzenie-> POST /api/import/:profil/zatwierdz z TA SAMA trescia pliku
+
+  PROFIL trafia do adresu jako parametr - rejestr PROFILE w routes/import.js
+  przyjmuje go wprost. Skad go bierzemy, zalezy od strony:
+    - strona zadan    - z listy wyboru #profil-importu (dwa zrodla: eksport wlasny
+                        albo eksport "Success Plan" z Notion),
+    - strona dziennika - z atrybutu data-profil na przycisku (jeden profil, bez listy).
 
   Do serwera leci zwykly JSON { tresc }, nie multipart - dzieki temu backend
   nie potrzebuje zadnej biblioteki do obslugi przesylania plikow.
@@ -14,8 +20,8 @@
   inaczej dalo by sie tym kanalem wstawic do bazy cokolwiek, omijajac walidacje.
 
   Modul nie siega do wnetrza zadania.js. Po udanym imporcie wysyla zdarzenie
-  'dane-zadan-zmienione', ktorego zadania.js sluchaja i przeladowuja liste.
-  Przyszly dziennik moze uzyc dokladnie tego samego mechanizmu.
+  'dane-<tabela>-zmienione' dla kazdej ruszonej tabeli, a moduly stron je lapia
+  i przeladowuja swoje listy (patrz ZMIENIANE_TABELE nizej).
 */
 
 (() => {
@@ -31,15 +37,45 @@
   const elAnuluj = document.getElementById('przycisk-anuluj-import');
   const elStatus = document.getElementById('status');
 
+  // Lista wyboru profilu - jest tylko tam, gdzie profil da sie wybrac (strona zadan).
+  const elProfil = document.getElementById('profil-importu');
+
   /*
-    Profil importu bierzemy z atrybutu data-profil na przycisku, dzieki czemu ten
-    sam plik obsluguje strone zadan i strone dziennika. Odpowiada kluczowi
-    w rejestrze PROFILE w routes/import.js.
+    Ktore tabele zmienia dany profil.
+
+    Nazwa zdarzenia NIE moze wynikac z nazwy profilu: "notion-quest-log" wysylalby
+    zdarzenie "dane-notion-quest-log-zmienione", ktorego nikt nie sluchа, wiec tabela
+    nie odswiezylaby sie po imporcie. Poza tym ten profil zapisuje do DWOCH tabel
+    naraz, wiec jedno zdarzenie i tak by nie wystarczylo.
   */
-  const profil = elPrzyciskImport.dataset.profil || 'zadania';
+  const ZMIENIANE_TABELE = {
+    zadania: ['zadania'],
+    dziennik: ['dziennik'],
+    'notion-quest-log': ['projekty', 'zadania'],
+  };
+
+  /*
+    Profil odczytujemy PRZY KAZDYM UZYCIU, a nie raz przy starcie - inaczej zmiana
+    w liscie wyboru nie mialaby zadnego skutku.
+
+    Strona dziennika nie ma listy wyboru i podaje profil atrybutem data-profil
+    na przycisku; oba sposoby obsluguje ta sama funkcja.
+  */
+  function aktualnyProfil() {
+    if (elProfil && elProfil.value) return elProfil.value;
+    return elPrzyciskImport.dataset.profil || 'zadania';
+  }
 
   // Tresc wybranego pliku - potrzebna jeszcze raz przy zatwierdzaniu.
   let trescPliku = null;
+
+  /*
+    Profil UZYTY DO PODGLADU. Zatwierdzenie musi isc dokladnie tym samym profilem,
+    ktorym liczony byl podglad - inaczej przestawienie listy przy otwartym podgladzie
+    zapisaloby dane wedlug innego mapowania niz to, ktore uzytkownik zobaczyl.
+    Dodatkowo blokujemy liste na czas podgladu, zeby bylo to widoczne.
+  */
+  let profilPodgladu = null;
 
   function pokazStatus(tekst, typ) {
     elStatus.textContent = tekst;
@@ -49,6 +85,8 @@
   function schowajPanel() {
     elPanel.hidden = true;
     trescPliku = null;
+    profilPodgladu = null;
+    if (elProfil) elProfil.disabled = false;
     elOdrzucone.replaceChildren();
     // Czyscimy input, zeby ponowny wybor TEGO SAMEGO pliku znowu wywolal 'change'.
     elPlik.value = '';
@@ -88,13 +126,22 @@
     elNaglowek.textContent = `Podgląd importu: ${wynik.gotowych} gotowych do zaimportowania, ${wynik.odrzuconych} odrzuconych`;
 
     const uwagi = [];
+    /*
+      Nazwa profilu w podgladzie. Przy dwoch zrodlach na jednej stronie latwo
+      wczytac plik nie tym mapowaniem i zobaczyc same odrzucone wiersze, nie wiedzac
+      dlaczego. Na stronie dziennika listy nie ma i ta uwaga sie nie pojawia.
+    */
+    if (elProfil) {
+      const opcja = elProfil.selectedOptions[0];
+      uwagi.push(`profil: ${opcja ? opcja.textContent.trim() : profilPodgladu}`);
+    }
     if (wynik.separator !== ',') {
       uwagi.push(`wykryty separator: "${wynik.separator === '\t' ? 'tabulator' : wynik.separator}"`);
     }
     if (wynik.nieznaneKolumny.length > 0) {
       uwagi.push(`kolumny pominięte (brak w mapowaniu): ${wynik.nieznaneKolumny.join(', ')}`);
     }
-    uwagi.push('zadania zostaną dopisane, nic istniejącego nie zostanie nadpisane');
+    uwagi.push('dane zostaną dopisane, nic istniejącego nie zostanie nadpisane');
     elUwagi.textContent = uwagi.join(' · ');
 
     elOdrzucone.replaceChildren();
@@ -112,7 +159,10 @@
     try {
       // File.text() dekoduje jako UTF-8; ewentualny BOM usuwa parser po stronie serwera.
       trescPliku = await plik.text();
-      const wynik = await api.post(`/api/import/${profil}/podglad`, { tresc: trescPliku });
+      profilPodgladu = aktualnyProfil();
+      const wynik = await api.post(`/api/import/${profilPodgladu}/podglad`, { tresc: trescPliku });
+      // Lista zablokowana dopoki podglad jest otwarty - patrz komentarz przy profilPodgladu.
+      if (elProfil) elProfil.disabled = true;
       pokazPodglad(wynik);
       pokazStatus(`wczytano plik: ${plik.name}`, 'ok');
     } catch (e) {
@@ -126,14 +176,22 @@
 
     elZatwierdz.disabled = true;
     try {
-      const wynik = await api.post(`/api/import/${profil}/zatwierdz`, { tresc: trescPliku });
+      // Celowo profilPodgladu, nie aktualnyProfil() - zapis musi isc tym samym
+      // mapowaniem, ktore policzylo pokazany przed chwila podglad.
+      const uzytyProfil = profilPodgladu;
+      const wynik = await api.post(`/api/import/${uzytyProfil}/zatwierdz`, { tresc: trescPliku });
       schowajPanel();
       pokazStatus(`zaimportowano ${wynik.zaimportowano} wierszy`, 'ok');
 
-      // Tabela zyje w osobnym module - dajemy mu znac, ze dane sie zmienily.
-      // Nazwa zdarzenia zalezy od profilu, wiec strona zadan i strona dziennika
-      // nasluchuja niezaleznie i nie przeladowuja sie nawzajem.
-      document.dispatchEvent(new CustomEvent(`dane-${profil}-zmienione`));
+      /*
+        Tabela zyje w osobnym module - dajemy mu znac, ze dane sie zmienily.
+        Zdarzenie idzie per TABELA, nie per profil: strony nasluchuja niezaleznie
+        i nie przeladowuja sie nawzajem, a profil ruszajacy dwie tabele naraz
+        (notion-quest-log) odswieza jedno i drugie.
+      */
+      for (const tabela of ZMIENIANE_TABELE[uzytyProfil] || [uzytyProfil]) {
+        document.dispatchEvent(new CustomEvent(`dane-${tabela}-zmienione`));
+      }
     } catch (e) {
       elZatwierdz.disabled = false;
       pokazStatus('Import: ' + e.message, 'blad');
