@@ -175,14 +175,44 @@ function idZParametru(req) {
 const pobierzWszystkie = db.prepare('SELECT * FROM zadania ORDER BY id');
 const pobierzJedno = db.prepare('SELECT * FROM zadania WHERE id = ?');
 /*
-  Nowe zadanie startuje "dzisiaj". Date wyznacza SQLite po stronie SERWERA
-  (strftime z 'localtime'), a nie przegladarka - dzieki temu wynik nie zalezy od
-  strefy czasowej ani od zegara komputera, z ktorego akurat korzystasz.
-  Godzina to 00:00: data jest ustalona, konkretna pora to juz Twoja decyzja.
+  Nowe zadanie dostaje TERMIN na dzisiaj, a start_zadania zostaje PUSTY.
+
+  Odwrocenie wczesniejszej decyzji (domyslny byl start). Powod jest praktyczny:
+  zadanie prawie zawsze dopisuje sie po to, zeby cos zrobic NA jakis dzien,
+  a nie po to, by odnotowac, kiedy sie zaczelo. Data startu bywa nieznana albo
+  nieistotna, wiec wypelniona z gory tylko zasmiecala rekord.
+
+  Date wyznacza SQLite po stronie SERWERA (strftime z 'localtime'), a nie
+  przegladarka - dzieki temu wynik nie zalezy od strefy czasowej ani od zegara
+  komputera, z ktorego akurat korzystasz.
+
+  BEZ GODZINY: nowe zadanie jest calodzienne. Konkretna pora to swiadomy wybor,
+  ktory robi sie ikona zegara w komorce daty.
 */
 const wstawNowe = db.prepare(`
-  INSERT INTO zadania (nazwa, start_zadania)
-  VALUES (?, strftime('%Y-%m-%dT00:00', 'now', 'localtime'))
+  INSERT INTO zadania (nazwa, termin)
+  VALUES (?, strftime('%Y-%m-%d', 'now', 'localtime'))
+`);
+
+/*
+  Duplikat zadania.
+
+  Kopiujemy opis PRACY DO WYKONANIA, a nie jej historii - stad dwa swiadome wyjatki:
+  - `stan` startuje od domyslnego z kolumny (Plan), nie z oryginalu,
+  - `czas_zakonczenia` zostaje pusty.
+
+  To nie jest kosmetyka. XP liczy sie z zadan zakonczonych, wiec skopiowanie
+  "Zrobione" razem z data zamkniecia doliczyloby punkty za prace, ktorej nikt
+  nie wykonal - i to od razu, bez zadnej akcji uzytkownika. Regula siedzi
+  w SQL-u, a nie w przegladarce, zeby nie dalo sie jej obejsc.
+*/
+const wstawDuplikat = db.prepare(`
+  INSERT INTO zadania
+    (nazwa, obszar, projekt_id, priorytet, trudnosc, czas_trwania_godziny, termin, start_zadania)
+  SELECT
+    nazwa || ' (kopia)', obszar, projekt_id, priorytet, trudnosc,
+    czas_trwania_godziny, termin, start_zadania
+  FROM zadania WHERE id = ?
 `);
 const usun = db.prepare('DELETE FROM zadania WHERE id = ?');
 
@@ -194,9 +224,26 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   // Nowy wiersz dostaje nazwe zastepcza, stan i priorytet domyslny (z DEFAULT kolumny)
-  // oraz dzisiejsza date startu. Reszte uzupelniasz w tabeli.
+  // oraz dzisiejszy TERMIN (calodzienny). Reszte uzupelniasz w tabeli.
   // Frontend po dodaniu zaznacza nazwe, wiec pierwsze wpisane znaki ja nadpisuja.
   const wynik = wstawNowe.run(NAZWA_DOMYSLNA);
+  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+});
+
+/*
+  POST /api/zadania/:id/duplikuj -> 201 z nowym rekordem.
+
+  Osobna trasa, a nie POST + PATCH z przegladarki: kopia powstaje jednym
+  zapytaniem, wiec nie ma momentu, w ktorym w bazie siedzi rekord w polowie
+  przepisany. Zasada "duplikat nie dziedziczy stanu ani daty zakonczenia"
+  jest tym samym wymuszona po stronie serwera.
+*/
+router.post('/:id/duplikuj', (req, res) => {
+  const id = idZParametru(req);
+
+  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+
+  const wynik = wstawDuplikat.run(id);
   res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
 });
 

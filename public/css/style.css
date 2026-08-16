@@ -334,14 +334,27 @@ td.brak-danych-xp {
 }
 /* Szersza niz przy samej dacie - datetime-local pokazuje jeszcze godzine. */
 .kol-data {
-  width: 185px;
+  width: 205px;
+  white-space: nowrap;
+}
+
+/*
+  Pole daty musi zrobic miejsce na przelacznik godziny stojacy OBOK.
+  Bez tego `td input { width: 100% }` zajmuje cala komorke i spycha ikone
+  do drugiej linii, rozpychajac wiersz.
+*/
+.kol-data input {
+  width: calc(100% - 22px);
+  vertical-align: middle;
 }
 .kol-liczba {
   width: 90px;
   text-align: right;
 }
+/* Dwa przyciski: duplikuj i usun. */
 .kol-akcje {
-  width: 34px;
+  width: 56px;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -832,6 +845,47 @@ td.duplikat-daty {
 
 .usun:hover {
   color: var(--alarm);
+}
+
+/*
+  Duplikowanie wyglada jak usuwanie (ikona bez ramki w kolumnie akcji), ale na hover
+  nie robi sie czerwone - to operacja tworzaca, a nie niszczaca.
+*/
+.duplikuj {
+  border: none;
+  background: none;
+  color: var(--tekst-slaby);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.duplikuj:hover {
+  color: inherit;
+}
+
+/*
+  Przelacznik godziny przy komorce daty. Maly i wyblakly, bo to rzadka operacja -
+  ma byc pod reka, ale nie konkurowac wzrokowo z sama data.
+*/
+.przelacznik-godziny {
+  border: none;
+  background: none;
+  color: var(--tekst-slaby);
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  font-size: 11px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.przelacznik-godziny:hover:not(:disabled) {
+  color: inherit;
+}
+
+.przelacznik-godziny:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .podsumowanie {

@@ -294,22 +294,58 @@
     return td;
   }
 
-  /**
-   * Komorka z data i godzina.
-   * <input type="datetime-local"> przyjmuje i zwraca dokladnie ten format,
-   * ktory trzymamy w bazie ('YYYY-MM-DDTHH:MM'), wiec nie ma tu zadnej konwersji.
-   */
+  /** Czy znacznik niesie godzine? Pusta wartosc traktujemy jak calodzienna. */
+  function maGodzine(wartosc) {
+    return typeof wartosc === 'string' && wartosc.includes('T');
+  }
+
+  /*
+    Komorka z data.
+
+    Pole dobiera sie do WARTOSCI, a nie odwrotnie:
+      'YYYY-MM-DD'       -> <input type="date">           (zadanie calodzienne)
+      'YYYY-MM-DDTHH:MM' -> <input type="datetime-local"> (konkretna godzina)
+
+    Oba typy pol przyjmuja i zwracaja dokladnie ten format, ktory trzymamy
+    w bazie, wiec nie ma tu zadnej konwersji.
+
+    Obok stoi przelacznik z ikona zegara: dodaje godzine (T00:00) albo ja obcina.
+    Zapis idzie ta sama sciezka co kazda inna edycja, wiec serwer normalizuje
+    wartosc i odrzuca bledna tak samo jak zwykle.
+  */
   function komorkaZnacznikCzasu(z, pole) {
     const td = document.createElement('td');
     td.className = 'kol-data';
     td.dataset.pole = pole;
 
+    const wartosc = z[pole] ?? '';
+    const zGodzina = maGodzine(wartosc);
+
     const input = document.createElement('input');
-    input.type = 'datetime-local';
-    input.value = z[pole] ?? '';
+    input.type = zGodzina ? 'datetime-local' : 'date';
+    input.value = wartosc;
     input.addEventListener('change', () => zapisz(td.closest('tr'), pole, input.value));
 
-    td.appendChild(input);
+    const przelacznik = document.createElement('button');
+    przelacznik.type = 'button';
+    przelacznik.className = 'przelacznik-godziny';
+    przelacznik.textContent = '🕑';
+    przelacznik.title = zGodzina ? 'Usuń godzinę (całodzienne)' : 'Dodaj godzinę';
+    /*
+      Puste pole nie ma czego przelaczac - bez daty godzina nie ma sensu,
+      a doklejenie 'T00:00' do pustki daloby wartosc niepoprawna.
+    */
+    przelacznik.disabled = input.value === '';
+
+    przelacznik.addEventListener('click', () => {
+      const teraz = input.value;
+      if (teraz === '') return;
+      // Dodanie godziny ustawia polnoc, usuniecie obcina do samej daty.
+      const nowa = maGodzine(teraz) ? teraz.slice(0, 10) : `${teraz}T00:00`;
+      zapisz(td.closest('tr'), pole, nowa);
+    });
+
+    td.append(input, przelacznik);
     return td;
   }
 
@@ -351,18 +387,25 @@
     return td;
   }
 
-  function komorkaUsun(z) {
+  function komorkaAkcji(z) {
     const td = document.createElement('td');
     td.className = 'kol-akcje';
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'usun';
-    btn.textContent = '×'; // znak "razy"
-    btn.title = 'Usuń zadanie';
-    btn.addEventListener('click', () => usunZadanie(z.id));
+    const duplikuj = document.createElement('button');
+    duplikuj.type = 'button';
+    duplikuj.className = 'duplikuj';
+    duplikuj.textContent = '⧉'; // dwa nalozone prostokaty
+    duplikuj.title = 'Duplikuj zadanie (kopia dostaje stan "Plan", bez daty zakończenia)';
+    duplikuj.addEventListener('click', () => duplikujZadanie(z.id));
 
-    td.appendChild(btn);
+    const usun = document.createElement('button');
+    usun.type = 'button';
+    usun.className = 'usun';
+    usun.textContent = '×'; // znak "razy"
+    usun.title = 'Usuń zadanie';
+    usun.addEventListener('click', () => usunZadanie(z.id));
+
+    td.append(duplikuj, usun);
     return td;
   }
 
@@ -407,7 +450,7 @@
       komorkaWyliczona('dni_do_terminu'),
       komorkaZnacznikCzasu(z, 'czas_zakonczenia')
     );
-    tr.appendChild(komorkaUsun(z));
+    tr.appendChild(komorkaAkcji(z));
 
     odswiezWyliczone(tr);
     return tr;
@@ -554,6 +597,21 @@
       if (element === document.activeElement) continue;
 
       const wartosc = z[td.dataset.pole] ?? '';
+
+      /*
+        Komorka daty moze wymagac INNEGO TYPU pola niz ma teraz - po przelaczeniu
+        zegarem 'YYYY-MM-DD' zamienia sie w 'YYYY-MM-DDTHH:MM' albo odwrotnie.
+        Samo podstawienie wartosci by nie zadzialalo: <input type="date"> odrzuca
+        wartosc z godzina i wyzerowalby sie po cichu. Dlatego w takim wypadku
+        budujemy komorke od nowa.
+      */
+      if (td.classList.contains('kol-data')) {
+        if (kontrolka && kontrolka.type !== (maGodzine(wartosc) ? 'datetime-local' : 'date')) {
+          td.replaceWith(komorkaZnacznikCzasu(z, td.dataset.pole));
+          continue;
+        }
+      }
+
       if (kontrolka) kontrolka.value = wartosc;
       else td.textContent = wartosc;
     }
@@ -567,9 +625,21 @@
     const td = tr.querySelector(`[data-pole="${pole}"]`);
     if (!z || !td) return;
 
+    const wartosc = z[pole] ?? '';
     const kontrolka = td.querySelector('select, input');
-    if (kontrolka) kontrolka.value = z[pole] ?? '';
-    else td.textContent = z[pole] ?? '';
+
+    // Jak w zaktualizujWiersz: przy dacie moze sie zmienic TYP pola, a nie tylko wartosc.
+    if (
+      td.classList.contains('kol-data') &&
+      kontrolka &&
+      kontrolka.type !== (maGodzine(wartosc) ? 'datetime-local' : 'date')
+    ) {
+      td.replaceWith(komorkaZnacznikCzasu(z, pole));
+      return;
+    }
+
+    if (kontrolka) kontrolka.value = wartosc;
+    else td.textContent = wartosc;
   }
 
   /** Ustawia kursor w komorce tekstowej i zaznacza jej cala tresc. */
@@ -612,25 +682,54 @@
     }
   }
 
+  /*
+    Wspolne zakonczenie dodawania i duplikowania: wstaw rekord do lokalnej kopii,
+    przerysuj tabele, odszukaj nowy wiersz i zaznacz w nim nazwe, zeby pierwsze
+    wpisane znaki ja nadpisaly.
+
+    Nowy wiersz moze NIE BYC widoczny - domyslny widok pokazuje tylko aktywne
+    zadania, a filtry moga odsiac takze kopie. Bez komunikatu klikniecie
+    wygladaloby wtedy jak brak reakcji.
+  */
+  function pokazNowyWiersz(nowe, komunikatGdyUkryte) {
+    zadania.set(nowe.id, nowe);
+    renderuj();
+
+    const tr = elWiersze.querySelector(`tr[data-id="${nowe.id}"]`);
+    if (!tr) {
+      pokazStatus(komunikatGdyUkryte, 'blad');
+      return false;
+    }
+
+    tr.scrollIntoView({ block: 'nearest' });
+    zaznaczTresc(tr.querySelector('[data-pole="nazwa"]'));
+    return true;
+  }
+
   async function dodajZadanie() {
     try {
-      // Wartosci domyslne (nazwa, stan, priorytet, dzisiejsza data startu)
+      // Wartosci domyslne (nazwa, stan, priorytet, dzisiejszy termin)
       // nadaje serwer - patrz routes/zadania.js.
       const nowe = await api.post('/api/zadania');
-      zadania.set(nowe.id, nowe);
-      renderuj();
+      pokazNowyWiersz(nowe, 'Dodano zadanie, ale ukrywają je filtry.');
+    } catch (e) {
+      pokazStatus(e.message, 'blad');
+    }
+  }
 
-      // Nowe zadanie nie ma terminu, wiec przy domyslnym sortowaniu laduje na koncu
-      // aktywnych - trzeba je odnalezc, przewinac do niego i zaznaczyc nazwe zastepcza,
-      // zeby pierwsze wpisane znaki ja nadpisaly.
-      const tr = elWiersze.querySelector(`tr[data-id="${nowe.id}"]`);
-      if (tr) {
-        tr.scrollIntoView({ block: 'nearest' });
-        zaznaczTresc(tr.querySelector('[data-pole="nazwa"]'));
-      } else {
-        // Zadanie powstalo w bazie, ale nie przechodzi przez aktywne filtry.
-        // Bez tego komunikatu klikniecie "Dodaj" wygladaloby jak brak reakcji.
-        pokazStatus('Dodano zadanie, ale ukrywają je filtry.', 'blad');
+  /*
+    Duplikat robi SERWER jednym zapytaniem (POST /api/zadania/:id/duplikuj).
+    Przegladarka nie sklada kopii sama z POST + PATCH, bo wtedy regula "kopia nie
+    dziedziczy stanu ani daty zakonczenia" bylaby tylko umowa po tej stronie -
+    a od niej zalezy, czy kopia nie doliczy XP za niewykonana prace.
+  */
+  async function duplikujZadanie(id) {
+    try {
+      const kopia = await api.post(`/api/zadania/${id}/duplikuj`);
+      // Komunikat o sukcesie tylko wtedy, gdy kopie widac - inaczej nadpisalby
+      // ostrzezenie o tym, ze ukrywaja ja filtry.
+      if (pokazNowyWiersz(kopia, 'Utworzono kopię, ale ukrywają ją filtry.')) {
+        pokazStatus('utworzono kopię', 'ok');
       }
     } catch (e) {
       pokazStatus(e.message, 'blad');

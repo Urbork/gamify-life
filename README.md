@@ -50,10 +50,17 @@ Obok pojawią się pliki `baza.db-wal` i `baza.db-shm` (tryb WAL SQLite) — to 
   po opuszczeniu pola (tekst) lub po zmianie wartości (lista, data) — nie ma przycisku „zapisz".
   W polu tekstowym `Enter` kończy edycję, `Esc` cofa zmianę.
 - **+ Dodaj zadanie** tworzy wiersz o nazwie „Nowe zadanie", priorytecie „Średni"
-  i dacie startu ustawionej na dzisiaj, po czym od razu zaznacza nazwę —
-  pierwsze wpisane znaki ją nadpisują, nie trzeba nic kasować.
-  Datę startu wyznacza **serwer** (`strftime('now','localtime')` w SQLite), a nie przeglądarka,
+  i **terminie ustawionym na dzisiaj** (całodziennym, bez godziny). `start_zadania`
+  zostaje **pusty**. Po utworzeniu nazwa jest od razu zaznaczona — pierwsze wpisane
+  znaki ją nadpisują, nie trzeba nic kasować.
+  Datę wyznacza **serwer** (`strftime('now','localtime')` w SQLite), a nie przeglądarka,
   żeby wynik nie zależał od strefy czasowej ani od zegara maszyny, z której korzystasz.
+
+  > Wcześniej domyślna była **data startu**, a termin zostawał pusty. Odwrócone, bo
+  > zadanie dopisuje się prawie zawsze po to, żeby coś zrobić **na** jakiś dzień,
+  > a nie po to, by odnotować, kiedy się zaczęło.
+
+- **⧉** na końcu wiersza tworzy **kopię** zadania — patrz [Duplikowanie](#duplikowanie-zadania).
 - **×** na końcu wiersza usuwa zadanie (z potwierdzeniem).
 - Komunikat obok przycisku pokazuje wynik ostatniego zapisu. Gdy zapis się nie uda,
   komórka wraca do poprzedniej wartości, a wiersz podświetla się na czerwono —
@@ -68,22 +75,61 @@ Kolumna **Dni do terminu** jest wyliczana w przeglądarce przy renderowaniu i **
 zapisywana w bazie** — to `termin − dzisiaj` (wartość ujemna = po terminie, podświetlana
 na czerwono).
 
-### Daty z godziną
+### Daty całodzienne i daty z godziną
 
-Pola **Start**, **Termin** i **Zakończenie** trzymają pełny znacznik ISO 8601
-`YYYY-MM-DDTHH:MM` i są edytowane przez `<input type="datetime-local">`.
+Pola **Start**, **Termin** i **Zakończenie** trzymają wartość w **jednej z dwóch**
+postaci — obie są prawidłowe:
 
-**Godzina nie wpływa na kolumny wyliczane.** Obie liczą w **pełnych dniach
-kalendarzowych** i część godzinową ignorują (`numerDnia()` bierze pierwsze 10 znaków).
-Przykład: start `10.08 23:59` i zakończenie `12.08 00:01` dają **2 dni**, mimo że
-w rzeczywistości minęły nieco ponad 24 godziny. To świadoma decyzja — godzina jest
-na razie dodatkową informacją do zapisu, a logika wyliczeń zostaje prosta.
+| Postać | Znaczenie | Pole w tabeli |
+| --- | --- | --- |
+| `YYYY-MM-DD` | zadanie **całodzienne**, bez konkretnej pory | `<input type="date">` |
+| `YYYY-MM-DDTHH:MM` | konkretna godzina | `<input type="datetime-local">` |
+
+Typ pola dobiera się **do wartości**, a nie odwrotnie. Obok stoi przełącznik z ikoną
+zegara (**🕑**): dodaje godzinę (ustawia `T00:00`) albo ją obcina. Przy pustej dacie
+jest nieaktywny — bez daty godzina nie ma czego opisywać. Nowe zadania są **całodzienne**.
+
+**Migracja nie była potrzebna** — kolumny są tekstowe (`TEXT`), więc obie postacie
+mieszczą się w istniejącym schemacie. Jedynym strażnikiem formatu jest normalizacja
+w API (`znormalizujZnacznikCzasu`), która **nie dokleja już `T00:00`** do samej daty.
+Wcześniej doklejała, przez co nie dało się odróżnić „zadania na cały dzień" od
+„zadania o północy".
+
+**Godzina nie wpływa na kolumny wyliczane ani na XP.** Wszystko, co porównuje daty —
+kolumna „Dni do terminu", filtry zakresu, mnożnik terminowości, statystyki — liczy
+w **pełnych dniach kalendarzowych** i część godzinową ignoruje (`numerDnia()` bierze
+pierwsze 10 znaków). Przykład: start `10.08 23:59` i zakończenie `12.08 00:01` dają
+**2 dni**, mimo że minęły nieco ponad 24 godziny. Dla tych obliczeń obie postacie
+zapisu są więc **nierozróżnialne** — i to właśnie dlatego dodanie dat całodziennych
+nie wymagało ruszania ani jednej reguły wyliczeniowej.
 
 Godzina **wpływa natomiast na sortowanie**: przy dwóch zadaniach na ten sam dzień
-wcześniejsza godzina jest wyżej. To dotyczy porządkowania wierszy, nie wartości w kolumnach.
+wcześniejsza godzina jest wyżej. Porównanie jest tekstowe i działa dla obu postaci,
+bo pierwsze 10 znaków to zawsze data o stałej szerokości. Przy tym samym dniu krótsza
+postać jest prefiksem dłuższej, więc **zadanie całodzienne wypada przed** zadaniem
+o konkretnej godzinie — „cały dzień" zaczyna się nie później niż jakakolwiek godzina
+w tym dniu.
 
-API przyjmuje też samo `YYYY-MM-DD` (uzupełnia `T00:00`) oraz znacznik z sekundami
-(obcina do minut) — dzięki temu ręczne `curl`-e i starsze skrypty nadal działają.
+API przyjmuje też znacznik z sekundami (obcina do minut) oraz spację zamiast `T` —
+dzięki temu ręczne `curl`-e i starsze skrypty nadal działają.
+
+### Duplikowanie zadania
+
+Ikona **⧉** w wierszu tworzy kopię. Kopiowane są: **nazwa** (z dopiskiem `" (kopia)"`),
+obszar, projekt, priorytet, trudność, czas trwania, termin i start. Kopia pojawia się
+w tabeli z zaznaczoną nazwą, gotową do nadpisania — tak samo jak przy „+ Dodaj zadanie".
+
+**Nie są kopiowane dwie rzeczy:** `stan` (kopia dostaje domyślne `Plan`)
+i `czas_zakonczenia` (zostaje pusty).
+
+> To nie kosmetyka. XP liczy się z zadań **zakończonych**, więc skopiowanie stanu
+> „Zrobione" razem z datą zamknięcia doliczyłoby punkty za pracę, której nikt nie
+> wykonał — i to od razu, bez żadnej akcji użytkownika.
+
+Kopię robi **serwer** jednym zapytaniem (`POST /api/zadania/:id/duplikuj`,
+`INSERT ... SELECT`), a nie przeglądarka przez `POST` + `PATCH`. Dzięki temu reguła
+powyżej jest wymuszona po stronie bazy i nie ma momentu, w którym w tabeli siedzi
+rekord w połowie przepisany.
 
 ### Priorytet
 
@@ -891,6 +937,7 @@ podając własny `config/mapowanie-*.js`.
 | `GET`    | `/api/zadania`      | lista wszystkich zadań                   |
 | `POST`   | `/api/zadania`      | tworzy rekord z wartościami domyślnymi, zwraca gotowy wiersz |
 | `PATCH`  | `/api/zadania/:id`  | aktualizuje wybrane pola                 |
+| `POST`   | `/api/zadania/:id/duplikuj` | tworzy kopię **bez** stanu i daty zakończenia |
 | `DELETE` | `/api/zadania/:id`  | usuwa zadanie                            |
 | `GET`    | `/api/slowniki`     | stany, priorytety, klienci               |
 | `GET`    | `/api/czas`         | dzisiejsza data serwera (`YYYY-MM-DD`)   |

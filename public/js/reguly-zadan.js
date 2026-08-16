@@ -191,7 +191,14 @@ const regulyZadan = (() => {
    * i biezacej daty (kolumna "Dni do terminu").
    *
    * Typy: 'liczba' - odejmowanie, 'tekst' - localeCompare('pl'),
-   *       'znacznik' - data z godzina o stalej szerokosci, wiec porownanie tekstowe.
+   *       'znacznik' - data, porownanie TEKSTOWE.
+   *
+   * Znacznik wystepuje w dwoch postaciach: 'YYYY-MM-DD' (calodzienne)
+   * i 'YYYY-MM-DDTHH:MM'. Porownanie tekstowe dziala dla obu, bo pierwsze
+   * 10 znakow to zawsze data o stalej szerokosci - a przy tym samym dniu
+   * krotsza postac jest prefiksem dluzszej, wiec zadanie calodzienne wypada
+   * PRZED zadaniem o konkretnej godzinie. Taka kolejnosc jest zamierzona:
+   * "caly dzien" zaczyna sie nie pozniej niz jakakolwiek godzina w tym dniu.
    */
   function kolumnySortowania(slowniki, dzisiaj) {
     return {

@@ -223,7 +223,12 @@ const ZADANIA = [
     trudnosc: 2,
     czas_trwania_godziny: 2,
   },
-  { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '' },
+  /*
+    Termin czyscimy JAWNIE. Nowy rekord dostaje od serwera termin na dzisiaj,
+    wiec "bez zadnych dat" trzeba teraz wymusic - samo pominiecie pola zostawiloby
+    wartosc domyslna i zadanie wchodziloby w presety zakresu dat.
+  */
+  { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '', termin: '' },
   /*
     Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
     Start JUTRO (nie dzis), zeby zadanie bylo poza presetem "Dziś", a weszlo dopiero
@@ -1092,6 +1097,154 @@ async function testujProjekty() {
   2. ze eksport, backup i XP nadal widza PELNY zbior - to zasada obowiazujaca
      od poczatku projektu i ograniczenie widoku nie ma prawa jej naruszyc.
 */
+/*
+  Zadania calodzienne: kolumny czasowe trzymaja ALBO 'YYYY-MM-DD', ALBO
+  'YYYY-MM-DDTHH:MM'. Migracji nie bylo - kolumny sa tekstowe - wiec jedynym
+  straznikiem formatu jest normalizacja w API i to, ze wszystkie obliczenia
+  porownuja pelne dni kalendarzowe.
+*/
+async function testujDatyCalodzienne(reguly) {
+  sekcja('DATY CALODZIENNE I DOMYSLNY TERMIN');
+
+  const { znormalizujZnacznikCzasu } = require('../lib/daty');
+  const { regulyZadan, filtrDat } = reguly;
+
+  // --- normalizacja: obie postacie sa kanoniczne ---
+  sprawdz(
+    'sama data ZOSTAJE bez godziny (calodzienne)',
+    znormalizujZnacznikCzasu('2026-08-16') === '2026-08-16'
+  );
+  sprawdz(
+    'data z godzina zostaje z godzina',
+    znormalizujZnacznikCzasu('2026-08-16T14:30') === '2026-08-16T14:30'
+  );
+  sprawdz(
+    'sekundy z przegladarki sa obcinane do minut',
+    znormalizujZnacznikCzasu('2026-08-16T14:30:59') === '2026-08-16T14:30'
+  );
+  sprawdz('spacja zamiast T tez dziala', znormalizujZnacznikCzasu('2026-08-16 14:30') === '2026-08-16T14:30');
+  sprawdz('nieistniejacy dzien odrzucony', znormalizujZnacznikCzasu('2026-02-30') === null);
+  sprawdz('godzina 24:00 odrzucona', znormalizujZnacznikCzasu('2026-08-16T24:00') === null);
+
+  /*
+    Porownania MUSZA dawac ten sam wynik dla obu postaci - to jest sedno decyzji,
+    ze godzina nie wplywa na obliczenia. Gdyby ktos zaczal porownywac znaczniki
+    jako pelne teksty, te asercje pekna.
+  */
+  sprawdz(
+    'numerDnia: obie postacie to ten sam dzien',
+    filtrDat.numerDnia('2026-08-16') === filtrDat.numerDnia('2026-08-16T23:59')
+  );
+  sprawdz(
+    'Dni do terminu: termin calodzienny liczy sie jak z godzina',
+    regulyZadan.dniDoTerminu({ termin: '2026-08-20' }, '2026-08-16') === 4 &&
+      regulyZadan.dniDoTerminu({ termin: '2026-08-20T23:59' }, '2026-08-16') === 4
+  );
+
+  // Mnoznik terminowosci (XP) - zakonczenie o 23:00 w dniu terminu to NADAL na czas.
+  const { mnoznikTerminowosci } = require('../lib/nagrody');
+  sprawdz(
+    'mnoznik terminowosci: termin calodzienny, zakonczenie z godzina',
+    mnoznikTerminowosci('2026-08-16', '2026-08-16T23:00') ===
+      mnoznikTerminowosci('2026-08-16T00:00', '2026-08-16T23:00')
+  );
+
+  // --- domyslny termin przez HTTP ---
+  const { tresc: nowe } = await zapytaj('POST', '/api/zadania');
+  const dzisDlaSerwera = (await zapytaj('GET', '/api/czas')).tresc.dzisiaj;
+
+  sprawdz(
+    'nowy rekord ma termin = dzisiaj, BEZ godziny',
+    nowe.termin === dzisDlaSerwera,
+    `termin: ${JSON.stringify(nowe.termin)}, dzisiaj: ${dzisDlaSerwera}`
+  );
+  sprawdz(
+    'nowy rekord ma PUSTY start_zadania',
+    nowe.start_zadania === null,
+    `start_zadania: ${JSON.stringify(nowe.start_zadania)}`
+  );
+
+  // Zapis obu postaci przez API, tam i z powrotem.
+  const zGodzina = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { termin: '2026-08-16T09:15' });
+  sprawdz('PATCH zapisuje postac z godzina', zGodzina.tresc.termin === '2026-08-16T09:15');
+
+  const bezGodziny = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { termin: '2026-08-16' });
+  sprawdz(
+    'PATCH zapisuje postac calodzienna (godzina nie doklei sie sama)',
+    bezGodziny.tresc.termin === '2026-08-16',
+    `termin: ${JSON.stringify(bezGodziny.tresc.termin)}`
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+}
+
+/*
+  Duplikowanie zadania. Najwazniejsza asercja dotyczy tego, czego kopia NIE
+  dziedziczy: stan "Zrobione" wraz z data zamkniecia doliczylby XP za prace,
+  ktorej nikt nie wykonal.
+*/
+async function testujDuplikowanie() {
+  sekcja('DUPLIKOWANIE ZADANIA');
+
+  const { tresc: zrodlo } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${zrodlo.id}`, {
+    nazwa: 'Zadanie do skopiowania',
+    stan: 'Zrobione',
+    obszar: 'Career',
+    priorytet: 4,
+    trudnosc: 3,
+    czas_trwania_godziny: 2.5,
+    termin: '2026-08-20',
+    start_zadania: '2026-08-18T08:00',
+    czas_zakonczenia: '2026-08-19T17:00',
+  });
+
+  const odpowiedz = await zapytaj('POST', `/api/zadania/${zrodlo.id}/duplikuj`);
+  sprawdz('duplikowanie odpowiada 201', odpowiedz.status === 201, JSON.stringify(odpowiedz.tresc));
+  const kopia = odpowiedz.tresc;
+
+  sprawdz('kopia to NOWY rekord', kopia.id !== zrodlo.id);
+  sprawdz('nazwa dostaje dopisek " (kopia)"', kopia.nazwa === 'Zadanie do skopiowania (kopia)');
+
+  sprawdzListe(
+    'skopiowane: obszar, priorytet, trudnosc, czas, termin, start',
+    ['Career', 4, 3, 2.5, '2026-08-20', '2026-08-18T08:00'],
+    [
+      kopia.obszar,
+      kopia.priorytet,
+      kopia.trudnosc,
+      kopia.czas_trwania_godziny,
+      kopia.termin,
+      kopia.start_zadania,
+    ]
+  );
+
+  /*
+    Te dwie asercje pilnuja regulу, dla ktorej duplikat robi serwer, a nie przegladarka.
+  */
+  sprawdz('kopia NIE dziedziczy stanu - dostaje "Plan"', kopia.stan === 'Plan', `stan: ${kopia.stan}`);
+  sprawdz(
+    'kopia NIE dziedziczy czasu zakonczenia',
+    kopia.czas_zakonczenia === null,
+    `czas_zakonczenia: ${JSON.stringify(kopia.czas_zakonczenia)}`
+  );
+
+  // Skoro kopia nie jest zakonczona, nie ma prawa dolozyc XP za zadania.
+  const przed = (await zapytaj('GET', '/api/postac')).tresc.rozbicie.zadania;
+  const { tresc: druga } = await zapytaj('POST', `/api/zadania/${zrodlo.id}/duplikuj`);
+  const po = (await zapytaj('GET', '/api/postac')).tresc.rozbicie.zadania;
+  sprawdz('kopia nie dolicza XP za niewykonana prace', po === przed, `przed: ${przed}, po: ${po}`);
+
+  sprawdz(
+    'duplikowanie nieistniejacego zadania -> 404',
+    (await zapytaj('POST', '/api/zadania/999999/duplikuj')).status === 404
+  );
+
+  for (const id of [zrodlo.id, kopia.id, druga.id]) {
+    await zapytaj('DELETE', `/api/zadania/${id}`);
+  }
+}
+
 async function testujDomyslneOgraniczenie(reguly) {
   sekcja('DOMYSLNE OGRANICZENIE WIDOKU');
 
@@ -1557,6 +1710,8 @@ async function main() {
     await testujSilnikXp();
     await testujPostac();
     await testujProjekty();
+    await testujDatyCalodzienne(reguly);
+    await testujDuplikowanie();
     await testujDomyslneOgraniczenie(reguly);
     await testujParserDat();
     await testujQuestLog();
