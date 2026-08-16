@@ -214,6 +214,31 @@ lokalnej kopii danych co sortowanie — potok to `posortowane(filtrowane())`.
 Brak zaznaczenia = brak filtrowania po tym polu. Gdy panel jest zwinięty, w nagłówku widać
 `— aktywne: N`, żeby krótsza lista nigdy nie wyglądała jak zgubione dane.
 
+**Uwzględnij / wyklucz (Obszar i Projekt).** Nad listą checkboxów stoi przełącznik trybu:
+
+| Tryb | Działanie |
+| --- | --- |
+| `uwzględnij` (domyślny) | zostaw **tylko** zaznaczone wartości |
+| `wyklucz` | zostaw wszystko **oprócz** zaznaczonych |
+
+Powód jest praktyczny: przy 41 projektach zaznaczenie 40, żeby ukryć jeden, jest
+bezużyteczne. Pusta lista znaczy „brak filtra" w **obu** trybach — inaczej przełączenie
+na `wyklucz` przed zaznaczeniem czegokolwiek chowałoby całą tabelę. **Wyczyść filtry**
+przywraca tryb `uwzględnij`.
+
+> Wybrano przełącznik trybu, a nie drugi zestaw checkboxów: to jedno pole stanu na filtr
+> zamiast podwojonej listy w UI. Ma to też efekt uboczny — tryb jest **jeden dla całej
+> listy**, więc wartość nie może być jednocześnie zaznaczona i wykluczona. Konflikt,
+> który trzeba by rozstrzygać regułą pierwszeństwa, nie ma jak powstać.
+>
+> Cena: nie da się wyrazić „uwzględnij A i B, ale wyklucz C" w obrębie jednego pola.
+> Przy `uwzględnij` wystarczy jednak zaznaczyć A i B, więc wykluczanie przydaje się
+> wyłącznie w wariancie „wszystko oprócz" — a ten jest w pełni obsłużony.
+
+**Termin najpóźniej.** Górna granica samego `termin`, bez dolnej. Zadania **po terminie**
+i **bez terminu** przechodzą — patrz [Domyślne ograniczenie widoku](#domyślne-ograniczenie-widoku).
+To osobne pole niż „Zakres dat" niżej, bo działa według innej reguły.
+
 **Zakres dat.** Zadanie pasuje do `[OD, DO]`, jeśli spełnia **co najmniej jeden** z warunków:
 
 - **a)** `termin` jest wypełniony **i** mieści się w zakresie;
@@ -244,18 +269,32 @@ zaczyna być odczuwalne:
 
 | Strona | Widok domyślny | Próg włączenia |
 | --- | --- | --- |
-| Zadania | tylko **aktywne** (stan inny niż `Zrobione`) | powyżej 100 zadań |
+| Zadania | **aktywne** (stan inny niż `Zrobione`) **oraz** termin nie później niż **dziś + 7 dni** | powyżej 100 zadań |
 | Dziennik | ostatnie **30 dni** | powyżej 100 wpisów |
 
 Poniżej progu ograniczenie się nie włącza — przy krótkiej liście nic nie przyspiesza,
 a filtr zaznaczony na starcie tylko myli.
 
 **Ograniczenie robi zwykły filtr**, ten sam, który jest w panelu: na stronie zadań
-zaznaczone są wszystkie stany poza `Zrobione`, w dzienniku wypełnione jest pole **od**.
-Panel filtrów pokazuje więc prawdę o tym, co widać, znacznik „aktywne: 1" się zapala,
-a **Wyczyść filtry** działa jako pokazanie wszystkiego. Nad tabelą stoi dodatkowo żółty
-pasek z liczbą ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak
-zrobionych zadań nigdy nie wyglądał jak utrata danych.
+zaznaczone są wszystkie stany poza `Zrobione` i wypełnione pole **Termin najpóźniej**,
+w dzienniku wypełnione jest pole **od**. Panel filtrów pokazuje więc prawdę o tym, co
+widać, znacznik „aktywne: 2" się zapala, a **Wyczyść filtry** działa jako pokazanie
+wszystkiego. Nad tabelą stoi dodatkowo żółty pasek opisujący oba warunki, z liczbą
+ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak zadań nigdy nie
+wyglądał jak utrata danych.
+
+> **Zakres terminu jest otwarty z lewej strony.** Nie ma dolnej granicy, więc zadania
+> **po terminie zostają widoczne**. Ukrycie zaległości byłoby gorsze niż problem, który
+> ten widok rozwiązuje.
+
+**Zadania bez terminu też zostają widoczne.** To zadania, o których najłatwiej zapomnieć —
+gdyby wypadały z widoku domyślnego, znikałyby bez śladu. W praktyce jest ich niewiele,
+bo każde nowe zadanie dostaje termin na dzisiaj; brak terminu to świadome wyczyszczenie pola.
+
+Realizuje to **osobna reguła** `pasujeTerminDo`, a nie konfiguracja istniejącego filtra
+„Zakres dat" — ten drugi odsiewa zadania bez żadnej z trzech dat i dopuszcza dopasowanie
+przez okres aktywności (`start`/`zakończenie`), przez co zadanie z odległym terminem, ale
+wypełnionym startem, wchodziłoby do widoku „najbliższy tydzień" wbrew jego nazwie.
 
 Wybór **nie jest zapamiętywany**: po odświeżeniu strona wraca do widoku domyślnego.
 W projekcie nie ma stanu trzymanego po stronie przeglądarki i ta zmiana tego nie wprowadza.

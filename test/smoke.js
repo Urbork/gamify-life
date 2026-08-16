@@ -1293,6 +1293,124 @@ async function testujDomyslneOgraniczenie(reguly) {
   );
 
   /*
+    DRUGA POLOWA WIDOKU DOMYSLNEGO: termin nie dalej niz dzisiaj + 7 dni.
+
+    Zakres jest OTWARTY Z LEWEJ - to najwazniejsza wlasnosc tej reguly.
+    Ukrycie zaleglosci byloby gorsze niz problem, ktory widok domyslny rozwiazuje,
+    wiec zadanie po terminie MUSI zostac widoczne.
+  */
+  const DZIS_T = '2026-08-16';
+  sprawdz(
+    'domyslna granica terminu to dzisiaj + 7 dni',
+    regulyZadan.domyslnyTerminDo(DZIS_T) === '2026-08-23',
+    regulyZadan.domyslnyTerminDo(DZIS_T)
+  );
+
+  const granica = { terminDo: regulyZadan.domyslnyTerminDo(DZIS_T) };
+  sprawdzListe(
+    'termin: dawno po terminie / wczoraj / dzis / za 7 dni / za 8 dni',
+    [true, true, true, true, false],
+    [
+      { termin: '2024-01-01' },
+      { termin: '2026-08-15' },
+      { termin: DZIS_T },
+      { termin: '2026-08-23' },
+      { termin: '2026-08-24' },
+    ].map((z) => regulyZadan.pasujeTerminDo(z, granica))
+  );
+  sprawdz(
+    'zadanie BEZ terminu zostaje widoczne',
+    regulyZadan.pasujeTerminDo({ termin: null }, granica) === true
+  );
+  sprawdz(
+    'pusta granica = brak filtra',
+    regulyZadan.pasujeTerminDo({ termin: '2099-01-01' }, { terminDo: '' }) === true
+  );
+  sprawdz(
+    'godzina w terminie nie zmienia wyniku na granicy',
+    regulyZadan.pasujeTerminDo({ termin: '2026-08-23T23:59' }, granica) === true
+  );
+
+  // Pelny widok domyslny: oba warunki naraz, na jednym zestawie danych.
+  const zestaw = [
+    { id: 10, stan: 'Plan', termin: '2024-01-01' }, // dawno po terminie
+    { id: 11, stan: 'Plan', termin: DZIS_T },
+    { id: 12, stan: 'Plan', termin: '2026-12-31' }, // odlegly termin
+    { id: 13, stan: 'Plan', termin: null }, // bez terminu
+    { id: 14, stan: 'Zrobione', termin: DZIS_T }, // zakonczone
+  ];
+  const filtryPelne = { ...filtryDomyslne, terminDo: regulyZadan.domyslnyTerminDo(DZIS_T) };
+  sprawdzListe(
+    'widok domyslny: przeterminowane i bez terminu zostaja, odlegle i zrobione znikaja',
+    [10, 11, 13],
+    regulyZadan.filtrowane(zestaw, filtryPelne).map((z) => z.id)
+  );
+
+  /*
+    FILTRY WYKLUCZAJACE (Obszar i Projekt).
+
+    Przy 41 projektach zaznaczenie 40, zeby ukryc jeden, jest bezuzyteczne -
+    stad tryb "wyklucz". Tryb jest JEDEN dla calej listy, wiec wartosc nie moze
+    byc jednoczesnie zaznaczona i wykluczona.
+  */
+  const zProjektami = [
+    { id: 20, obszar: 'Career', projekt_id: 1 },
+    { id: 21, obszar: 'Health', projekt_id: 2 },
+    { id: 22, obszar: null, projekt_id: null },
+  ];
+  const bezFiltrow = {
+    nazwa: '',
+    od: '',
+    do: '',
+    terminDo: '',
+    stany: new Set(),
+    priorytety: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
+  };
+
+  sprawdzListe(
+    'obszar w trybie "uwzglednij" zostawia tylko zaznaczone',
+    [20],
+    regulyZadan
+      .filtrowane(zProjektami, { ...bezFiltrow, obszary: new Set(['Career']) })
+      .map((z) => z.id)
+  );
+  sprawdzListe(
+    'obszar w trybie "wyklucz" zostawia wszystko OPROCZ zaznaczonych',
+    [21, 22],
+    regulyZadan
+      .filtrowane(zProjektami, {
+        ...bezFiltrow,
+        obszary: new Set(['Career']),
+        obszaryTryb: 'wyklucz',
+      })
+      .map((z) => z.id)
+  );
+  sprawdzListe(
+    'projekt w trybie "wyklucz" - ukrycie jednego z wielu',
+    [21, 22],
+    regulyZadan
+      .filtrowane(zProjektami, { ...bezFiltrow, projekty: new Set([1]), projektyTryb: 'wyklucz' })
+      .map((z) => z.id)
+  );
+
+  /*
+    Pusty zbior znaczy "brak filtra" w OBU trybach. Bez tego przelaczenie na
+    "wyklucz" przed zaznaczeniem czegokolwiek chowaloby cala tabele.
+  */
+  sprawdz(
+    'tryb "wyklucz" z pustym zbiorem nie chowa niczego',
+    regulyZadan.filtrowane(zProjektami, { ...bezFiltrow, obszaryTryb: 'wyklucz' }).length === 3
+  );
+
+  // Zadanie bez obszaru (null) przy wykluczaniu konkretnej wartosci zostaje.
+  sprawdz(
+    'zadanie bez obszaru przechodzi przez wykluczenie innej wartosci',
+    regulyZadan.pasujeZbior(null, new Set(['Career']), 'wyklucz') === true
+  );
+
+  /*
     PELNY ZBIOR MIMO OGRANICZONEGO WIDOKU.
 
     Eksport CSV i backup czytaja dane niezaleznie od filtrow (eksport wola
@@ -1309,6 +1427,37 @@ async function testujDomyslneOgraniczenie(reguly) {
     zakonczone.length > 0,
     `zakonczonych: ${zakonczone.length} z ${wszystkie.length}`
   );
+
+  /*
+    Ta sama zasada wobec NOWEGO warunku widoku domyslnego: zadanie z odleglym
+    terminem znika z tabeli, ale ma zostac w zbiorze, z ktorego licza sie eksport,
+    kopia zapasowa i XP. Sprawdzamy to na jednym zestawie danych naraz, zeby
+    porownanie bylo jednoznaczne, a nie na dwoch niezaleznych pomiarach.
+  */
+  const { tresc: odlegle } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${odlegle.id}`, {
+    nazwa: 'Termin za rok',
+    termin: '2099-01-01',
+  });
+
+  const dzisiajSerwera = (await zapytaj('GET', '/api/czas')).tresc.dzisiaj;
+  const pelnyZbior = (await zapytaj('GET', '/api/zadania')).tresc;
+  const widokDomyslny = regulyZadan.filtrowane(pelnyZbior, {
+    ...filtryDomyslne,
+    terminDo: regulyZadan.domyslnyTerminDo(dzisiajSerwera),
+  });
+
+  sprawdz(
+    'zadanie z odleglym terminem znika z widoku domyslnego',
+    !widokDomyslny.some((z) => z.id === odlegle.id)
+  );
+  sprawdz(
+    'to samo zadanie JEST w pelnym zbiorze (eksport, backup, XP)',
+    pelnyZbior.some((z) => z.id === odlegle.id),
+    `widok: ${widokDomyslny.length}, pelny zbior: ${pelnyZbior.length}`
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${odlegle.id}`);
 
   // XP musi rosnac od zadania ZAKONCZONEGO, czyli takiego, ktorego widok domyslny nie pokazuje.
   const przed = (await zapytaj('GET', '/api/postac')).tresc;

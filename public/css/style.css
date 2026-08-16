@@ -60,6 +60,32 @@ h1 {
 }
 
 /*
+  Przelacznik trybu nad lista checkboxow (uwzglednij / wyklucz).
+  Mniejszy i wyblakly - to ustawienie listy, a nie jedna z jej pozycji.
+*/
+.tryb-filtra {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--tekst-slaby);
+}
+
+.tryb-filtra label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+/* Podpowiedz pod polem filtra - wyjasnia regule, ktorej nie widac po samym polu. */
+.filtr-podpowiedz {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--tekst-slaby);
+}
+
+/*
   Baner o ograniczonym widoku. Ma byc widoczny, ale nie alarmujacy - to informacja,
   a nie blad; stad ten sam zolty odcien co miekkie ostrzezenie o duplikacie daty,
   a nie czerwien. Stoi tuz nad tabela, zeby czytalo sie go razem z brakujacymi wierszami.
