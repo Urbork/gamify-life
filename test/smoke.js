@@ -1337,19 +1337,19 @@ async function testujParserDat() {
 
   // --- formaty znane wczesniej: nie moga sie zepsuc po dolozeniu ukosnikow ---
   sprawdzListe(
-    'formaty sprzed zmiany dzialaja bez zmian',
-    ['2026-08-13T00:00', '2026-08-08T00:00', '2026-08-13T00:00'],
+    'formaty bez godziny daja wartosc CALODZIENNA (bez czesci T)',
+    ['2026-08-13', '2026-08-08', '2026-08-13'],
     ['2026-08-13', 'August 8, 2026', '13.08.2026'].map(parsujDateTolerancyjnie)
   );
 
   // --- nowy format 1: sama data z ukosnikami (377x w kolumnie Do Date) ---
   sprawdz(
     'DD/MM/YYYY -> dzien jest pierwszy, nie miesiac',
-    parsujDateTolerancyjnie('29/02/2024') === '2024-02-29T00:00'
+    parsujDateTolerancyjnie('29/02/2024') === '2024-02-29'
   );
   sprawdz(
     'DD/MM/YYYY: dzien powyzej 12 nie jest czytany jako miesiac',
-    parsujDateTolerancyjnie('19/10/2024') === '2024-10-19T00:00'
+    parsujDateTolerancyjnie('19/10/2024') === '2024-10-19'
   );
 
   /*
@@ -1377,12 +1377,57 @@ async function testujParserDat() {
   */
   sprawdz(
     'zakres "data → data" -> data poczatkowa',
-    parsujDateTolerancyjnie('19/10/2024 → 20/10/2024') === '2024-10-19T00:00'
+    parsujDateTolerancyjnie('19/10/2024 → 20/10/2024') === '2024-10-19'
   );
   sprawdz(
     'zakres z godzinami i strefami -> poczatek wraz z godzina',
     parsujDateTolerancyjnie('04/08/2024 14:00 (GMT+2) → 07/08/2024 13:00 (GMT+2)') ===
       '2024-08-04T14:00'
+  );
+
+  /*
+    SPOJNOSC CALODZIENNOSCI: postac wyniku idzie za zrodlem.
+
+    Plik podajacy sam dzien opisuje zadanie CALODZIENNE, a nie zaplanowane
+    na polnoc - i tak wlasnie ma sie zapisac. Gdyby ktos przywrocil doklejanie
+    'T00:00', kolumna renderowalaby pole daty z godzina dla kazdego zaimportowanego
+    rekordu, mimo ze w zrodle godziny nie bylo.
+  */
+  sprawdzListe(
+    'zrodlo bez godziny -> calodzienne, zrodlo z godzina -> z godzina',
+    [false, false, false, true, true],
+    [
+      '29/02/2024',
+      'August 8, 2026',
+      '19/10/2024 → 20/10/2024',
+      '02/03/2024 13:25 (GMT+1)',
+      '04/08/2024 14:00 (GMT+2) → 07/08/2024 13:00 (GMT+2)',
+    ].map((w) => parsujDateTolerancyjnie(w).includes('T'))
+  );
+
+  /*
+    Godzina 00:00 PODANA WPROST w zrodle zostaje godzina. To nie jest to samo,
+    co brak godziny - plik mowiacy "o polnocy" opisuje konkretna pore.
+  */
+  sprawdz(
+    'jawna godzina 00:00 w zrodle zostaje godzina, nie staje sie calodzienna',
+    parsujDateTolerancyjnie('02/03/2024 00:00 (GMT+1)') === '2024-03-02T00:00'
+  );
+
+  /*
+    Dziennik NIE korzysta z tego parsera - ma wlasna parsujDateWpisu dla formatu
+    "@March 2, 2024", ktora od zawsze zwracala sama date. Ta asercja pilnuje, ze
+    zmiana w parserze zadan nie przeciekla do dziennika przez wspolny modul.
+  */
+  const mapDziennika = require('../config/mapowanie-dziennika');
+  sprawdz(
+    'dziennik ma wlasny parser daty i zwraca sama date',
+    mapDziennika.parsujDateWpisu('@March 2, 2024') === '2024-03-02',
+    mapDziennika.parsujDateWpisu('@March 2, 2024')
+  );
+  sprawdz(
+    'kolumna daty dziennika idzie przez TRANSFORMACJE, nie przez pola datowe',
+    mapDziennika.TRANSFORMACJE.data === mapDziennika.parsujDateWpisu
   );
 
   // --- wartosci bledne nadal odrzucane: tolerancja nie moze znaczyc "cokolwiek" ---
@@ -1539,15 +1584,15 @@ async function testujQuestLog() {
   sprawdz('Time 4.0 -> 4 godziny', plytki.czas_trwania_godziny === 4);
   sprawdz(
     'Do Date -> termin (a NIE start_zadania)',
-    plytki.termin === '2026-03-10T00:00' && plytki.start_zadania === null,
+    plytki.termin === '2026-03-10' && plytki.start_zadania === null,
     JSON.stringify({ termin: plytki.termin, start: plytki.start_zadania })
   );
-  sprawdz('Closing Date -> czas_zakonczenia', plytki.czas_zakonczenia === '2026-03-05T00:00');
+  sprawdz('Closing Date -> czas_zakonczenia', plytki.czas_zakonczenia === '2026-03-05');
 
   const nadpisany = zadania.find((z) => z.nazwa === 'Z nadpisanym terminem');
   sprawdz(
     'Due Date (Optional) NADPISUJE termin z Do Date',
-    nadpisany.termin === '2026-06-15T00:00',
+    nadpisany.termin === '2026-06-15',
     nadpisany.termin
   );
 

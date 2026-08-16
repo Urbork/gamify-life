@@ -372,13 +372,23 @@ wskazywać na to samo pole.
 
 **Formaty dat** próbowane po kolei (`lib/daty.js`):
 
-| Format | Skąd | Godzina |
+| Format | Skąd | Wynik |
 | --- | --- | --- |
-| `YYYY-MM-DD` | postać z naszej bazy | `00:00` |
-| `Month D, YYYY` | `August 8, 2026` — eksport Notion | `00:00` |
-| `DD.MM.YYYY` | zapis polski | `00:00` |
-| `DD/MM/YYYY` | eksport „Success Plan" | `00:00` |
-| `DD/MM/YYYY HH:MM (GMT+X)` | eksport „Success Plan" | **zachowana** |
+| `YYYY-MM-DD` | postać z naszej bazy | **całodzienny** |
+| `Month D, YYYY` | `August 8, 2026` — eksport Notion | **całodzienny** |
+| `DD.MM.YYYY` | zapis polski | **całodzienny** |
+| `DD/MM/YYYY` | eksport „Success Plan" | **całodzienny** |
+| `DD/MM/YYYY HH:MM (GMT+X)` | eksport „Success Plan" | godzina **zachowana** |
+
+**Postać wyniku idzie za źródłem.** Plik podający sam dzień opisuje zadanie
+*całodzienne*, a nie zaplanowane na północ — i tak właśnie się zapisuje
+(patrz [Daty całodzienne](#daty-całodzienne-i-daty-z-godziną)). Godzina `00:00`
+**podana wprost** w pliku pozostaje godziną: to informacja, a nie jej brak.
+
+> Wcześniej parser doklejał `T00:00` do każdej daty bez godziny, przez co każdy
+> zaimportowany rekord dostawał w tabeli pole daty z godziną, mimo że w źródle
+> godziny nie było. Na obliczenia to nie wpływało (`numerDnia()` bierze pierwsze
+> 10 znaków) — wyłącznie na to, co widać.
 
 Dzień jest **pierwszy** — amerykańskiego `MM/DD/YYYY` te eksporty nie używają.
 W ostatnim wariancie **strefa jest pomijana, a godzina zachowywana bez przeliczania**:
