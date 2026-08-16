@@ -246,7 +246,53 @@ const MIGRACJE = [
     db.exec(`CREATE INDEX idx_zadania_projekt ON zadania (projekt_id)`);
   },
 
-  // --- 7: tutaj dopisz kolejna migracje ----------------------------------
+  /*
+    --- 7: zadania calodzienne - obciecie sztucznego 'T00:00' -----------------
+
+    Kolumny czasowe zadan trzymaja od teraz ALBO 'YYYY-MM-DD' (calodzienne),
+    ALBO 'YYYY-MM-DDTHH:MM'. Istniejace dane sa sprzed tego rozroznienia:
+    kazda data bez godziny dostawala doklejone 'T00:00'.
+
+    Zrodla tych wartosci byly dwa i oba znacza "dzien ustalony, pora nie":
+    - import z Notion: kolumny Do Date / Closing Date z sama data,
+    - stary domyslny w POST /api/zadania (start_zadania = dzisiaj T00:00).
+
+    DLACZEGO TO BEZPIECZNE
+    W eksporcie zrodlowym nie ma ANI JEDNEGO jawnego '00:00' - Notion zapisuje
+    godzine tylko wtedy, gdy zostala ustawiona. Przed ta zmiana nie dalo sie tez
+    wpisac polnocy inaczej niz przypadkiem: jedynym polem byl <input
+    type="datetime-local">, ktory po wybraniu samej daty sam ustawia 00:00.
+    Zadne 'T00:00' w tej bazie nie oznacza wiec realnie zaplanowanej polnocy.
+
+    To jest jednorazowa okazja: OD TERAZ polnoc da sie ustawic celowo (ikona
+    zegara w komorce daty), wiec pozniej ta wartosc bylaby juz niejednoznaczna.
+
+    CO SIE NIE ZMIENIA
+    Nic poza wygladem. Wszystkie porownania dat w aplikacji ida przez numerDnia(),
+    ktore bierze pierwsze 10 znakow - kolumna "Dni do terminu", filtry zakresu,
+    mnoznik terminowosci w XP i statystyki dadza identyczne wyniki. W sortowaniu
+    wartosc calodzienna wypada przed godzinowa tego samego dnia, a 'T00:00' i tak
+    juz bylo najwczesniejsza wartoscia w swoim dniu.
+
+    PONOWNE URUCHOMIENIE
+    Migracja jest idempotentna sama z siebie: warunek LIKE '%T00:00' po pierwszym
+    przebiegu nie pasuje juz do niczego, bo wartosci koncza sie na cyfrze dnia.
+    Wartosci z inna godzina i puste (NULL) nie pasuja do warunku w ogole.
+  */
+  (db) => {
+    for (const kolumna of ['start_zadania', 'termin', 'czas_zakonczenia']) {
+      const wynik = db
+        .prepare(
+          `UPDATE zadania
+              SET ${kolumna} = substr(${kolumna}, 1, 10)
+            WHERE ${kolumna} LIKE '%T00:00'`
+        )
+        .run();
+      console.log(`[db]   migracja 7: ${kolumna} - obcieto ${wynik.changes} wartosci`);
+    }
+  },
+
+  // --- 8: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {
