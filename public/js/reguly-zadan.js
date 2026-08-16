@@ -43,12 +43,24 @@ const regulyZadan = (() => {
     return termin - dzien;
   }
 
-  /** Ile pelnych dni trwalo zadanie. Puste, gdy brakuje ktorejs z dat. */
-  function czasTrwania(z) {
-    const start = numerDnia(z.start_zadania);
-    const koniec = numerDnia(z.czas_zakonczenia);
-    if (start === null || koniec === null) return null;
-    return koniec - start;
+  /*
+    USUNIETE: czasTrwania(z) liczone z dat start/koniec.
+
+    Zastapilo je RECZNE pole `czas_trwania_godziny`, wpisywane przy zadaniu.
+    Powod: roznica dat mowila tylko, ile dni zadanie bylo otwarte, a nie ile
+    faktycznie zajelo pracy - a to drugie jest potrzebne do naliczania XP.
+  */
+
+  /**
+   * Czy zadanie ma komplet danych potrzebnych do naliczenia XP?
+   *
+   * Sam wynik XP liczy serwer (lib/nagrody.js) - tutaj sprawdzamy wylacznie
+   * OBECNOSC pol, zeby interfejs mogl pokazac wskazowke. Powielanie calego
+   * silnika w przegladarce dalo by dwie implementacje tych samych regul.
+   */
+  function maDaneDoXp(z) {
+    const wypelnione = (w) => w !== null && w !== undefined && String(w).trim() !== '';
+    return wypelnione(z.trudnosc) && wypelnione(z.czas_trwania_godziny);
   }
 
   // ==========================================================================
@@ -76,10 +88,22 @@ const regulyZadan = (() => {
     return filtry.priorytety.size === 0 || filtry.priorytety.has(z.priorytet);
   }
 
-  function pasujeKlient(z, filtry) {
-    if (filtry.klienci.size === 0) return true;
-    // Zadanie bez klienta ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
-    return filtry.klienci.has(z.klient_kategoria);
+  function pasujeObszar(z, filtry) {
+    if (filtry.obszary.size === 0) return true;
+    // Zadanie bez obszaru ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
+    return filtry.obszary.has(z.obszar);
+  }
+
+  /*
+    Filtr po projekcie. Zbior zawiera ID projektow (liczby), nie nazwy:
+    nazwa moze sie zmienic albo powtorzyc, id jest stabilne.
+
+    Sprawdzenie `filtry.projekty` na istnienie, bo starsze wywolania (i testy)
+    moga podawac obiekt filtrow bez tego pola.
+  */
+  function pasujeProjekt(z, filtry) {
+    if (!filtry.projekty || filtry.projekty.size === 0) return true;
+    return filtry.projekty.has(z.projekt_id);
   }
 
   /*
@@ -129,7 +153,8 @@ const regulyZadan = (() => {
         pasujeNazwa(z, filtry) &&
         pasujeStan(z, filtry) &&
         pasujePriorytet(z, filtry) &&
-        pasujeKlient(z, filtry) &&
+        pasujeObszar(z, filtry) &&
+        pasujeProjekt(z, filtry) &&
         pasujeZakresDat(z, filtry)
     );
   }
@@ -140,7 +165,8 @@ const regulyZadan = (() => {
       filtry.nazwa !== '',
       filtry.stany.size > 0,
       filtry.priorytety.size > 0,
-      filtry.klienci.size > 0,
+      filtry.obszary.size > 0,
+      Boolean(filtry.projekty && filtry.projekty.size > 0),
       filtry.od !== '' || filtry.do !== '',
     ].filter(Boolean).length;
   }
@@ -165,7 +191,14 @@ const regulyZadan = (() => {
    * i biezacej daty (kolumna "Dni do terminu").
    *
    * Typy: 'liczba' - odejmowanie, 'tekst' - localeCompare('pl'),
-   *       'znacznik' - data z godzina o stalej szerokosci, wiec porownanie tekstowe.
+   *       'znacznik' - data, porownanie TEKSTOWE.
+   *
+   * Znacznik wystepuje w dwoch postaciach: 'YYYY-MM-DD' (calodzienne)
+   * i 'YYYY-MM-DDTHH:MM'. Porownanie tekstowe dziala dla obu, bo pierwsze
+   * 10 znakow to zawsze data o stalej szerokosci - a przy tym samym dniu
+   * krotsza postac jest prefiksem dluzszej, wiec zadanie calodzienne wypada
+   * PRZED zadaniem o konkretnej godzinie. Taka kolejnosc jest zamierzona:
+   * "caly dzien" zaczyna sie nie pozniej niz jakakolwiek godzina w tym dniu.
    */
   function kolumnySortowania(slowniki, dzisiaj) {
     return {
@@ -183,12 +216,14 @@ const regulyZadan = (() => {
       // Po NUMERZE priorytetu, nie po etykiecie - alfabetycznie wyszloby
       // Brak, Niski, Pilne, Sredni, Wysoki, czyli kolejnosc bez sensu.
       priorytet: { typ: 'liczba', wartosc: (z) => z.priorytet },
-      klient_kategoria: { typ: 'tekst', wartosc: (z) => z.klient_kategoria },
+      obszar: { typ: 'tekst', wartosc: (z) => z.obszar },
+      projekt_id: { typ: 'liczba', wartosc: (z) => z.projekt_id },
       start_zadania: { typ: 'znacznik', wartosc: (z) => z.start_zadania },
       termin: { typ: 'znacznik', wartosc: (z) => z.termin },
       dni_do_terminu: { typ: 'liczba', wartosc: (z) => dniDoTerminu(z, dzisiaj) },
       czas_zakonczenia: { typ: 'znacznik', wartosc: (z) => z.czas_zakonczenia },
-      czas_trwania: { typ: 'liczba', wartosc: czasTrwania },
+      czas_trwania_godziny: { typ: 'liczba', wartosc: (z) => z.czas_trwania_godziny },
+      trudnosc: { typ: 'liczba', wartosc: (z) => z.trudnosc },
     };
   }
 
@@ -247,12 +282,37 @@ const regulyZadan = (() => {
     });
   }
 
+  // ==========================================================================
+  // Domyslne ograniczenie widoku
+  // ==========================================================================
+
+  /*
+    Ktore stany sa zaznaczone przy otwarciu strony.
+
+    Tabela z 537 wierszami buduje ~37 000 elementow <option> (piec list rozwijanych
+    na wiersz, w tym lista projektow), co daje ~290 ms na KAZDE przerysowanie -
+    a renderuj() leci przy kazdym nacisnieciu klawisza w filtrze nazwy.
+    Ograniczenie do samych aktywnych schodzi do ~30 ms.
+
+    Ograniczenie realizujemy ZWYKLYM FILTREM STANU, a nie osobna warstwa nad nim:
+    dzieki temu panel filtrow pokazuje prawde o tym, co widac, znacznik filtrow
+    sie zapala, a "Wyczysc filtry" dziala jako pokazanie wszystkiego. Gdyby odsiew
+    siedzial obok filtrow, po pol roku wygladaloby to jak zgubione dane.
+
+    Zwracamy WSZYSTKIE stany poza koncowym - a nie sztywna liste - zeby dopisanie
+    stanu do config/slowniki.js od razu wchodzilo do widoku domyslnego.
+  */
+  function domyslneStany(slowniki) {
+    return (slowniki.stany || []).filter((s) => s !== slowniki.stanZakonczony);
+  }
+
   return {
     dniDoTerminu,
-    czasTrwania,
+    maDaneDoXp,
     filtrowane,
     ileAktywnych,
     posortowane,
     kolumnySortowania,
+    domyslneStany,
   };
 })();

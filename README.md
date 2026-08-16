@@ -50,10 +50,17 @@ Obok pojawią się pliki `baza.db-wal` i `baza.db-shm` (tryb WAL SQLite) — to 
   po opuszczeniu pola (tekst) lub po zmianie wartości (lista, data) — nie ma przycisku „zapisz".
   W polu tekstowym `Enter` kończy edycję, `Esc` cofa zmianę.
 - **+ Dodaj zadanie** tworzy wiersz o nazwie „Nowe zadanie", priorytecie „Średni"
-  i dacie startu ustawionej na dzisiaj, po czym od razu zaznacza nazwę —
-  pierwsze wpisane znaki ją nadpisują, nie trzeba nic kasować.
-  Datę startu wyznacza **serwer** (`strftime('now','localtime')` w SQLite), a nie przeglądarka,
+  i **terminie ustawionym na dzisiaj** (całodziennym, bez godziny). `start_zadania`
+  zostaje **pusty**. Po utworzeniu nazwa jest od razu zaznaczona — pierwsze wpisane
+  znaki ją nadpisują, nie trzeba nic kasować.
+  Datę wyznacza **serwer** (`strftime('now','localtime')` w SQLite), a nie przeglądarka,
   żeby wynik nie zależał od strefy czasowej ani od zegara maszyny, z której korzystasz.
+
+  > Wcześniej domyślna była **data startu**, a termin zostawał pusty. Odwrócone, bo
+  > zadanie dopisuje się prawie zawsze po to, żeby coś zrobić **na** jakiś dzień,
+  > a nie po to, by odnotować, kiedy się zaczęło.
+
+- **⧉** na końcu wiersza tworzy **kopię** zadania — patrz [Duplikowanie](#duplikowanie-zadania).
 - **×** na końcu wiersza usuwa zadanie (z potwierdzeniem).
 - Komunikat obok przycisku pokazuje wynik ostatniego zapisu. Gdy zapis się nie uda,
   komórka wraca do poprzedniej wartości, a wiersz podświetla się na czerwono —
@@ -64,27 +71,65 @@ Obok pojawią się pliki `baza.db-wal` i `baza.db-shm` (tryb WAL SQLite) — to 
   w każdy `tbody` w tabeli, więc obejmą też kolejne tabele (np. przyszły dziennik)
   bez dopisywania czegokolwiek.
 
-Kolumny **Dni do terminu** i **Czas trwania (dni)** są wyliczane w przeglądarce przy
-renderowaniu i **nie są zapisywane w bazie**. Pierwsza to `termin − dzisiaj`
-(wartość ujemna = po terminie, podświetlana na czerwono), druga to
-`zakończenie − start` (pusta, gdy brakuje którejś z dat).
+Kolumna **Dni do terminu** jest wyliczana w przeglądarce przy renderowaniu i **nie jest
+zapisywana w bazie** — to `termin − dzisiaj` (wartość ujemna = po terminie, podświetlana
+na czerwono).
 
-### Daty z godziną
+### Daty całodzienne i daty z godziną
 
-Pola **Start**, **Termin** i **Zakończenie** trzymają pełny znacznik ISO 8601
-`YYYY-MM-DDTHH:MM` i są edytowane przez `<input type="datetime-local">`.
+Pola **Start**, **Termin** i **Zakończenie** trzymają wartość w **jednej z dwóch**
+postaci — obie są prawidłowe:
 
-**Godzina nie wpływa na kolumny wyliczane.** Obie liczą w **pełnych dniach
-kalendarzowych** i część godzinową ignorują (`numerDnia()` bierze pierwsze 10 znaków).
-Przykład: start `10.08 23:59` i zakończenie `12.08 00:01` dają **2 dni**, mimo że
-w rzeczywistości minęły nieco ponad 24 godziny. To świadoma decyzja — godzina jest
-na razie dodatkową informacją do zapisu, a logika wyliczeń zostaje prosta.
+| Postać | Znaczenie | Pole w tabeli |
+| --- | --- | --- |
+| `YYYY-MM-DD` | zadanie **całodzienne**, bez konkretnej pory | `<input type="date">` |
+| `YYYY-MM-DDTHH:MM` | konkretna godzina | `<input type="datetime-local">` |
+
+Typ pola dobiera się **do wartości**, a nie odwrotnie. Obok stoi przełącznik z ikoną
+zegara (**🕑**): dodaje godzinę (ustawia `T00:00`) albo ją obcina. Przy pustej dacie
+jest nieaktywny — bez daty godzina nie ma czego opisywać. Nowe zadania są **całodzienne**.
+
+**Migracja nie była potrzebna** — kolumny są tekstowe (`TEXT`), więc obie postacie
+mieszczą się w istniejącym schemacie. Jedynym strażnikiem formatu jest normalizacja
+w API (`znormalizujZnacznikCzasu`), która **nie dokleja już `T00:00`** do samej daty.
+Wcześniej doklejała, przez co nie dało się odróżnić „zadania na cały dzień" od
+„zadania o północy".
+
+**Godzina nie wpływa na kolumny wyliczane ani na XP.** Wszystko, co porównuje daty —
+kolumna „Dni do terminu", filtry zakresu, mnożnik terminowości, statystyki — liczy
+w **pełnych dniach kalendarzowych** i część godzinową ignoruje (`numerDnia()` bierze
+pierwsze 10 znaków). Przykład: start `10.08 23:59` i zakończenie `12.08 00:01` dają
+**2 dni**, mimo że minęły nieco ponad 24 godziny. Dla tych obliczeń obie postacie
+zapisu są więc **nierozróżnialne** — i to właśnie dlatego dodanie dat całodziennych
+nie wymagało ruszania ani jednej reguły wyliczeniowej.
 
 Godzina **wpływa natomiast na sortowanie**: przy dwóch zadaniach na ten sam dzień
-wcześniejsza godzina jest wyżej. To dotyczy porządkowania wierszy, nie wartości w kolumnach.
+wcześniejsza godzina jest wyżej. Porównanie jest tekstowe i działa dla obu postaci,
+bo pierwsze 10 znaków to zawsze data o stałej szerokości. Przy tym samym dniu krótsza
+postać jest prefiksem dłuższej, więc **zadanie całodzienne wypada przed** zadaniem
+o konkretnej godzinie — „cały dzień" zaczyna się nie później niż jakakolwiek godzina
+w tym dniu.
 
-API przyjmuje też samo `YYYY-MM-DD` (uzupełnia `T00:00`) oraz znacznik z sekundami
-(obcina do minut) — dzięki temu ręczne `curl`-e i starsze skrypty nadal działają.
+API przyjmuje też znacznik z sekundami (obcina do minut) oraz spację zamiast `T` —
+dzięki temu ręczne `curl`-e i starsze skrypty nadal działają.
+
+### Duplikowanie zadania
+
+Ikona **⧉** w wierszu tworzy kopię. Kopiowane są: **nazwa** (z dopiskiem `" (kopia)"`),
+obszar, projekt, priorytet, trudność, czas trwania, termin i start. Kopia pojawia się
+w tabeli z zaznaczoną nazwą, gotową do nadpisania — tak samo jak przy „+ Dodaj zadanie".
+
+**Nie są kopiowane dwie rzeczy:** `stan` (kopia dostaje domyślne `Plan`)
+i `czas_zakonczenia` (zostaje pusty).
+
+> To nie kosmetyka. XP liczy się z zadań **zakończonych**, więc skopiowanie stanu
+> „Zrobione" razem z datą zamknięcia doliczyłoby punkty za pracę, której nikt nie
+> wykonał — i to od razu, bez żadnej akcji użytkownika.
+
+Kopię robi **serwer** jednym zapytaniem (`POST /api/zadania/:id/duplikuj`,
+`INSERT ... SELECT`), a nie przeglądarka przez `POST` + `PATCH`. Dzięki temu reguła
+powyżej jest wymuszona po stronie bazy i nie ma momentu, w którym w tabeli siedzi
+rekord w połowie przepisany.
 
 ### Priorytet
 
@@ -93,6 +138,52 @@ W bazie zapisany jest **numer**, nie etykieta — dzięki temu sortowanie jest n
 (0 < 1 < 2…, a nie alfabetycznie „Brak, Niski, Pilne, Średni, Wysoki"), a zmiana nazwy
 w słowniku nie wymaga ruszania danych. Lista mieszka w `PRIORYTETY`
 w [config/slowniki.js](config/slowniki.js).
+
+### Obszar
+
+Pole `obszar` (do migracji 6: `klient_kategoria`) trzyma obszar życia z Notion:
+Mindset, Career, Knowledge, Creative, Health, Home, Lifestyle, Family, Finances,
+Fun/Relax, Travel, Inne. Nazwy zostają **po angielsku**, dokładnie jak w źródle —
+dzięki temu import mapuje je 1:1, bez tablicy tłumaczeń do utrzymywania.
+
+Pole **nie jest walidowane ściśle**: wartość spoza listy zapisze się i pokaże
+z dopiskiem „(spoza listy)". Stare wartości — nazwy klientów — przetrwały zmianę
+nazwy kolumny nietknięte, właśnie dlatego.
+
+### Projekty
+
+Strona **/projekty.html**. Projekt jest **kontenerem** na zadania: sam z siebie
+**nie daje XP**, punkty liczą się wyłącznie z zadań, wpisów dziennika i nawyków.
+Licznik „X/Y ukończonych" liczy serwer jednym zapytaniem z `LEFT JOIN` — inaczej
+przy kilkudziesięciu projektach robiłaby się lawina zapytań.
+
+Zadanie przypisuje się do projektu dropdownem w kolumnie **Projekt**; jest też filtr
+multi-select po projekcie. Filtr działa po **id**, nie po nazwie — nazwa może się zmienić.
+
+> **Usunięcie projektu ODPINA zadania, nie kasuje ich.** Realizuje to
+> `ON DELETE SET NULL` na kluczu obcym (migracja 6). Zadanie jest bytem
+> samodzielnym, projekt tylko kontenerem — okno potwierdzenia mówi wprost,
+> ile zadań zostanie odpiętych.
+
+### Trudność i czas (h)
+
+Dwa pola opcjonalne, oba potrzebne do naliczenia XP:
+
+- **Trudność** — 1 Łatwe / 2 Średnie / 3 Trudne.
+- **Czas (h)** — ile godzin zadanie faktycznie zajęło, **wpisywane ręcznie**.
+
+**Trudność jest całkowicie niezależna od Priorytetu.** Priorytet mówi, jak pilne jest
+zadanie (zarządzanie); trudność — ile było warte (naliczanie XP). Oba zostają.
+
+Zadanie w stanie „Zrobione" bez któregoś z tych pól dostaje **żółty znacznik** na obu
+komórkach i podpowiedź „uzupełnij trudność i czas, by policzyć XP". To uwaga, nie błąd —
+zapis przechodzi, po prostu XP z tego zadania przepada.
+
+> **Usunięta kolumna „Czas trwania (dni)".** Liczyła się automatycznie z różnicy
+> `zakończenie − start`, czyli mówiła, ile dni zadanie było *otwarte* — a nie ile zajęło
+> pracy. Zastąpiło ją ręczne pole godzin. Skutek: średnia w statystykach zmieniła jednostkę
+> z **dni na godziny** i obejmuje tylko zadania z wypełnionym polem; historycznych nie da się
+> odtworzyć z dat. Kolumna zniknęła też z eksportu CSV i z kopii zapasowej.
 
 ### Sortowanie
 
@@ -146,6 +237,58 @@ OD i DO — zawsze widać, jaki zakres jest naprawdę użyty, i można go ręczn
 > Zamiana to jedna linijka opisana w komentarzu przy `pasujeZakresDat`
 > w [public/js/zadania.js](public/js/zadania.js).
 
+### Domyślne ograniczenie widoku
+
+Przy większych zbiorach obie tabele startują **ograniczone**, bo pełne przerysowanie
+zaczyna być odczuwalne:
+
+| Strona | Widok domyślny | Próg włączenia |
+| --- | --- | --- |
+| Zadania | tylko **aktywne** (stan inny niż `Zrobione`) | powyżej 100 zadań |
+| Dziennik | ostatnie **30 dni** | powyżej 100 wpisów |
+
+Poniżej progu ograniczenie się nie włącza — przy krótkiej liście nic nie przyspiesza,
+a filtr zaznaczony na starcie tylko myli.
+
+**Ograniczenie robi zwykły filtr**, ten sam, który jest w panelu: na stronie zadań
+zaznaczone są wszystkie stany poza `Zrobione`, w dzienniku wypełnione jest pole **od**.
+Panel filtrów pokazuje więc prawdę o tym, co widać, znacznik „aktywne: 1" się zapala,
+a **Wyczyść filtry** działa jako pokazanie wszystkiego. Nad tabelą stoi dodatkowo żółty
+pasek z liczbą ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak
+zrobionych zadań nigdy nie wyglądał jak utrata danych.
+
+Wybór **nie jest zapamiętywany**: po odświeżeniu strona wraca do widoku domyślnego.
+W projekcie nie ma stanu trzymanego po stronie przeglądarki i ta zmiana tego nie wprowadza.
+
+> **Eksport, kopia zapasowa i XP zawsze widzą pełny zbiór** — niezależnie od tego,
+> co jest na ekranie. Eksport woła `posortowane()` z pominięciem `filtrowane()`, backup
+> czyta prosto z bazy (`SELECT * FROM zadania ORDER BY id`), a XP liczy serwer
+> w `routes/postac.js`. Pilnują tego asercje w `test/smoke.js`.
+
+#### Skąd te progi — pomiar
+
+Ograniczenie powstało po pomiarze, nie „na wyczucie". Na zbiorze 537 zadań / 823 wpisów:
+
+| Etap | Czas | Udział |
+| --- | --- | --- |
+| fetch + JSON | 7,5 ms | 2% |
+| filtrowanie, sortowanie, kolumny wyliczane | poniżej 1 ms | <0,5% |
+| **budowa DOM** | **212–453 ms** | **~75%** |
+| wstawienie do drzewa | 24–87 ms | ~20% |
+
+Koszt siedzi w budowaniu DOM, a konkretnie w **opcjach list rozwijanych**: każdy wiersz
+zadania ma pięć `<select>`, a lista projektów to 42 pozycje — razem **37 053 elementów
+`<option>`** na stronie. Mikrotest: 537 wierszy z pięcioma pustymi `<select>` to 16,5 ms,
+te same wiersze z kompletem opcji — 125,7 ms.
+
+Efekt ograniczenia: zadania **537 → 74 wiersze, ~290 ms → ~30 ms**; dziennik
+**823 → 19 wierszy, ~250 ms → ~8 ms**. Ma to znaczenie, bo `renderuj()` przebudowuje
+całe `<tbody>` przy **każdym naciśnięciu klawisza** w polu filtra.
+
+Gdyby to przestało wystarczać, następnym krokiem jest tworzenie `<select>` dopiero
+przy kliknięciu komórki (do tego czasu zwykły tekst) — to uderza w faktyczną przyczynę,
+czyli liczbę elementów `<option>`.
+
 ### Eksport do CSV
 
 Przycisk **Eksportuj do CSV** pobiera plik `zadania-eksport-RRRR-MM-DD.csv`
@@ -169,14 +312,45 @@ w jedną kolumnę. Wtedy albo użyj w Excelu *Dane → Tekst jako kolumny*, albo
 
 ### Import z CSV
 
-Przycisk **Importuj z CSV** wczytuje plik wyeksportowany z innego narzędzia
-(domyślnie: eksport z Notion). Import jest **dwuetapowy**:
+Przycisk **Importuj z CSV** wczytuje plik wyeksportowany z innego narzędzia.
+Import jest **dwuetapowy**:
 
-1. wybór pliku → `POST /api/import/podglad` — plik jest parsowany i sprawdzany,
+1. wybór pliku → `POST /api/import/:profil/podglad` — plik jest parsowany i sprawdzany,
    ale **nic nie trafia do bazy**;
 2. podgląd pokazuje „X gotowych do zaimportowania, Y odrzuconych" plus tabelkę
    odrzuconych wierszy z numerem linii w pliku i konkretnym powodem;
-3. dopiero **Zatwierdź import** → `POST /api/import/zatwierdz` zapisuje dane.
+3. dopiero **Zatwierdź import** → `POST /api/import/:profil/zatwierdz` zapisuje dane.
+
+#### Wybór źródła
+
+Na stronie zadań przed przyciskiem stoi lista **Źródło**, bo ta sama tabela przyjmuje
+pliki z dwóch miejsc:
+
+| Opcja | Kiedy jej użyć |
+| --- | --- |
+| **Zadania — eksport z tej aplikacji** | plik z przycisku „Eksportuj do CSV" obok; nagłówki `Nazwa zadania`, `Stan`, `Obszar`, `Termin`… |
+| **Notion Success Plan — projekty + zadania** | eksport bazy „Success Plan" z Notion; z jednego pliku powstają **i projekty, i zadania**, powiązane kolumną `Upstream` |
+
+Wybrana wartość trafia wprost do adresu jako `:profil` — router i tak działał
+parametrem, więc doszedł sam wybór, bez zmian po stronie serwera.
+
+**Strona dziennika listy nie ma**: ma jeden profil, podany atrybutem `data-profil`
+na przycisku. `public/js/csv-import.js` obsługuje oba sposoby — najpierw patrzy na listę,
+a gdy jej nie ma, sięga po atrybut.
+
+Dwie rzeczy, które łatwo przeoczyć przy dwóch źródłach na jednej stronie:
+
+- podgląd wypisuje **nazwę użytego profilu**, żeby plik wczytany nie tym mapowaniem
+  (same odrzucone wiersze) dało się od razu rozpoznać;
+- lista jest **zablokowana, dopóki podgląd jest otwarty**, a zatwierdzenie idzie profilem
+  zapamiętanym przy podglądzie. Inaczej przestawienie listy między jednym krokiem a drugim
+  zapisałoby dane według innego mapowania niż to, które przed chwilą było na ekranie.
+
+Po zapisie moduł importu wysyła zdarzenie `dane-<tabela>-zmienione` **osobno dla każdej
+ruszonej tabeli** (mapa `ZMIENIANE_TABELE`). Nazwa zdarzenia celowo nie bierze się z nazwy
+profilu: `notion-quest-log` pisze do **dwóch** tabel naraz, więc strona zadań przeładowuje
+zarówno listę zadań, jak i projekty — bez tego nowy projekt siedziałby w bazie, ale nie dało
+by się go wybrać w kolumnie **Projekt** aż do odświeżenia strony.
 
 Zaimportowane zadania są **dopisywane** — nic istniejącego nie jest nadpisywane ani usuwane.
 Cały import idzie w jednej transakcji: albo wejdą wszystkie poprawne wiersze, albo żaden.
@@ -196,9 +370,38 @@ Chcesz wczytać plik z innego źródła (albo własny eksport z tej aplikacji, k
 nagłówki techniczne)? Dopisz wpisy do `MAPOWANIE_KOLUMN` — kilka nagłówków może
 wskazywać na to samo pole.
 
-**Formaty dat** próbowane po kolei: `YYYY-MM-DD`, `Month D, YYYY` (np. `August 8, 2026` —
-domyślny format Notion), `DD.MM.YYYY`. Puste pole to brak daty, a nie błąd.
-Godzina jest uzupełniana jako `00:00`.
+**Formaty dat** próbowane po kolei (`lib/daty.js`):
+
+| Format | Skąd | Wynik |
+| --- | --- | --- |
+| `YYYY-MM-DD` | postać z naszej bazy | **całodzienny** |
+| `Month D, YYYY` | `August 8, 2026` — eksport Notion | **całodzienny** |
+| `DD.MM.YYYY` | zapis polski | **całodzienny** |
+| `DD/MM/YYYY` | eksport „Success Plan" | **całodzienny** |
+| `DD/MM/YYYY HH:MM (GMT+X)` | eksport „Success Plan" | godzina **zachowana** |
+
+**Postać wyniku idzie za źródłem.** Plik podający sam dzień opisuje zadanie
+*całodzienne*, a nie zaplanowane na północ — i tak właśnie się zapisuje
+(patrz [Daty całodzienne](#daty-całodzienne-i-daty-z-godziną)). Godzina `00:00`
+**podana wprost** w pliku pozostaje godziną: to informacja, a nie jej brak.
+
+> Wcześniej parser doklejał `T00:00` do każdej daty bez godziny, przez co każdy
+> zaimportowany rekord dostawał w tabeli pole daty z godziną, mimo że w źródle
+> godziny nie było. Na obliczenia to nie wpływało (`numerDnia()` bierze pierwsze
+> 10 znaków) — wyłącznie na to, co widać.
+
+Dzień jest **pierwszy** — amerykańskiego `MM/DD/YYYY` te eksporty nie używają.
+W ostatnim wariancie **strefa jest pomijana, a godzina zachowywana bez przeliczania**:
+w źródle to czas lokalny autora i tak samo jest czytany w aplikacji. Przeliczanie na UTC
+przesunęłoby część wpisów na sąsiedni dzień, a wszystkie porównania dat w aplikacji
+idą na pełnych dniach kalendarzowych.
+
+**Zakres dat** (`19/10/2024 → 20/10/2024`, także z godzinami po obu stronach) jest
+skracany do **daty początkowej**. Nasze kolumny są pojedynczymi punktami w czasie,
+a to po dacie początkowej filtrowały widoki w Notion. Cięcie idzie po samym znaku
+strzałki (U+2192), więc nie zależy od tego, ile takich zakresów przyniesie kolejny eksport.
+
+Puste pole to brak daty, a nie błąd.
 
 **Wiersz jest odrzucany**, gdy: nazwa jest pusta, stan nie pasuje **dokładnie** do słownika
 (wielkość liter ma znaczenie), albo data jest w nierozpoznanym formacie. Odrzucenie dotyczy
@@ -237,6 +440,63 @@ uwaga przy liczeniu statystyk, bo ta jedna kolumna jest odwrócona względem poz
 
 Kolumna `data` **nie ma** ograniczenia `UNIQUE`: jeden dzień może mieć więcej niż jeden wpis.
 Gdyby było inaczej, pojedyncza kolizja przerywałaby cały import (idzie w transakcji).
+
+### Plakietki ocen
+
+Cztery pola ocen (jakość snu, stres, nastrój, intencjonalność) są listami rozwijanymi
+z etykietą `liczba emoji opis`, np. `4 😴 Dobry`. **W bazie zapisywana jest wyłącznie liczba** —
+emoji i opis to warstwa prezentacji, więc kolumny zostają `INTEGER`-ami, a statystyki
+i sortowanie działają bez zmian. Zmiana słowa „Przeciętny" na „Średni" nie wymaga
+ruszania ani jednego rekordu.
+
+Opisy mieszkają w [config/mapowanie-ocen.js](config/mapowanie-ocen.js) i są wystawiane
+przez istniejący `/api/slowniki`. Puste pole jest poprawnym stanem — wyboru nie wymuszamy.
+
+Styl plakietki jest **neutralny** (jasnoszare tło, bez kolorowania wg wartości). Kolorowanie
+sugerowałoby „dobrą/złą" ocenę, a przy stresie — którego skala jest odwrócona — prowadziłoby
+wprost do błędnych wniosków. Opis słowny rozwiązuje ten problem lepiej: `0 🔥 Bardzo wysoki`
+nie da się odczytać opacznie.
+
+### Nawyki — edytowalna lista
+
+Lista nawyków mieszka w tabeli **`nawyki_slownik`** (migracja 4) i jest edytowalna z aplikacji.
+Kliknięcie komórki **Nawyki** otwiera panel z checkboxem przy każdej pozycji; zaznaczenie
+zapisuje się od razu, bez osobnego przycisku. Przy każdej pozycji ✏️ zmienia nazwę,
+a 🗑️ usuwa ją z listy wyboru. Na dole panelu dodajesz nową.
+
+Kolumna `dziennik.nawyki` **nadal jest zwykłym tekstem** z nazwami rozdzielonymi przecinkami —
+celowo nie ma tabeli łączącej. Wpisy mają prawo zawierać nazwy historyczne, których już nie ma
+w słowniku, a klucz obcy by to uniemożliwił.
+
+**Zmiana nazwy działa kaskadowo** na wszystkich wpisach dziennika. Dopasowanie idzie po
+**całych tokenach**, nie po podciągach:
+
+```
+tokeny = nawyki.split(',').map(trim)
+jeśli żaden token !== staraNazwa  →  wiersz w ogóle nie jest ruszany
+```
+
+Podmiana przez `REPLACE(nawyki, stara, nowa)` byłaby błędem: zmiana „Water" → „H2O"
+zepsułaby „Drink Water" na „Drink H2O", a „Drink Water" → „Woda" uszkodziłoby
+„Drink Water Extra". Nazwy z nawiasami i spacjami (`Duolingo (road to 3 years)`) też
+przechodzą bez szwanku. Wszystkie te przypadki są w smoke teście.
+
+Porównanie tokenu jest **dokładne**, z uwzględnieniem wielkości liter — inaczej zmiana nazwy
+normalizowałaby przy okazji zapis historyczny. Wykrywanie duplikatów przy dodawaniu i zmianie
+nazwy działa osobno i wielkości liter **nie** rozróżnia.
+
+**Usunięcie nie kaskaduje.** Nazwa znika tylko ze słownika; wpisy zachowują ją nietkniętą,
+bo historia ma pozostać wierna. Skutek uboczny: po takim nawyku nie da się już filtrować,
+choć nadal widać go w treści wpisów.
+
+> **Zabezpieczenie przed cichą utratą danych.** Panel pokazuje także nazwy obecne w danym
+> wpisie, a nieobecne w słowniku — usunięte oraz historyczne (np. `Untitled`) — oznaczone
+> jako **„(spoza listy)"**. Gdyby zapis składał się wyłącznie z zaznaczonych checkboxów,
+> takie nazwy znikałyby po cichu przy pierwszej edycji wiersza. Kolejność nazw w wierszu
+> jest zachowywana, a nowo zaznaczone dopisywane na końcu.
+
+Zasiew migracji to **15** nazw znalezionych przy imporcie — bez `Untitled`, które było
+artefaktem eksportu z Notion. Wpis, który je zawiera, został nietknięty.
 
 ### Ostrzeżenie o duplikacie daty
 
@@ -324,6 +584,90 @@ ponad 900 razy) jest traktowany jako brak wartości. Steruje tym `WARTOSCI_PUSTE
 
 Jedynym wymaganym polem jest `data`. Reszta może być pusta — to normalne w nowszych wpisach.
 
+### Import "notion-quest-log" (projekty + zadania)
+
+Profil w [config/mapowanie-quest-log.js](config/mapowanie-quest-log.js) czyta eksport
+bazy „Success Plan" z Notion, w której **projekty i zadania leżą w jednej tabeli**,
+rozróżnione kolumną `Type`.
+
+Import jest **dwuprzebiegowy** — ten sam plik przechodzi przez silnik dwa razy,
+za każdym razem z innym mapowaniem (rozdziela je `filtrWierszy`):
+
+1. `Type = "Project"` → tabela `projekty`,
+2. `Type = "Task"` → tabela `zadania`, podpięte przez kolumnę relacji `Upstream`.
+
+Wiązanie idzie **po nazwie projektu**, nie po id: w podglądzie projekty jeszcze nie
+istnieją w bazie, więc id nie mają. Przy zapisie najpierw wstawiane są projekty,
+z nich powstaje mapa `nazwa → id`, dopiero potem zadania — całość w jednej transakcji.
+Porównanie pomija skrajne spacje i wielkość liter.
+
+**Brak dopasowania nie jest błędem.** Zadanie wchodzi bez projektu, a podgląd pokazuje
+osobno: ile projektów, ile zadań, ile z podpiętym projektem i ile bez dopasowania
+(wraz z nazwami nieznanych projektów).
+
+#### Dlaczego `Do Date` → `termin`, a nie `start_zadania`
+
+W źródłowym Notion `Due Date (Optional)` jest wypełnione tylko w **4 rekordach na 582**,
+a faktyczną funkcję terminu pełnił `Do Date` — to po nim filtrowały widoki.
+
+Gdyby `Do Date` trafił na `start_zadania`, pole `termin` zostałoby puste niemal wszędzie.
+Mnożnik terminowości wymaga **jednocześnie** terminu i daty zakończenia, więc dla
+wszystkich **468 ukończonych** zadań wyniósłby neutralne ×1 — cała mechanika premii
+i kary za termin byłaby martwa, a XP zaniżone.
+
+`Due Date (Optional)` nadpisuje termin tam, gdzie jest wypełnione. Nadpisania **nie da się**
+zrobić dwoma nagłówkami wskazującymi na to samo pole: silnik przetwarza je po kolei,
+a pusta data ustawia `null` i skasowałaby wartość z `Do Date`. Dlatego data opcjonalna
+trafia do pola tymczasowego, a wybór robi hook `poWierszu`.
+
+#### Mapowanie wartości
+
+| Źródło | Cel | Uwagi |
+| --- | --- | --- |
+| `Status` | `stan` / `status` | Backlog→Plan, Ready to Start→Czeka, In Progress→W trakcie, Complete→Zrobione, Blocked→Blok, puste→Plan |
+| `Area` | `obszar` | 1:1, bez tłumaczenia; puste → `Inne` |
+| `Difficulty Score` | `trudnosc` | 1 - Easy→1, 2 - Moderate→2, 3 - Hard→3 |
+| `Impact` | `priorytet` | x10 High→4, x5 Semi-High→3, x2 Impact→2, x0.5 Semi-Low→1, x0.2 Low→0, puste→2 |
+| `Time (Tasks Only)` | `czas_trwania_godziny` | liczba |
+
+Wymagana jest wyłącznie niepusta kolumna `Name`. Reszta jest opcjonalna.
+
+#### Jak czytana jest kolumna `Upstream`
+
+Notion eksportuje relację jako `Nazwa (https://app.notion.com/p/…)`. Bierzemy **wszystko
+przed końcowym nawiasem z URL-em**; wariant bez URL-a też przechodzi.
+
+Pole jest traktowane jako **pojedyncza wartość** — w 372 zadaniach z relacją nie ma ani
+jednego z dwoma URL-ami, więc zadanie ma najwyżej jeden projekt.
+
+> **Nie dzielimy po przecinku.** Pierwotna wersja parsera tak robiła i rozrywała nazwy
+> projektów, które przecinek zawierają — „Stan, ale trudniejszy" czy „The Ultimate React
+> Course 2024: React, Next.js, Redux & More". Nawias obcinany jest wyłącznie na **końcu**
+> wartości, bo nazwa projektu sama może zawierać nawiasy. Trim jest konieczny: nazwy mają
+> końcowe spacje, a przed nawiasem bywa podwójna spacja.
+
+#### Weryfikacja na prawdziwym eksporcie
+
+Profil powstał ze specyfikacji, ale został **sprawdzony na prawdziwym pliku**
+(582 wiersze, 56 kolumn — wariant `…_all.csv`; krótszy plik bez `_all` ma tylko 6 kolumn
+i do importu się nie nadaje). Wynik podglądu:
+
+| | |
+| --- | --- |
+| projekty | 41 |
+| zadania | 541 |
+| zadania z podpiętym projektem | 371 |
+| bez dopasowania | 1 |
+| wiersze odrzucone | 0 |
+
+Jedyne niedopasowanie to zadanie, którego `Upstream` wskazuje na **inne zadanie**,
+nie na projekt. To zachowanie poprawne: zadanie wchodzi bez projektu, a podgląd pokazuje
+nazwę jako informację, nie jako błąd.
+
+Weryfikacja wykryła trzy rozbieżności wobec specyfikacji — brakujące formaty dat
+z ukośnikami, zakresy ze strzałką i cięcie `Upstream` po przecinku. Wszystkie trzy
+są opisane wyżej i pokryte asercjami w `test/smoke.js`.
+
 ### Jak dodać własny profil importu
 
 `lib/import.js` jest generyczny i **nie zna** ani zadań, ani dziennika. Profil to obiekt
@@ -405,6 +749,8 @@ Co pokrywa:
 | --- | --- |
 | Zadania | 4 presety zakresu dat · sortowanie po 10 kolumnach × 2 kierunki z regułą „Zrobione na dole" · kolumny wyliczane (w tym `23:59 → 00:01` = 2 dni) · filtry nazwy, stanu i priorytetu `0` |
 | Dziennik | filtr nawyku (także że „Water" nie łapie „Drink Water") · szukanie z wielkością liter · własny zakres dat · sortowanie |
+| Silnik XP | minimalne 1 XP · trzy progi terminowości · granica poziomu przy 500 XP · reset i prestiż przy 50 000 · odrzucenie zakupu ponad saldo · zgodność list pól po obu stronach |
+| Quest-log | mapowanie statusów i Impact (5 poziomów) · trudność · wiązanie projekt–zadanie po `Upstream` · brak dopasowania jako informacja · `DELETE` projektu odpina zadania |
 | Statystyki | odsetek „po terminie" (mianownik, porównanie na dniach, pusty mianownik → `null` zamiast `NaN`) · tabela miesięczna · średnie pomijające braki |
 | Import | oba profile odrzucają te same wiersze z tymi samymi powodami; transformacje Notion (`@March 2, 2024`, `7:30 → 07:30`, nawyki bez URL-i, literalne `null`) |
 | Endpointy | `PATCH /api/zadania/:id` z ciałem 300 kB → **413**, `PATCH /api/dziennik/:id` z tym samym ciałem → **200** |
@@ -474,6 +820,75 @@ kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + d
 Sprawdzenie po skonfigurowaniu: kliknij zadanie prawym → **Uruchom**, a potem zajrzyj
 do `backups/`. Kolumna **Wynik ostatniego uruchomienia** powinna pokazać `0x0`.
 
+## Postać — XP, poziomy i waluta
+
+Strona **/postac.html**. Pokazuje poziom, prestiż, pasek postępu, rozbicie źródeł XP
+oraz formularz wydawania waluty z listą zakupów.
+
+**Wszystko liczy się na żywo** z zadań i wpisów dziennika, przy każdym wejściu na stronę.
+Nie ma logu zdarzeń ani zapisanego „stanu XP" — dzięki temu poprawienie starego zadania
+albo wpisu natychmiast poprawia wynik historyczny, a cała dotychczasowa historia wlicza się
+sama, bez żadnego „aktywowania". Reguły siedzą w [lib/nagrody.js](lib/nagrody.js).
+
+Jedynym trwale zapisanym elementem jest **wydawanie** waluty (tabela `zakupy`) — zakupu
+nie da się odtworzyć z niczego innego, więc musi być zdarzeniem.
+
+### Naliczanie XP
+
+**Zadanie** (tylko `Zrobione`, tylko z wypełnioną trudnością i czasem):
+
+```
+bazowe = max(1, round(trudnosc × czas_trwania_godziny))
+xp     = max(1, round(bazowe × mnoznik_terminowosci))
+```
+
+`max(1, …)` sprawia, że ukończone zadanie **nigdy nie jest warte zera**.
+
+Mnożnik terminowości liczy się na **pełnych dniach kalendarzowych** (spójnie z resztą
+aplikacji — zakończenie o 23:00 w dniu terminu to nadal *na czas*):
+
+| Zapas = `termin − zakończenie` | Mnożnik |
+| --- | --- |
+| ≥ 3 dni | **×1,5** |
+| 0…2 dni | ×1 |
+| < 0 (po terminie) | ×0,5 |
+| brak którejś z dat | ×1 (neutralnie) |
+
+**Nawyki:** 3 XP za każdy odhaczony nawyk, sumowane po wszystkich wpisach.
+
+**Dziennik:** 5 XP za wpis z jakąkolwiek treścią + 10 XP za każde z sześciu wypełnionych
+pól refleksyjnych. Ten sam licznik pokazuje kolumna **Refleksje** („4/6") w tabeli dziennika.
+
+### Poziomy i prestiż
+
+Próg poziomu to **500 XP**, a po **100 poziomach** licznik wraca do 1 i rośnie prestiż:
+
+```
+prestiz    = floor(xp / 50000)
+xp_w_cyklu = xp % 50000
+poziom     = floor(xp_w_cyklu / 500) + 1
+```
+
+### Waluta
+
+`waluta_zarobiona = floor(XP / 2)`, pomniejszona o sumę kosztów z tabeli `zakupy`.
+**Nie da się wejść na minus** — zakup ponad stan konta jest odrzucany z komunikatem
+podającym, ile dokładnie brakuje. Cofnięcie zakupu zwraca walutę (saldo liczy się z sumy,
+więc usunięcie wiersza wystarczy).
+
+### Dlaczego silnik jest po stronie serwera
+
+W odróżnieniu od `reguly-*.js` z `public/js`, `lib/nagrody.js` **nie musi działać
+w przeglądarce** — frontend dostaje gotowe liczby z `GET /api/postac`. Dzięki temu smoke
+test sprawdza go zwykłym `require()`, bez sandboksu `vm` (ta sztuczka jest potrzebna tylko
+dla plików działających po obu stronach). Wszystkie funkcje są czyste, więc testy karmią je
+syntetycznymi przypadkami brzegowymi bez dotykania bazy.
+
+> **Jedna świadoma duplikacja.** Lista sześciu pól refleksyjnych istnieje w `lib/nagrody.js`
+> (serwer) i w `public/js/reguly-statystyk.js` (przeglądarka — licznik „4/6" i tabela
+> miesięczna). Granica serwer–przeglądarka wymusza kopię, więc zamiast refaktoru pilnuje jej
+> asercja w smoke teście: gdyby ktoś dopisał pole tylko w jednym miejscu, test to wychwyci.
+
 ## Struktura projektu
 
 ```
@@ -481,16 +896,22 @@ server.js                    punkt wejścia — bootstrap i montowanie modułów
 config/slowniki.js           stany, priorytety, klienci (jedno źródło prawdy)
 config/mapowanie-importu.js  profil importu zadań (nagłówki CSV -> kolumny)
 config/mapowanie-dziennika.js profil importu dziennika + transformacje Notion
+config/mapowanie-ocen.js     opisy słowne ocen (plakietki)
 db/index.js                  połączenie z SQLite (data/baza.db)
 db/migracje.js               wersjonowane migracje schematu
 lib/csv-parser.js            parser CSV                  — do użycia w każdym module
 lib/daty.js                  parsowanie i normalizacja dat — j.w.
 lib/import.js                silnik importu (generyczny)  — j.w.
+lib/nagrody.js               silnik XP, poziomów i waluty (czyste funkcje)
+config/mapowanie-quest-log.js profil importu "Success Plan" (projekty + zadania)
 routes/zadania.js            REST API dla zadań
 routes/slowniki.js           listy wyboru dla frontendu
 routes/czas.js               dzisiejsza data serwera (presety filtrów)
 routes/import.js             podgląd i zatwierdzenie importu (wszystkie profile)
 routes/dziennik.js           REST API dla dziennika
+routes/nawyki.js             REST API słownika nawyków
+routes/postac.js             XP, poziom, waluta i zakupy
+routes/projekty.js           REST API projektów
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
@@ -502,6 +923,10 @@ public/js/reguly-zadan.js    czyste reguły zadań (filtry, sortowanie, wyliczen
 public/js/reguly-dziennika.js czyste reguły dziennika
 public/js/reguly-statystyk.js czyste obliczenia statystyk
 public/statystyki.html       strona statystyk
+public/postac.html           strona postaci (XP, waluta)
+public/projekty.html         strona projektów
+public/js/projekty.js        renderowanie projektów
+public/js/postac.js          renderowanie strony postaci
 public/js/statystyki.js      renderowanie statystyk
 test/smoke.js                npm run test:smoke
 scripts/backup.js            npm run backup
@@ -522,9 +947,22 @@ podając własny `config/mapowanie-*.js`.
 | `GET`    | `/api/zadania`      | lista wszystkich zadań                   |
 | `POST`   | `/api/zadania`      | tworzy rekord z wartościami domyślnymi, zwraca gotowy wiersz |
 | `PATCH`  | `/api/zadania/:id`  | aktualizuje wybrane pola                 |
+| `POST`   | `/api/zadania/:id/duplikuj` | tworzy kopię **bez** stanu i daty zakończenia |
 | `DELETE` | `/api/zadania/:id`  | usuwa zadanie                            |
 | `GET`    | `/api/slowniki`     | stany, priorytety, klienci               |
 | `GET`    | `/api/czas`         | dzisiejsza data serwera (`YYYY-MM-DD`)   |
+| `GET`    | `/api/nawyki`       | słownik nawyków                          |
+| `POST`   | `/api/nawyki`       | dodaje nazwę, odrzuca duplikat (409)     |
+| `PATCH`  | `/api/nawyki/:id`   | zmienia nazwę **i kaskadowo** poprawia wpisy |
+| `DELETE` | `/api/nawyki/:id`   | usuwa ze słownika, **nie** rusza wpisów  |
+| `GET`    | `/api/postac`       | XP, poziom, prestiż, waluta, rozbicie źródeł |
+| `GET`    | `/api/zakupy`       | lista wydatków                           |
+| `POST`   | `/api/zakupy`       | dodaje wydatek, odrzuca ponad stan konta |
+| `DELETE` | `/api/zakupy/:id`   | cofa zakup (waluta wraca)                |
+| `GET`    | `/api/projekty`     | projekty wraz z licznikiem `X/Y` zadań    |
+| `POST`   | `/api/projekty`     | nowy projekt                             |
+| `PATCH`  | `/api/projekty/:id` | aktualizuje nazwę, status, opis          |
+| `DELETE` | `/api/projekty/:id` | usuwa projekt, **odpina** zadania        |
 | `GET`    | `/api/dziennik`     | lista wszystkich wpisów                  |
 | `POST`   | `/api/dziennik`     | tworzy wpis z dzisiejszą datą            |
 | `PATCH`  | `/api/dziennik/:id` | aktualizuje wybrane pola                 |
@@ -532,7 +970,7 @@ podając własny `config/mapowanie-*.js`.
 | `POST`   | `/api/import/:profil/podglad`   | sprawdza plik CSV, **nic nie zapisuje** (dry-run) |
 | `POST`   | `/api/import/:profil/zatwierdz` | zapisuje poprawne wiersze (jedna transakcja)      |
 
-`:profil` to `zadania` albo `dziennik`.
+`:profil` to `zadania`, `dziennik` albo `notion-quest-log`.
 
 Oba endpointy importu przyjmują JSON `{ "tresc": "<zawartość pliku CSV>" }` —
 nie `multipart/form-data`. Przeglądarka czyta plik przez `File.text()`, dzięki czemu

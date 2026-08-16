@@ -12,9 +12,36 @@
       <nav class="nawigacja">
         <a href="/dziennik.html">Dziennik →</a>
         <a href="/statystyki.html">Statystyki →</a>
+        <a href="/projekty.html">Projekty →</a>
+        <a href="/postac.html">Postać →</a>
       </nav>
       <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
+      <!--
+        Wybor profilu importu. Wartosci odpowiadaja kluczom rejestru PROFILE
+        w routes/import.js - endpoint /api/import/:profil przyjmuje je wprost,
+        wiec dodanie profilu to jedna opcja tutaj plus wpis w routes.
+
+        Strona dziennika NIE ma tego wyboru: ma jeden profil, podany przez
+        data-profil na przycisku. Oba sposoby obsluguje public/js/csv-import.js.
+      -->
+      <label class="wybor-profilu">
+        Źródło:
+        <select id="profil-importu" title="Skąd pochodzi plik, który chcesz wczytać">
+          <option
+            value="zadania"
+            title="Plik z przycisku „Eksportuj do CSV” na tej stronie. Nagłówki: Nazwa zadania, Stan, Obszar, Termin…"
+          >
+            Zadania — eksport z tej aplikacji
+          </option>
+          <option
+            value="notion-quest-log"
+            title="Eksport bazy „Success Plan” z Notion. Wczytuje projekty i zadania z jednego pliku i wiąże je po kolumnie Upstream."
+          >
+            Notion Success Plan — projekty + zadania
+          </option>
+        </select>
+      </label>
       <button id="przycisk-import" type="button" data-profil="zadania">Importuj z CSV</button>
       <!--
         Ukryty input pliku: przycisk wyzej wywoluje go programowo, zeby oba
@@ -28,9 +55,9 @@
 
     <!--
       Panel filtrow. <details> daje zwijanie bez ani jednej linijki JS.
-      Listy checkboxow (stany, priorytety, klienci) buduje public/js/zadania.js
+      Listy checkboxow (stany, priorytety, obszary, projekty) buduje public/js/zadania.js
       ze slownikow z /api/slowniki - nie ma ich tu na sztywno, zeby dopisanie
-      klienta w config/slowniki.js od razu pojawialo sie w filtrach.
+      obszaru w config/slowniki.js od razu pojawialo sie w filtrach.
     -->
     <details id="panel-filtrow" class="filtry">
       <summary>
@@ -54,8 +81,13 @@
         </fieldset>
 
         <fieldset class="filtr filtr-szeroki">
-          <legend>Klient / kategoria</legend>
-          <div id="filtr-klienci" class="checkboxy"></div>
+          <legend>Obszar</legend>
+          <div id="filtr-obszary" class="checkboxy"></div>
+        </fieldset>
+
+        <fieldset class="filtr filtr-szeroki">
+          <legend>Projekt</legend>
+          <div id="filtr-projekty" class="checkboxy"></div>
         </fieldset>
 
         <!--
@@ -99,6 +131,17 @@
       </div>
     </section>
 
+    <!--
+      Informacja o domyslnym ograniczeniu widoku. Ukryta, gdy nic nie jest ukryte.
+      Istnieje po to, zeby brak zrobionych zadan nie wygladal jak utrata danych -
+      mowi wprost, ile wierszy jest schowanych, i daje jeden przycisk na pokazanie
+      wszystkiego. Samo ograniczenie robi zwykly filtr stanu, widoczny w panelu wyzej.
+    -->
+    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
+      <span id="ograniczenie-tekst"></span>
+      <button type="button" id="przycisk-pokaz-wszystkie"></button>
+    </p>
+
     <table id="tabela-zadan">
       <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
         <tr>
@@ -106,16 +149,26 @@
           <th class="kol-stan" data-kolumna="stan">Stan</th>
           <th class="kol-nazwa" data-kolumna="nazwa">Nazwa</th>
           <th class="kol-priorytet" data-kolumna="priorytet">Priorytet</th>
-          <th class="kol-klient" data-kolumna="klient_kategoria">Klient / kategoria</th>
+          <!-- Trudnosc jest NIEZALEZNA od priorytetu: priorytet = pilnosc (zarzadzanie),
+               trudnosc = waga zadania przy naliczaniu XP. -->
+          <th class="kol-trudnosc" data-kolumna="trudnosc" title="Waga zadania przy naliczaniu XP">
+            Trudność
+          </th>
+          <th
+            class="kol-godziny"
+            data-kolumna="czas_trwania_godziny"
+            title="Ile godzin faktycznie zajęło — wpisywane ręcznie, liczy się do XP"
+          >
+            Czas (h)
+          </th>
+          <th class="kol-obszar" data-kolumna="obszar">Obszar</th>
+          <th class="kol-projekt" data-kolumna="projekt_id" title="Projekt nadrzędny — kontener, nie daje XP">Projekt</th>
           <th class="kol-data" data-kolumna="start_zadania">Start</th>
           <th class="kol-data" data-kolumna="termin">Termin</th>
           <th class="kol-liczba" data-kolumna="dni_do_terminu" title="Wyliczane: termin minus dzisiaj">
             Dni do terminu
           </th>
           <th class="kol-data" data-kolumna="czas_zakonczenia">Zakończenie</th>
-          <th class="kol-liczba" data-kolumna="czas_trwania" title="Wyliczane: zakończenie minus start">
-            Czas trwania (dni)
-          </th>
           <th class="kol-akcje"></th>
         </tr>
       </thead>

@@ -118,7 +118,181 @@ const MIGRACJE = [
     db.exec(`CREATE INDEX idx_dziennik_data ON dziennik (data)`);
   },
 
-  // --- 4: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 4: slownik nawykow ------------------------------------------------
+  (db) => {
+    /*
+      Lista nawykow przenosi sie ze statycznej tablicy w config/slowniki.js
+      do tabeli, zeby dalo sie ja edytowac z poziomu aplikacji.
+
+      Kolumna `dziennik.nawyki` NADAL jest zwyklym tekstem z nazwami rozdzielonymi
+      przecinkami - celowo nie robimy tabeli laczacej. Powod: wpisy maja prawo
+      zawierac nazwy historyczne, ktorych juz nie ma w slowniku (usuniety nawyk
+      nie znika z przeszlosci), a klucz obcy by to uniemozliwil.
+    */
+    db.exec(`
+      CREATE TABLE nawyki_slownik (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        -- UNIQUE pilnuje, zeby nie dalo sie zalozyc dwoch pozycji o tej samej nazwie.
+        -- Rozroznianie wielkosci liter obsluguje osobno routes/nawyki.js.
+        nazwa TEXT NOT NULL UNIQUE
+      )
+    `);
+
+    /*
+      Zasiew: 15 nazw znalezionych w danych przy imporcie z Notion.
+
+      NIE zasiewamy "Untitled" - to artefakt eksportu (jedno wystapienie),
+      wiec przy okazji pozbywamy sie go z listy wyboru. Wpisy dziennika,
+      ktore go zawieraja, zostaja nietkniete - historia ma byc wierna.
+
+      Wartosci wpisane WPROST, nie brane z config/slowniki.js: migracja to zapis
+      historii i ma znaczyc to samo za dwa lata, nawet gdy slownik sie zmieni.
+    */
+    const wstaw = db.prepare('INSERT INTO nawyki_slownik (nazwa) VALUES (?)');
+    const NAZWY = [
+      'Book or Movie',
+      'Breathing Exercises',
+      'Daily commit',
+      'Drawing',
+      'Drink Water',
+      'Duolingo (road to 3 years)',
+      'Exercise/Tai Chi/Swimming',
+      'Go For A Walk',
+      'Literalnie',
+      'Proktis-M',
+      'Sprawdzić Slack i Discord',
+      'Vitamins',
+      'Zapisać emocje (popołudnie)',
+      'Zapisać emocje (rano)',
+      'Zapisać emocje (wieczór)',
+    ];
+    for (const nazwa of NAZWY) wstaw.run(nazwa);
+  },
+
+  // --- 5: trudnosc i czas zadania + tabela zakupow -----------------------
+  (db) => {
+    /*
+      Dwa nowe pola zadania, oba OPCJONALNE - stad brak NOT NULL i brak wartosci
+      domyslnej. Zadanie bez nich jest poprawne, po prostu nie liczy sie do XP.
+
+      `trudnosc` jest CALKOWICIE NIEZALEZNA od `priorytet`. Priorytet mowi,
+      jak pilne jest zadanie (zarzadzanie), trudnosc - ile bylo warte (naliczanie XP).
+      Oba zostaja.
+    */
+    db.exec(`ALTER TABLE zadania ADD COLUMN trudnosc INTEGER`);
+    db.exec(`ALTER TABLE zadania ADD COLUMN czas_trwania_godziny REAL`);
+
+    /*
+      Zakupy to JEDYNA trwale zapisana czesc systemu nagrod.
+
+      Cala reszta (XP, poziom, prestiz, waluta zarobiona) liczy sie NA ZYWO
+      z zadan i wpisow dziennika, wiec poprawienie starego zadania automatycznie
+      poprawia wynik historyczny. Wydawanie waluty jest zdarzeniem, ktorego
+      nie da sie odtworzyc z niczego innego - dlatego tabela.
+    */
+    db.exec(`
+      CREATE TABLE zakupy (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazwa TEXT NOT NULL,
+        koszt INTEGER NOT NULL,
+        data  TEXT NOT NULL DEFAULT (date('now', 'localtime'))
+      )
+    `);
+  },
+
+  // --- 6: obszar zamiast klienta + projekty ------------------------------
+  (db) => {
+    /*
+      KOLEJNOSC KROKOW JEST WYMUSZONA:
+      1. zmiana nazwy kolumny - zeby reszta tej migracji i wszystkie przyszle
+         widzialy juz finalna nazwe;
+      2. utworzenie tabeli `projekty`;
+      3. dopiero potem kolumna z kluczem obcym - klucz nie moze wskazywac
+         na tabele, ktora jeszcze nie istnieje.
+    */
+
+    /*
+      Pole zmienia znaczenie: bylo lista klientow, jest lista obszarow zycia.
+      RENAME COLUMN zachowuje dane, wiec stare wartosci (Alfaram, Nuva...)
+      zostaja w bazie. Wobec nowej listy pokaza sie w interfejsie z dopiskiem
+      "(spoza listy)" - pole nadal NIE jest walidowane scisle.
+    */
+    db.exec(`ALTER TABLE zadania RENAME COLUMN klient_kategoria TO obszar`);
+
+    db.exec(`
+      CREATE TABLE projekty (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazwa      TEXT NOT NULL,
+        -- Te same piec wartosci co stan zadania - jedna skala dla obu poziomow.
+        status     TEXT NOT NULL DEFAULT 'Plan',
+        opis       TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+      )
+    `);
+
+    /*
+      ON DELETE SET NULL: usuniecie projektu ODPINA zadania, a nie kasuje ich.
+      Zadanie jest bytem samodzielnym, projekt tylko kontenerem.
+
+      Dziala pod dwoma warunkami, oba sa spelnione:
+      - PRAGMA foreign_keys = ON przy kazdym polaczeniu (db/index.js),
+      - ADD COLUMN z REFERENCES wymaga domyslnej wartosci NULL - nasza taka jest.
+    */
+    db.exec(`
+      ALTER TABLE zadania
+        ADD COLUMN projekt_id INTEGER REFERENCES projekty(id) ON DELETE SET NULL
+    `);
+
+    db.exec(`CREATE INDEX idx_zadania_projekt ON zadania (projekt_id)`);
+  },
+
+  /*
+    --- 7: zadania calodzienne - obciecie sztucznego 'T00:00' -----------------
+
+    Kolumny czasowe zadan trzymaja od teraz ALBO 'YYYY-MM-DD' (calodzienne),
+    ALBO 'YYYY-MM-DDTHH:MM'. Istniejace dane sa sprzed tego rozroznienia:
+    kazda data bez godziny dostawala doklejone 'T00:00'.
+
+    Zrodla tych wartosci byly dwa i oba znacza "dzien ustalony, pora nie":
+    - import z Notion: kolumny Do Date / Closing Date z sama data,
+    - stary domyslny w POST /api/zadania (start_zadania = dzisiaj T00:00).
+
+    DLACZEGO TO BEZPIECZNE
+    W eksporcie zrodlowym nie ma ANI JEDNEGO jawnego '00:00' - Notion zapisuje
+    godzine tylko wtedy, gdy zostala ustawiona. Przed ta zmiana nie dalo sie tez
+    wpisac polnocy inaczej niz przypadkiem: jedynym polem byl <input
+    type="datetime-local">, ktory po wybraniu samej daty sam ustawia 00:00.
+    Zadne 'T00:00' w tej bazie nie oznacza wiec realnie zaplanowanej polnocy.
+
+    To jest jednorazowa okazja: OD TERAZ polnoc da sie ustawic celowo (ikona
+    zegara w komorce daty), wiec pozniej ta wartosc bylaby juz niejednoznaczna.
+
+    CO SIE NIE ZMIENIA
+    Nic poza wygladem. Wszystkie porownania dat w aplikacji ida przez numerDnia(),
+    ktore bierze pierwsze 10 znakow - kolumna "Dni do terminu", filtry zakresu,
+    mnoznik terminowosci w XP i statystyki dadza identyczne wyniki. W sortowaniu
+    wartosc calodzienna wypada przed godzinowa tego samego dnia, a 'T00:00' i tak
+    juz bylo najwczesniejsza wartoscia w swoim dniu.
+
+    PONOWNE URUCHOMIENIE
+    Migracja jest idempotentna sama z siebie: warunek LIKE '%T00:00' po pierwszym
+    przebiegu nie pasuje juz do niczego, bo wartosci koncza sie na cyfrze dnia.
+    Wartosci z inna godzina i puste (NULL) nie pasuja do warunku w ogole.
+  */
+  (db) => {
+    for (const kolumna of ['start_zadania', 'termin', 'czas_zakonczenia']) {
+      const wynik = db
+        .prepare(
+          `UPDATE zadania
+              SET ${kolumna} = substr(${kolumna}, 1, 10)
+            WHERE ${kolumna} LIKE '%T00:00'`
+        )
+        .run();
+      console.log(`[db]   migracja 7: ${kolumna} - obcieto ${wynik.changes} wartosci`);
+    }
+  },
+
+  // --- 8: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {

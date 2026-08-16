@@ -77,12 +77,13 @@ function kopiaZadan(moduly, data) {
     'nazwa',
     'priorytet',
     'priorytet_etykieta',
-    'klient_kategoria',
+    'trudnosc',
+    'czas_trwania_godziny',
+    'obszar',
     'start_zadania',
     'termin',
     'czas_zakonczenia',
     'dni_do_terminu',
-    'czas_trwania_dni',
   ];
 
   const { PRIORYTETY } = require('../config/slowniki');
@@ -98,14 +99,15 @@ function kopiaZadan(moduly, data) {
     z.nazwa,
     z.priorytet,
     etykieta(z.priorytet),
-    z.klient_kategoria,
+    z.trudnosc,
+    z.czas_trwania_godziny,
+    z.obszar,
     z.start_zadania,
     z.termin,
     z.czas_zakonczenia,
-    // Kolumny wyliczane to MIGAWKA na dzien wykonania kopii - "dni do terminu"
+    // Kolumna wyliczana to MIGAWKA na dzien wykonania kopii - "dni do terminu"
     // liczy sie wzgledem dzisiaj, wiec jutro ten sam rekord da inna liczbe.
     moduly.regulyZadan.dniDoTerminu(z, data),
-    moduly.regulyZadan.czasTrwania(z),
   ]);
 
   zapisz(`zadania-${data}.csv`, naglowki, wiersze, moduly.csv);

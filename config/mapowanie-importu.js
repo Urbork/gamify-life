@@ -21,7 +21,10 @@ const { PRIORYTET_DOMYSLNY } = require('./slowniki');
 const MAPOWANIE_KOLUMN = {
   'Nazwa zadania': 'nazwa',
   Stan: 'stan',
-  'Klient / Kategoria': 'klient_kategoria',
+  // Kolumna zachowuje historyczny naglowek, ale trafia juz do pola `obszar`
+  // (migracja 6 zmienila nazwe kolumny i znaczenie pola).
+  'Klient / Kategoria': 'obszar',
+  Obszar: 'obszar',
   'Start zadania': 'start_zadania',
   Termin: 'termin',
   'Czas zakończenia': 'czas_zakonczenia',

@@ -125,10 +125,10 @@
     karty.appendChild(
       karta(
         'Średni czas trwania',
-        s.czasTrwania.srednia === null ? '—' : liczba(s.czasTrwania.srednia) + ' dni',
+        s.czasTrwania.srednia === null ? '—' : liczba(s.czasTrwania.srednia) + ' h',
         s.czasTrwania.ile > 0
-          ? `z ${s.czasTrwania.ile} zadań z obiema datami`
-          : 'brak zadań z datą startu i zakończenia'
+          ? `z ${s.czasTrwania.ile} zadań z wpisanym czasem`
+          : 'brak zadań z wpisanym czasem (h)'
       )
     );
 
@@ -161,11 +161,11 @@
       )
     );
 
-    sekcja.appendChild(el('h3', null, 'Według klienta / kategorii'));
+    sekcja.appendChild(el('h3', null, 'Według obszaru'));
     sekcja.appendChild(
       tabela(
-        ['Klient / kategoria', 'Zadań', 'Udział'],
-        s.wgKlienta.map((w) => [
+        ['Obszar', 'Zadań', 'Udział'],
+        s.wgObszaru.map((w) => [
           w.klucz,
           String(w.ile),
           procent((100 * w.ile) / s.lacznie),

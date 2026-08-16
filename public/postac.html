@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Postać</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="pasek">
+      <h1>Postać</h1>
+      <nav class="nawigacja">
+        <a href="/index.html">← Zadania</a>
+        <a href="/dziennik.html">Dziennik</a>
+        <a href="/statystyki.html">Statystyki</a>
+      </nav>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+
+    <!--
+      Wszystko poza lista zakupow liczy sie NA ZYWO z zadan i wpisow dziennika.
+      Nic nie jest zapisywane ani cache'owane, wiec poprawienie starego zadania
+      od razu poprawia wynik. Cala historia wlicza sie sama, bez "aktywowania".
+    -->
+    <section id="wskaznik" class="wskaznik">
+      <p class="brak-danych">Wczytywanie…</p>
+    </section>
+
+    <h2>Skąd wzięło się XP</h2>
+    <div id="rozbicie"></div>
+
+    <h2>Wydaj walutę</h2>
+    <form id="formularz-zakupu" class="formularz-zakupu">
+      <label>
+        <span class="filtr-tytul">Na co</span>
+        <input type="text" id="nazwa-zakupu" placeholder="np. wieczór z serialem" required />
+      </label>
+      <label>
+        <span class="filtr-tytul">Koszt</span>
+        <input type="number" id="koszt-zakupu" min="1" step="1" required />
+      </label>
+      <button type="submit">Wydaj</button>
+    </form>
+
+    <div id="lista-zakupow"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/postac.js"></script>
+  </body>
+</html>

@@ -25,7 +25,13 @@ const POLA_EDYTOWALNE = [
   'stan',
   'nazwa',
   'priorytet',
-  'klient_kategoria',
+  // trudnosc jest NIEZALEZNA od priorytetu: priorytet mowi jak pilne,
+  // trudnosc - ile zadanie bylo warte przy naliczaniu XP.
+  'trudnosc',
+  'czas_trwania_godziny',
+  'obszar',
+  // Przypisanie do projektu. FK z ON DELETE SET NULL - patrz migracja 6.
+  'projekt_id',
   'start_zadania',
   'termin',
   'czas_zakonczenia',
@@ -75,7 +81,51 @@ function znormalizuj(pole, wartosc) {
     return numer;
   }
 
-  // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i klienta).
+  /*
+    Trudnosc i czas trwania sa OPCJONALNE - w odroznieniu od priorytetu wolno je
+    wyczyscic. Puste pole oznacza po prostu, ze zadanie nie liczy sie do XP.
+  */
+  if (pole === 'trudnosc' || pole === 'czas_trwania_godziny') {
+    if (wartosc === null || wartosc === undefined || wartosc === '') return null;
+
+    // To samo zawezenie typu co wyzej: Number('') i Number(null) daja 0.
+    const typPoprawny =
+      typeof wartosc === 'number' || (typeof wartosc === 'string' && wartosc.trim() !== '');
+    const liczba = typPoprawny ? Number(wartosc) : NaN;
+
+    if (pole === 'trudnosc') {
+      if (!Number.isInteger(liczba) || liczba < 1 || liczba > 3) {
+        throw blad(400, `Trudność musi być liczbą całkowitą 1-3, otrzymano "${wartosc}".`);
+      }
+      return liczba;
+    }
+
+    // Czas trwania jest REAL - dopuszczamy ulamki godzin (0.5h itd.).
+    if (!Number.isFinite(liczba) || liczba < 0) {
+      throw blad(400, `Czas trwania musi być liczbą nieujemną, otrzymano "${wartosc}".`);
+    }
+    return liczba;
+  }
+
+  /*
+    Przypisanie do projektu. Puste = zadanie luzne, poza projektem.
+    Istnienie projektu pilnuje klucz obcy w bazie - blad SQLite zamieniamy
+    nizej na czytelna odpowiedz 400.
+  */
+  if (pole === 'projekt_id') {
+    if (wartosc === null || wartosc === undefined || wartosc === '') return null;
+
+    const typPoprawny =
+      typeof wartosc === 'number' || (typeof wartosc === 'string' && wartosc.trim() !== '');
+    const numer = typPoprawny ? Number(wartosc) : NaN;
+
+    if (!Number.isInteger(numer) || numer <= 0) {
+      throw blad(400, `Niepoprawne id projektu "${wartosc}".`);
+    }
+    return numer;
+  }
+
+  // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i obszaru).
   if (wartosc === null || wartosc === undefined || wartosc === '') {
     if (pole === 'nazwa') return '';
     if (pole === 'stan') throw blad(400, 'Pole "stan" nie moze byc puste.');
@@ -105,7 +155,7 @@ function znormalizuj(pole, wartosc) {
     throw blad(400, `Nieznany stan "${tekst}". Dozwolone: ${STANY.join(', ')}.`);
   }
 
-  // `klient_kategoria` NIE jest walidowany wobec listy - to lista podpowiedzi,
+  // `obszar` NIE jest walidowany wobec listy - to lista podpowiedzi,
   // a stare rekordy maja prawo zawierac wartosci, ktorych juz nie ma w slowniku.
 
   return tekst;
@@ -125,14 +175,44 @@ function idZParametru(req) {
 const pobierzWszystkie = db.prepare('SELECT * FROM zadania ORDER BY id');
 const pobierzJedno = db.prepare('SELECT * FROM zadania WHERE id = ?');
 /*
-  Nowe zadanie startuje "dzisiaj". Date wyznacza SQLite po stronie SERWERA
-  (strftime z 'localtime'), a nie przegladarka - dzieki temu wynik nie zalezy od
-  strefy czasowej ani od zegara komputera, z ktorego akurat korzystasz.
-  Godzina to 00:00: data jest ustalona, konkretna pora to juz Twoja decyzja.
+  Nowe zadanie dostaje TERMIN na dzisiaj, a start_zadania zostaje PUSTY.
+
+  Odwrocenie wczesniejszej decyzji (domyslny byl start). Powod jest praktyczny:
+  zadanie prawie zawsze dopisuje sie po to, zeby cos zrobic NA jakis dzien,
+  a nie po to, by odnotowac, kiedy sie zaczelo. Data startu bywa nieznana albo
+  nieistotna, wiec wypelniona z gory tylko zasmiecala rekord.
+
+  Date wyznacza SQLite po stronie SERWERA (strftime z 'localtime'), a nie
+  przegladarka - dzieki temu wynik nie zalezy od strefy czasowej ani od zegara
+  komputera, z ktorego akurat korzystasz.
+
+  BEZ GODZINY: nowe zadanie jest calodzienne. Konkretna pora to swiadomy wybor,
+  ktory robi sie ikona zegara w komorce daty.
 */
 const wstawNowe = db.prepare(`
-  INSERT INTO zadania (nazwa, start_zadania)
-  VALUES (?, strftime('%Y-%m-%dT00:00', 'now', 'localtime'))
+  INSERT INTO zadania (nazwa, termin)
+  VALUES (?, strftime('%Y-%m-%d', 'now', 'localtime'))
+`);
+
+/*
+  Duplikat zadania.
+
+  Kopiujemy opis PRACY DO WYKONANIA, a nie jej historii - stad dwa swiadome wyjatki:
+  - `stan` startuje od domyslnego z kolumny (Plan), nie z oryginalu,
+  - `czas_zakonczenia` zostaje pusty.
+
+  To nie jest kosmetyka. XP liczy sie z zadan zakonczonych, wiec skopiowanie
+  "Zrobione" razem z data zamkniecia doliczyloby punkty za prace, ktorej nikt
+  nie wykonal - i to od razu, bez zadnej akcji uzytkownika. Regula siedzi
+  w SQL-u, a nie w przegladarce, zeby nie dalo sie jej obejsc.
+*/
+const wstawDuplikat = db.prepare(`
+  INSERT INTO zadania
+    (nazwa, obszar, projekt_id, priorytet, trudnosc, czas_trwania_godziny, termin, start_zadania)
+  SELECT
+    nazwa || ' (kopia)', obszar, projekt_id, priorytet, trudnosc,
+    czas_trwania_godziny, termin, start_zadania
+  FROM zadania WHERE id = ?
 `);
 const usun = db.prepare('DELETE FROM zadania WHERE id = ?');
 
@@ -144,9 +224,26 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   // Nowy wiersz dostaje nazwe zastepcza, stan i priorytet domyslny (z DEFAULT kolumny)
-  // oraz dzisiejsza date startu. Reszte uzupelniasz w tabeli.
+  // oraz dzisiejszy TERMIN (calodzienny). Reszte uzupelniasz w tabeli.
   // Frontend po dodaniu zaznacza nazwe, wiec pierwsze wpisane znaki ja nadpisuja.
   const wynik = wstawNowe.run(NAZWA_DOMYSLNA);
+  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+});
+
+/*
+  POST /api/zadania/:id/duplikuj -> 201 z nowym rekordem.
+
+  Osobna trasa, a nie POST + PATCH z przegladarki: kopia powstaje jednym
+  zapytaniem, wiec nie ma momentu, w ktorym w bazie siedzi rekord w polowie
+  przepisany. Zasada "duplikat nie dziedziczy stanu ani daty zakonczenia"
+  jest tym samym wymuszona po stronie serwera.
+*/
+router.post('/:id/duplikuj', (req, res) => {
+  const id = idZParametru(req);
+
+  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+
+  const wynik = wstawDuplikat.run(id);
   res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
 });
 
@@ -169,7 +266,17 @@ router.patch('/:id', (req, res) => {
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
   const przypisania = pola.map((p) => `${p} = @${p}`).join(', ');
-  db.prepare(`UPDATE zadania SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
+
+  try {
+    db.prepare(`UPDATE zadania SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
+  } catch (e) {
+    // Klucz obcy odrzuca przypisanie do nieistniejacego projektu - zamieniamy
+    // surowy blad SQLite na czytelny komunikat dla interfejsu.
+    if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+      throw blad(400, `Nie ma projektu o id ${doZapisu.projekt_id}.`);
+    }
+    throw e;
+  }
 
   res.json(pobierzJedno.get(id));
 });

@@ -41,60 +41,47 @@ const PRIORYTETY = [
 // jako DEFAULT kolumny. Zmiana tutaj wplywa tylko na nowe rekordy tworzone przez API.
 const PRIORYTET_DOMYSLNY = 2;
 
-// Lista klientow / kategorii. Celowo NIE jest walidowana twardo przez backend
-// (patrz routes/zadania.js) - to lista podpowiedzi. Dzieki temu dopisanie klienta
-// tutaj wystarczy, a stare rekordy z nieaktualnymi wartosciami nadal dzialaja.
-const KLIENCI = [
-  'Alfaram',
-  'Bieszczadzka Perełka',
-  'Dmuchańce Krosno',
-  'Forstal',
-  'Kurihara Miho',
-  'Laminex Composites',
-  'London Royal Massage',
-  'Nuva',
-  'Oliwny Zakątek',
-  'Shaggy Clean',
-  'Shoelace',
-  'Smokomoda',
-  'Tomguard',
-  'Rozwój / Kursy',
-  'Prywatne',
+/*
+  Obszary zycia - pole `obszar` w tabeli zadania (do migracji 6: `klient_kategoria`).
+
+  Pole zmienilo znaczenie: bylo lista klientow, jest lista obszarow zycia z Notion.
+  Nazwy zostaja PO ANGIELSKU, dokladnie tak jak w zrodle - dzieki temu import
+  z Notion mapuje je 1:1, bez tablicy tlumaczen, ktora trzeba by utrzymywac.
+
+  Celowo NIE jest walidowana twardo przez backend (patrz routes/zadania.js) -
+  to lista podpowiedzi. Wartosc spoza niej nadal sie zapisze i pokaze
+  z dopiskiem "(spoza listy)", wiec stare rekordy z nazwami klientow nie znikaja.
+*/
+const OBSZARY = [
+  'Mindset',
+  'Career',
+  'Knowledge',
+  'Creative',
+  'Health',
+  'Home',
+  'Lifestyle',
+  'Family',
+  'Finances',
+  'Fun/Relax',
+  'Travel',
   'Inne',
 ];
 
+// Wartosc zapasowa, gdy zrodlo nie podaje obszaru (uzywana przy imporcie).
+const OBSZAR_ZAPASOWY = 'Inne';
+
 /*
-  Nawyki sledzone w dzienniku - lista do filtrowania wpisow.
+  NAWYKI PRZENIESIONE DO BAZY.
 
-  UWAGA: to NIE jest slownik walidacyjny. Pole `nawyki` w bazie to zwykly tekst
-  z nazwami rozdzielonymi przecinkami, wypelniany przez import (patrz parsujNawyki
-  w config/mapowanie-dziennika.js) albo recznie. Ta lista sluzy wylacznie do zbudowania
-  checkboxow filtra - wpis moze zawierac nawyk spoza niej i nadal bedzie poprawny.
+  Lista nawykow byla tu wczesniej jako stala tablica. Od migracji 4 mieszka
+  w tabeli `nawyki_slownik`, bo ma dac sie edytowac z poziomu aplikacji
+  (dodawanie, zmiana nazwy, usuwanie). Obsluguje ja routes/nawyki.js,
+  a frontend pobiera ja przez GET /api/nawyki.
 
-  Kolejnosc alfabetyczna: przy 16 pozycjach latwiej znalezc konkretna niz przy
-  kolejnosci wg czestosci wystepowania.
-
-  "Untitled" to artefakt eksportu z Notion (1 wystapienie w danych). Zostaje na liscie,
-  zeby dalo sie takie wpisy odfiltrowac i poprawic - mozesz je usunac, gdy znikna.
+  Nie zostawiamy tu kopii listy - dwa zrodla prawdy predzej czy pozniej
+  by sie rozjechaly. Zasiew 15 nazw (bez artefaktu "Untitled") jest wpisany
+  wprost w migracji 4.
 */
-const NAWYKI = [
-  'Book or Movie',
-  'Breathing Exercises',
-  'Daily commit',
-  'Drawing',
-  'Drink Water',
-  'Duolingo (road to 3 years)',
-  'Exercise/Tai Chi/Swimming',
-  'Go For A Walk',
-  'Literalnie',
-  'Proktis-M',
-  'Sprawdzić Slack i Discord',
-  'Untitled',
-  'Vitamins',
-  'Zapisać emocje (popołudnie)',
-  'Zapisać emocje (rano)',
-  'Zapisać emocje (wieczór)',
-];
 
 /** Etykieta dla numeru priorytetu. Nieznany numer zwraca sam numer w nawiasach. */
 function etykietaPriorytetu(numer) {
@@ -109,6 +96,6 @@ module.exports = {
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
   etykietaPriorytetu,
-  KLIENCI,
-  NAWYKI,
+  OBSZARY,
+  OBSZAR_ZAPASOWY,
 };

@@ -12,9 +12,9 @@ const {
   STAN_ZAKONCZONY,
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
-  KLIENCI,
-  NAWYKI,
+  OBSZARY,
 } = require('../config/slowniki');
+const { OCENY } = require('../config/mapowanie-ocen');
 
 const router = express.Router();
 
@@ -25,8 +25,10 @@ router.get('/', (req, res) => {
     stanZakonczony: STAN_ZAKONCZONY,
     priorytety: PRIORYTETY,
     priorytetDomyslny: PRIORYTET_DOMYSLNY,
-    klienci: KLIENCI,
-    nawyki: NAWYKI,
+    obszary: OBSZARY,
+    // Opisy slowne ocen dziennika (plakietki w listach rozwijanych).
+    // Lista nawykow NIE jest tu wystawiana - mieszka w bazie, patrz GET /api/nawyki.
+    oceny: OCENY,
   });
 });
 

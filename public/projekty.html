@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Projekty</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="pasek">
+      <h1>Projekty</h1>
+      <nav class="nawigacja">
+        <a href="/index.html">← Zadania</a>
+        <a href="/dziennik.html">Dziennik</a>
+        <a href="/statystyki.html">Statystyki</a>
+        <a href="/postac.html">Postać</a>
+      </nav>
+      <button id="przycisk-dodaj" type="button">+ Dodaj projekt</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+
+    <!--
+      Projekt jest KONTENEREM na zadania - sam z siebie nie daje XP.
+      Licznik "X/Y" pokazuje postep, ale punkty licza sie wylacznie z zadan.
+    -->
+    <table id="tabela-projektow">
+      <thead id="naglowki">
+        <tr>
+          <th class="kol-id">#</th>
+          <th class="kol-nazwa">Nazwa</th>
+          <th class="kol-stan">Status</th>
+          <th class="kol-opis">Opis</th>
+          <th class="kol-postep" title="Ukończone zadania w tym projekcie">Zadania</th>
+          <th class="kol-akcje"></th>
+        </tr>
+      </thead>
+      <tbody id="wiersze"></tbody>
+    </table>
+
+    <p id="podsumowanie" class="podsumowanie"></p>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/projekty.js"></script>
+  </body>
+</html>

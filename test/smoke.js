@@ -213,8 +213,22 @@ const ZADANIA = [
   { nazwa: 'B termin jutro', stan: 'Czeka', priorytet: 1, termin: dzien(1), start_zadania: '' },
   { nazwa: 'C termin za 5 dni', stan: 'W trakcie', priorytet: 2, termin: dzien(5), start_zadania: '' },
   { nazwa: 'D termin za 20 dni', stan: 'Blok', priorytet: 4, termin: dzien(20), start_zadania: '' },
-  { nazwa: 'E zrobione dzis', stan: 'Zrobione', priorytet: 2, termin: dzien(0), start_zadania: '' },
-  { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '' },
+  // Zrobione, z kompletem danych do XP: trudnosc 2 x 2h = 4 XP, termin dzis = mnoznik 1.
+  {
+    nazwa: 'E zrobione dzis',
+    stan: 'Zrobione',
+    priorytet: 2,
+    termin: dzien(0),
+    start_zadania: '',
+    trudnosc: 2,
+    czas_trwania_godziny: 2,
+  },
+  /*
+    Termin czyscimy JAWNIE. Nowy rekord dostaje od serwera termin na dzisiaj,
+    wiec "bez zadnych dat" trzeba teraz wymusic - samo pominiecie pola zostawiloby
+    wartosc domyslna i zadanie wchodziloby w presety zakresu dat.
+  */
+  { nazwa: 'F bez zadnych dat', stan: 'Plan', priorytet: 0, start_zadania: '', termin: '' },
   /*
     Para godzin przez polnoc: 23:59 -> 00:01 to niecale 25 godzin, ale DWA dni kalendarzowe.
     Start JUTRO (nie dzis), zeby zadanie bylo poza presetem "Dziś", a weszlo dopiero
@@ -228,6 +242,8 @@ const ZADANIA = [
     start_zadania: dzienOGodzinie(1, '23:59'),
     czas_zakonczenia: dzienOGodzinie(3, '00:01'),
     termin: '',
+    // Czas wpisany recznie - nie ma juz zwiazku z roznica dat powyzej.
+    czas_trwania_godziny: 4,
   },
 ];
 
@@ -250,7 +266,8 @@ async function testujZadania(reguly, slowniki) {
     nazwa: '',
     stany: new Set(),
     priorytety: new Set(),
-    klienci: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
     od: '',
     do: '',
   });
@@ -271,14 +288,22 @@ async function testujZadania(reguly, slowniki) {
     'Dni do terminu: brak terminu -> null',
     reguly.regulyZadan.dniDoTerminu(znajdz('F bez zadnych dat'), DZIS) === null
   );
+  /*
+    Kolumna "Czas trwania (dni)" liczona z roznicy dat zostala USUNIETA -
+    zastapilo ja reczne pole `czas_trwania_godziny`. Zamiast niej sprawdzamy
+    wskaznik kompletnosci danych do XP.
+  */
   sprawdz(
-    'Czas trwania: 23:59 -> 00:01 to 2 dni kalendarzowe (godzina ignorowana)',
-    reguly.regulyZadan.czasTrwania(znajdz('G trwanie przez polnoc')) === 2,
-    `otrzymano ${reguly.regulyZadan.czasTrwania(znajdz('G trwanie przez polnoc'))}`
+    'maDaneDoXp: komplet trudnosci i czasu -> true',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 2, czas_trwania_godziny: 1.5 }) === true
   );
   sprawdz(
-    'Czas trwania: brak daty konca -> null',
-    reguly.regulyZadan.czasTrwania(znajdz('A termin dzis')) === null
+    'maDaneDoXp: brak czasu -> false',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 2 }) === false
+  );
+  sprawdz(
+    'maDaneDoXp: trudnosc 0 nie jest "brakiem" tylko wartoscia spoza zakresu',
+    reguly.regulyZadan.maDaneDoXp({ trudnosc: 0, czas_trwania_godziny: 1 }) === true
   );
 
   // --- presety zakresu dat ---
@@ -339,12 +364,13 @@ async function testujZadania(reguly, slowniki) {
     'stan',
     'nazwa',
     'priorytet',
-    'klient_kategoria',
+    'obszar',
     'start_zadania',
     'termin',
     'dni_do_terminu',
     'czas_zakonczenia',
-    'czas_trwania',
+    'trudnosc',
+    'czas_trwania_godziny',
   ];
 
   let regulaGrupyTrzyma = true;
@@ -511,17 +537,17 @@ async function testujStatystyki(reguly) {
     JSON.stringify(sz.wgStanu)
   );
   sprawdz(
-    'suma zadan wg klienta = liczba wszystkich (z pozycja "(brak)")',
-    sz.wgKlienta.reduce((a, s) => a + s.ile, 0) === ZADANIA.length
+    'suma zadan wg obszaru = liczba wszystkich (z pozycja "(brak)")',
+    sz.wgObszaru.reduce((a, s) => a + s.ile, 0) === ZADANIA.length
   );
 
   /*
-    W zestawie testowym tylko zadanie G ma start i koniec (10.08 -> 12.08 = 2 dni).
-    Srednia liczy sie ta sama funkcja co kolumna w tabeli.
+    Sredni czas trwania liczy sie teraz z RECZNEGO pola `czas_trwania_godziny`
+    (w GODZINACH), a nie z roznicy dat. W zestawie maja je dwa zadania: 2h i 4h.
   */
   sprawdz(
-    'sredni czas trwania liczony tylko z zadan majacych obie daty',
-    sz.czasTrwania.ile === 1 && sz.czasTrwania.srednia === 2,
+    'sredni czas trwania w godzinach, tylko z zadan z wpisanym czasem',
+    sz.czasTrwania.ile === 2 && sz.czasTrwania.srednia === 3,
     JSON.stringify(sz.czasTrwania)
   );
 
@@ -628,6 +654,962 @@ async function testujStatystyki(reguly) {
     'srednia z pustej listy -> null, nie NaN',
     reguly.regulyStatystyk.srednia([], 'x').srednia === null
   );
+}
+
+async function testujSilnikXp() {
+  sekcja('SILNIK XP (lib/nagrody.js, w izolacji)');
+
+  /*
+    Silnik jest zwyklym modulem serwerowym, wiec testujemy go przez require(),
+    bez sandboksu vm. Ta sztuczka jest potrzebna tylko dla plikow z public/js,
+    ktore musza dzialac takze w przegladarce.
+
+    Wszystkie funkcje sa czyste, wiec karmimy je syntetycznymi przypadkami
+    brzegowymi - bez bazy, bez HTTP.
+  */
+  const nagrody = require('../lib/nagrody');
+  const zrobione = (o) => nagrody.xpZadania({ stan: 'Zrobione', ...o }).xp;
+
+  // --- XP zadania ---
+  sprawdz(
+    'trywialne zadanie daje 1 XP, nigdy 0',
+    zrobione({ trudnosc: 1, czas_trwania_godziny: 0.1 }) === 1
+  );
+  sprawdz(
+    'trudnosc 3 x 4h = 12 XP (bez dat, mnoznik 1)',
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 12
+  );
+  sprawdz(
+    'zadanie nie-Zrobione daje 0 XP',
+    nagrody.xpZadania({ stan: 'Plan', trudnosc: 3, czas_trwania_godziny: 4 }).xp === 0
+  );
+  sprawdz(
+    'brak trudnosci: 0 XP i flaga brakujaceDane',
+    nagrody.xpZadania({ stan: 'Zrobione', czas_trwania_godziny: 4 }).brakujaceDane === true
+  );
+  sprawdz(
+    'niedokonczone zadanie bez danych NIE jest oznaczone jako brakujace',
+    nagrody.xpZadania({ stan: 'Plan' }).brakujaceDane === false
+  );
+
+  // --- trzy progi terminowosci ---
+  const zDatami = (termin, koniec) =>
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4, termin, czas_zakonczenia: koniec });
+
+  sprawdz('mnoznik x1.5: zapas 5 dni -> 18 XP', zDatami('2026-03-10', '2026-03-05') === 18);
+  sprawdz(
+    'mnoznik x1.5: granica DOKLADNIE 3 dni zapasu -> 18 XP',
+    zDatami('2026-03-10', '2026-03-07') === 18
+  );
+  sprawdz('mnoznik x1: zapas 2 dni -> 12 XP', zDatami('2026-03-10', '2026-03-08') === 12);
+  sprawdz('mnoznik x1: ten sam dzien -> 12 XP', zDatami('2026-03-10', '2026-03-10') === 12);
+  sprawdz(
+    'mnoznik x1: godzina nie psuje - 23:00 w dniu terminu to nadal na czas',
+    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 12
+  );
+  sprawdz('mnoznik x0.5: dzien po terminie -> 6 XP', zDatami('2026-03-10', '2026-03-11') === 6);
+  sprawdz(
+    'mnoznik x1 gdy brakuje ktorejs z dat',
+    zDatami('2026-03-10', null) === 12 && zDatami(null, '2026-03-11') === 12
+  );
+  sprawdz(
+    'dolny limit dziala takze po zmniejszeniu przez x0.5',
+    zrobione({
+      trudnosc: 1,
+      czas_trwania_godziny: 0.1,
+      termin: '2026-03-10',
+      czas_zakonczenia: '2026-03-11',
+    }) === 1
+  );
+
+  // --- dziennik ---
+  sprawdz('pusty wpis nie daje XP', nagrody.xpWpisu({ data: '2026-01-01' }) === 0);
+  sprawdz('wpis z jednym polem refleksyjnym: 5 + 10 = 15', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 15);
+  sprawdz(
+    'wpis z kompletem szesciu pol: 5 + 60 = 65',
+    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 65
+  );
+  sprawdz(
+    'wpis bez refleksji, ale z trescia (samo sniadanie): 5 XP',
+    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 5
+  );
+  sprawdz('trzy nawyki: 3 x 3 = 9 XP', nagrody.xpNawykow({ nawyki: 'A, B, C' }) === 9);
+  sprawdz(
+    'licznik pol refleksyjnych 4/6',
+    nagrody.liczbaWypelnionychPol({ wdziecznosc: 'a', bledy: 'b', rozmowa: 'c', jutro_wazne: 'd' }) === 4
+  );
+  sprawdz(
+    'pusty tekst nie liczy sie jako wypelnione pole',
+    nagrody.liczbaWypelnionychPol({ wdziecznosc: '   ' }) === 0
+  );
+
+  // --- poziomy i prestiz ---
+  const p = nagrody.poziomZXp;
+  sprawdz('0 XP -> poziom 1, prestiz 0, do nastepnego 500', p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 500);
+  sprawdz('499 XP -> nadal poziom 1, brakuje 1 XP', p(499).poziom === 1 && p(499).xpDoNastepnego === 1);
+  sprawdz('DOKLADNIE 500 XP -> poziom 2', p(500).poziom === 2 && p(500).prestiz === 0);
+  sprawdz('49999 XP -> poziom 100, prestiz 0', p(49999).poziom === 100 && p(49999).prestiz === 0);
+  sprawdz(
+    'DOKLADNIE 50000 XP -> reset: prestiz 1, poziom 1',
+    p(50000).prestiz === 1 && p(50000).poziom === 1
+  );
+  sprawdz('50500 XP -> prestiz 1, poziom 2', p(50500).prestiz === 1 && p(50500).poziom === 2);
+
+  // --- waluta ---
+  sprawdz('waluta to polowa XP zaokraglona w dol', nagrody.walutaZarobiona(101) === 50);
+
+  const stan = nagrody.policzPostac(
+    [{ stan: 'Zrobione', trudnosc: 3, czas_trwania_godziny: 4 }],
+    [{ wdziecznosc: 'x', nawyki: 'A, B' }],
+    3
+  );
+  sprawdz(
+    'rozbicie zrodel: zadania 12, dziennik 15, nawyki 6',
+    stan.rozbicie.zadania === 12 && stan.rozbicie.dziennik === 15 && stan.rozbicie.nawyki === 6,
+    JSON.stringify(stan.rozbicie)
+  );
+  sprawdz(
+    'suma 33 XP, waluta 16 - 3 wydane = 13',
+    stan.calkowite_xp === 33 && stan.waluta_dostepna === 13,
+    JSON.stringify({ xp: stan.calkowite_xp, waluta: stan.waluta_dostepna })
+  );
+
+  /*
+    Lista pol refleksyjnych istnieje w DWOCH miejscach: lib/nagrody.js (serwer)
+    i public/js/reguly-statystyk.js (przegladarka, licznik "4/6" i tabela miesieczna).
+    Granica serwer-przegladarka wymusza kopie, wiec pilnujemy jej testem.
+  */
+  const reguly = zaladujReguly();
+  sprawdzListe(
+    'lista pol refleksyjnych identyczna po stronie serwera i przegladarki',
+    nagrody.POLA_REFLEKSYJNE,
+    reguly.regulyStatystyk.POLA_REFLEKSYJNE
+  );
+}
+
+async function testujPostac() {
+  sekcja('POSTAĆ I ZAKUPY (przez HTTP)');
+
+  const { status, tresc: postac } = await zapytaj('GET', '/api/postac');
+  sprawdz('GET /api/postac odpowiada 200', status === 200);
+  sprawdz(
+    'odpowiedz zawiera komplet pol',
+    ['calkowite_xp', 'poziom', 'prestiz', 'xp_do_nastepnego_poziomu', 'waluta_dostepna', 'rozbicie']
+      .every((k) => postac[k] !== undefined),
+    JSON.stringify(Object.keys(postac))
+  );
+  sprawdz(
+    'rozbicie sumuje sie do calkowitego XP',
+    postac.rozbicie.zadania + postac.rozbicie.nawyki + postac.rozbicie.dziennik ===
+      postac.calkowite_xp,
+    JSON.stringify(postac.rozbicie) + ' vs ' + postac.calkowite_xp
+  );
+
+  // --- zakupy ---
+  sprawdz('lista zakupow startuje pusta', (await zapytaj('GET', '/api/zakupy')).tresc.length === 0);
+
+  const dostepna = postac.waluta_dostepna;
+  sprawdz(
+    'zakup ponad stan konta jest ODRZUCONY',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: 'za drogie', koszt: dostepna + 1 })).status === 400
+  );
+  sprawdz(
+    'koszt zerowy i ujemny odrzucone',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: 'darmowe', koszt: 0 })).status === 400 &&
+      (await zapytaj('POST', '/api/zakupy', { nazwa: 'ujemne', koszt: -5 })).status === 400
+  );
+  sprawdz(
+    'pusta nazwa odrzucona',
+    (await zapytaj('POST', '/api/zakupy', { nazwa: '  ', koszt: 1 })).status === 400
+  );
+
+  const { status: statusZakupu, tresc: zakup } = await zapytaj('POST', '/api/zakupy', {
+    nazwa: 'nagroda testowa',
+    koszt: 2,
+  });
+  sprawdz('zakup w ramach salda przechodzi', statusZakupu === 201 && zakup.koszt === 2);
+
+  const { tresc: poZakupie } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'waluta dostepna spadla o koszt zakupu',
+    poZakupie.waluta_dostepna === dostepna - 2,
+    `${poZakupie.waluta_dostepna} vs ${dostepna - 2}`
+  );
+  sprawdz(
+    'XP NIE zmienia sie przy wydawaniu waluty',
+    poZakupie.calkowite_xp === postac.calkowite_xp
+  );
+
+  sprawdz(
+    'DELETE cofa zakup',
+    (await zapytaj('DELETE', `/api/zakupy/${zakup.id}`)).status === 204
+  );
+  const { tresc: poCofnieciu } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'waluta wraca po cofnieciu zakupu',
+    poCofnieciu.waluta_dostepna === dostepna,
+    `${poCofnieciu.waluta_dostepna} vs ${dostepna}`
+  );
+
+  /*
+    Retroaktywnosc: XP liczy sie NA ZYWO, wiec zmiana starego zadania
+    natychmiast zmienia wynik - bez zadnego przeliczania czy "aktywowania".
+  */
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  const doZmiany = zadania.find((z) => z.nazwa === 'A termin dzis');
+  await zapytaj('PATCH', `/api/zadania/${doZmiany.id}`, {
+    stan: 'Zrobione',
+    trudnosc: 3,
+    czas_trwania_godziny: 10,
+  });
+
+  const { tresc: poEdycji } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'edycja starego zadania od razu podnosi XP (liczenie na zywo)',
+    poEdycji.calkowite_xp > postac.calkowite_xp,
+    `${poEdycji.calkowite_xp} vs ${postac.calkowite_xp}`
+  );
+
+  // Przywracamy zestaw testowy do stanu wyjsciowego.
+  await zapytaj('PATCH', `/api/zadania/${doZmiany.id}`, {
+    stan: 'Plan',
+    trudnosc: '',
+    czas_trwania_godziny: '',
+  });
+}
+
+async function testujNawyki() {
+  sekcja('SŁOWNIK NAWYKÓW');
+
+  const { status, tresc: slownik } = await zapytaj('GET', '/api/nawyki');
+  sprawdz('GET /api/nawyki odpowiada 200', status === 200);
+  sprawdz(
+    'migracja zasiala 15 nazw',
+    slownik.length === 15,
+    `otrzymano ${slownik.length}`
+  );
+  sprawdz(
+    '"Untitled" NIE zostal zasiany (artefakt eksportu)',
+    !slownik.some((n) => n.nazwa === 'Untitled')
+  );
+
+  // --- duplikaty ---
+  sprawdz(
+    'POST odrzuca duplikat identyczny',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'Vitamins' })).status === 409
+  );
+  sprawdz(
+    'POST odrzuca duplikat rozniacy sie wielkoscia liter',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'vitamins' })).status === 409
+  );
+  sprawdz(
+    'POST odrzuca pusta nazwe',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: '   ' })).status === 400
+  );
+  sprawdz(
+    'POST odrzuca nazwe z przecinkiem (rozdziela nazwy w dzienniku)',
+    (await zapytaj('POST', '/api/nawyki', { nazwa: 'A, B' })).status === 400
+  );
+
+  /*
+    KASKADOWA ZMIANA NAZWY - dopasowanie CALEGO tokenu, nie podciagu.
+
+    Pulapki w zestawie ponizej:
+      - "Water" jest fragmentem "Drink Water",
+      - "Drink Water" jest prefiksem "Drink Water Extra",
+      - nazwa z nawiasami i spacjami musi przezyc bez zmian.
+    Podmiana przez REPLACE() na podciagach uszkodzilaby wszystkie trzy.
+  */
+  const { tresc: nowy } = await zapytaj('POST', '/api/nawyki', { nazwa: 'Water' });
+
+  const wpisyTestowe = [
+    'Drink Water, Vitamins',
+    'Water',
+    'Drink Water Extra, Drawing',
+    'Duolingo (road to 3 years), Water',
+  ];
+  const idWpisow = [];
+  for (const nawyki of wpisyTestowe) {
+    const { tresc } = await zapytaj('POST', '/api/dziennik');
+    await zapytaj('PATCH', `/api/dziennik/${tresc.id}`, { nawyki });
+    idWpisow.push(tresc.id);
+  }
+
+  const { tresc: wynik } = await zapytaj('PATCH', `/api/nawyki/${nowy.id}`, { nazwa: 'H2O' });
+
+  const { tresc: poZmianie } = await zapytaj('GET', '/api/dziennik');
+  const nawykiWpisu = (id) => poZmianie.find((w) => w.id === id).nawyki;
+
+  sprawdz(
+    'kaskada zmienila tylko wpisy z DOKLADNYM tokenem (2 z 4)',
+    wynik.zaktualizowanychWpisow === 2,
+    `zaktualizowano ${wynik.zaktualizowanychWpisow}`
+  );
+  sprawdz(
+    '"Drink Water" nietkniete przy zmianie "Water" (fragment innej nazwy)',
+    nawykiWpisu(idWpisow[0]) === 'Drink Water, Vitamins',
+    nawykiWpisu(idWpisow[0])
+  );
+  sprawdz(
+    'samodzielne "Water" zmienione na "H2O"',
+    nawykiWpisu(idWpisow[1]) === 'H2O',
+    nawykiWpisu(idWpisow[1])
+  );
+  sprawdz(
+    '"Drink Water Extra" nietkniete (prefiks)',
+    nawykiWpisu(idWpisow[2]) === 'Drink Water Extra, Drawing',
+    nawykiWpisu(idWpisow[2])
+  );
+  sprawdz(
+    'nazwa z nawiasami zachowana, token obok podmieniony',
+    nawykiWpisu(idWpisow[3]) === 'Duolingo (road to 3 years), H2O',
+    nawykiWpisu(idWpisow[3])
+  );
+
+  sprawdz(
+    'PATCH odrzuca zmiane na nazwe juz istniejaca',
+    (await zapytaj('PATCH', `/api/nawyki/${nowy.id}`, { nazwa: 'Drawing' })).status === 409
+  );
+
+  /*
+    DELETE usuwa TYLKO ze slownika. Wpisy dziennika zachowuja nazwe historyczna -
+    historia ma pozostac wierna temu, co bylo wtedy prawda.
+  */
+  const przedUsunieciem = nawykiWpisu(idWpisow[1]);
+  sprawdz(
+    'DELETE /api/nawyki/:id odpowiada 204',
+    (await zapytaj('DELETE', `/api/nawyki/${nowy.id}`)).status === 204
+  );
+
+  const { tresc: poUsunieciu } = await zapytaj('GET', '/api/nawyki');
+  sprawdz('nazwa znika ze slownika', !poUsunieciu.some((n) => n.nazwa === 'H2O'));
+
+  const { tresc: wpisyPoUsunieciu } = await zapytaj('GET', '/api/dziennik');
+  sprawdz(
+    'DELETE NIE rusza wpisow dziennika - nazwa historyczna zostaje',
+    wpisyPoUsunieciu.find((w) => w.id === idWpisow[1]).nawyki === przedUsunieciem,
+    wpisyPoUsunieciu.find((w) => w.id === idWpisow[1]).nawyki
+  );
+
+  // --- opisy ocen ---
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  sprawdz(
+    '/api/slowniki wystawia opisy wszystkich czterech ocen',
+    ['jakosc_snu', 'stres', 'nastroj', 'intencjonalnosc'].every(
+      (p) => Array.isArray(slowniki.oceny[p]) && slowniki.oceny[p].length > 0
+    )
+  );
+  sprawdz(
+    'skala stresu ma 6 stopni i zaczyna sie od 5 (odwrocona)',
+    slowniki.oceny.stres.length === 6 && slowniki.oceny.stres[0].wartosc === 5,
+    JSON.stringify(slowniki.oceny.stres.map((o) => o.wartosc))
+  );
+  sprawdz(
+    'lista nawykow NIE jest juz w /api/slowniki (mieszka w bazie)',
+    slowniki.nawyki === undefined
+  );
+}
+
+async function testujProjekty() {
+  sekcja('PROJEKTY');
+
+  const { status, tresc: puste } = await zapytaj('GET', '/api/projekty');
+  sprawdz('GET /api/projekty odpowiada 200', status === 200);
+  sprawdz('lista startuje pusta', puste.length === 0);
+
+  const { tresc: projekt } = await zapytaj('POST', '/api/projekty');
+  await zapytaj('PATCH', `/api/projekty/${projekt.id}`, {
+    nazwa: 'Projekt testowy',
+    status: 'W trakcie',
+    opis: 'opis',
+  });
+
+  sprawdz(
+    'PATCH odrzuca status spoza slownika',
+    (await zapytaj('PATCH', `/api/projekty/${projekt.id}`, { status: 'Nieznany' })).status === 400
+  );
+
+  // Podpinamy dwa zadania, jedno konczymy - licznik ma pokazac 1/2.
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  const [a, b] = zadania;
+  await zapytaj('PATCH', `/api/zadania/${a.id}`, { projekt_id: projekt.id, stan: 'Zrobione' });
+  await zapytaj('PATCH', `/api/zadania/${b.id}`, { projekt_id: projekt.id, stan: 'Plan' });
+
+  const { tresc: zLicznikiem } = await zapytaj('GET', '/api/projekty');
+  const p = zLicznikiem.find((x) => x.id === projekt.id);
+  sprawdz(
+    'GET zwraca licznik zadan: 1 ukonczone z 2',
+    p.zadan_lacznie === 2 && p.zadan_ukonczonych === 1,
+    JSON.stringify({ lacznie: p.zadan_lacznie, ukonczonych: p.zadan_ukonczonych })
+  );
+
+  sprawdz(
+    'PATCH zadania odrzuca nieistniejacy projekt',
+    (await zapytaj('PATCH', `/api/zadania/${a.id}`, { projekt_id: 999999 })).status === 400
+  );
+
+  /*
+    KLUCZOWE: usuniecie projektu ma ODPIAC zadania, a nie je skasowac.
+    Realizuje to ON DELETE SET NULL z migracji 6.
+  */
+  const przedUsunieciem = (await zapytaj('GET', '/api/zadania')).tresc.length;
+  sprawdz(
+    'DELETE /api/projekty/:id odpowiada 204',
+    (await zapytaj('DELETE', `/api/projekty/${projekt.id}`)).status === 204
+  );
+
+  const { tresc: poUsunieciu } = await zapytaj('GET', '/api/zadania');
+  sprawdz(
+    'usuniecie projektu NIE kasuje zadan',
+    poUsunieciu.length === przedUsunieciem,
+    `${poUsunieciu.length} vs ${przedUsunieciem}`
+  );
+  sprawdz(
+    'usuniecie projektu ODPINA zadania (projekt_id = null)',
+    poUsunieciu.filter((z) => z.projekt_id !== null).length === 0,
+    JSON.stringify(poUsunieciu.map((z) => z.projekt_id))
+  );
+
+  // Przywracamy zestaw testowy.
+  for (const z of [a, b]) {
+    await zapytaj('PATCH', `/api/zadania/${z.id}`, { stan: z.stan });
+  }
+}
+
+/*
+  Parser dat z pliku. lib/daty.js jest czystym modulem serwerowym, wiec - podobnie
+  jak lib/nagrody.js - wystarczy zwykly require(), bez vm i bez wstawania serwera.
+
+  Formaty z ukosnikami i zakres ze strzalka trafily tu po weryfikacji profilu
+  quest-log na PRAWDZIWYM eksporcie "Success Plan" - specyfikacja, z ktorej profil
+  powstal, nie wspominala ani o jednym, ani o drugim.
+*/
+/*
+  Domyslne ograniczenie widoku.
+
+  Powod jest wydajnosciowy: przy 537 zadaniach tabela buduje ~37 000 elementow
+  <option> (piec list rozwijanych na wiersz) i przerysowanie kosztuje ~290 ms,
+  a leci ono przy KAZDYM nacisnieciu klawisza w filtrze nazwy. Sam odsiew
+  i sortowanie zajmuja ponizej 1 ms - caly koszt to budowanie DOM.
+
+  Testujemy DWIE rzeczy, bo obie latwo zepsuc niezaleznie:
+  1. ze widok domyslny naprawde odsiewa zakonczone,
+  2. ze eksport, backup i XP nadal widza PELNY zbior - to zasada obowiazujaca
+     od poczatku projektu i ograniczenie widoku nie ma prawa jej naruszyc.
+*/
+/*
+  Zadania calodzienne: kolumny czasowe trzymaja ALBO 'YYYY-MM-DD', ALBO
+  'YYYY-MM-DDTHH:MM'. Migracji nie bylo - kolumny sa tekstowe - wiec jedynym
+  straznikiem formatu jest normalizacja w API i to, ze wszystkie obliczenia
+  porownuja pelne dni kalendarzowe.
+*/
+async function testujDatyCalodzienne(reguly) {
+  sekcja('DATY CALODZIENNE I DOMYSLNY TERMIN');
+
+  const { znormalizujZnacznikCzasu } = require('../lib/daty');
+  const { regulyZadan, filtrDat } = reguly;
+
+  // --- normalizacja: obie postacie sa kanoniczne ---
+  sprawdz(
+    'sama data ZOSTAJE bez godziny (calodzienne)',
+    znormalizujZnacznikCzasu('2026-08-16') === '2026-08-16'
+  );
+  sprawdz(
+    'data z godzina zostaje z godzina',
+    znormalizujZnacznikCzasu('2026-08-16T14:30') === '2026-08-16T14:30'
+  );
+  sprawdz(
+    'sekundy z przegladarki sa obcinane do minut',
+    znormalizujZnacznikCzasu('2026-08-16T14:30:59') === '2026-08-16T14:30'
+  );
+  sprawdz('spacja zamiast T tez dziala', znormalizujZnacznikCzasu('2026-08-16 14:30') === '2026-08-16T14:30');
+  sprawdz('nieistniejacy dzien odrzucony', znormalizujZnacznikCzasu('2026-02-30') === null);
+  sprawdz('godzina 24:00 odrzucona', znormalizujZnacznikCzasu('2026-08-16T24:00') === null);
+
+  /*
+    Porownania MUSZA dawac ten sam wynik dla obu postaci - to jest sedno decyzji,
+    ze godzina nie wplywa na obliczenia. Gdyby ktos zaczal porownywac znaczniki
+    jako pelne teksty, te asercje pekna.
+  */
+  sprawdz(
+    'numerDnia: obie postacie to ten sam dzien',
+    filtrDat.numerDnia('2026-08-16') === filtrDat.numerDnia('2026-08-16T23:59')
+  );
+  sprawdz(
+    'Dni do terminu: termin calodzienny liczy sie jak z godzina',
+    regulyZadan.dniDoTerminu({ termin: '2026-08-20' }, '2026-08-16') === 4 &&
+      regulyZadan.dniDoTerminu({ termin: '2026-08-20T23:59' }, '2026-08-16') === 4
+  );
+
+  // Mnoznik terminowosci (XP) - zakonczenie o 23:00 w dniu terminu to NADAL na czas.
+  const { mnoznikTerminowosci } = require('../lib/nagrody');
+  sprawdz(
+    'mnoznik terminowosci: termin calodzienny, zakonczenie z godzina',
+    mnoznikTerminowosci('2026-08-16', '2026-08-16T23:00') ===
+      mnoznikTerminowosci('2026-08-16T00:00', '2026-08-16T23:00')
+  );
+
+  // --- domyslny termin przez HTTP ---
+  const { tresc: nowe } = await zapytaj('POST', '/api/zadania');
+  const dzisDlaSerwera = (await zapytaj('GET', '/api/czas')).tresc.dzisiaj;
+
+  sprawdz(
+    'nowy rekord ma termin = dzisiaj, BEZ godziny',
+    nowe.termin === dzisDlaSerwera,
+    `termin: ${JSON.stringify(nowe.termin)}, dzisiaj: ${dzisDlaSerwera}`
+  );
+  sprawdz(
+    'nowy rekord ma PUSTY start_zadania',
+    nowe.start_zadania === null,
+    `start_zadania: ${JSON.stringify(nowe.start_zadania)}`
+  );
+
+  // Zapis obu postaci przez API, tam i z powrotem.
+  const zGodzina = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { termin: '2026-08-16T09:15' });
+  sprawdz('PATCH zapisuje postac z godzina', zGodzina.tresc.termin === '2026-08-16T09:15');
+
+  const bezGodziny = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { termin: '2026-08-16' });
+  sprawdz(
+    'PATCH zapisuje postac calodzienna (godzina nie doklei sie sama)',
+    bezGodziny.tresc.termin === '2026-08-16',
+    `termin: ${JSON.stringify(bezGodziny.tresc.termin)}`
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+}
+
+/*
+  Duplikowanie zadania. Najwazniejsza asercja dotyczy tego, czego kopia NIE
+  dziedziczy: stan "Zrobione" wraz z data zamkniecia doliczylby XP za prace,
+  ktorej nikt nie wykonal.
+*/
+async function testujDuplikowanie() {
+  sekcja('DUPLIKOWANIE ZADANIA');
+
+  const { tresc: zrodlo } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${zrodlo.id}`, {
+    nazwa: 'Zadanie do skopiowania',
+    stan: 'Zrobione',
+    obszar: 'Career',
+    priorytet: 4,
+    trudnosc: 3,
+    czas_trwania_godziny: 2.5,
+    termin: '2026-08-20',
+    start_zadania: '2026-08-18T08:00',
+    czas_zakonczenia: '2026-08-19T17:00',
+  });
+
+  const odpowiedz = await zapytaj('POST', `/api/zadania/${zrodlo.id}/duplikuj`);
+  sprawdz('duplikowanie odpowiada 201', odpowiedz.status === 201, JSON.stringify(odpowiedz.tresc));
+  const kopia = odpowiedz.tresc;
+
+  sprawdz('kopia to NOWY rekord', kopia.id !== zrodlo.id);
+  sprawdz('nazwa dostaje dopisek " (kopia)"', kopia.nazwa === 'Zadanie do skopiowania (kopia)');
+
+  sprawdzListe(
+    'skopiowane: obszar, priorytet, trudnosc, czas, termin, start',
+    ['Career', 4, 3, 2.5, '2026-08-20', '2026-08-18T08:00'],
+    [
+      kopia.obszar,
+      kopia.priorytet,
+      kopia.trudnosc,
+      kopia.czas_trwania_godziny,
+      kopia.termin,
+      kopia.start_zadania,
+    ]
+  );
+
+  /*
+    Te dwie asercje pilnuja regulу, dla ktorej duplikat robi serwer, a nie przegladarka.
+  */
+  sprawdz('kopia NIE dziedziczy stanu - dostaje "Plan"', kopia.stan === 'Plan', `stan: ${kopia.stan}`);
+  sprawdz(
+    'kopia NIE dziedziczy czasu zakonczenia',
+    kopia.czas_zakonczenia === null,
+    `czas_zakonczenia: ${JSON.stringify(kopia.czas_zakonczenia)}`
+  );
+
+  // Skoro kopia nie jest zakonczona, nie ma prawa dolozyc XP za zadania.
+  const przed = (await zapytaj('GET', '/api/postac')).tresc.rozbicie.zadania;
+  const { tresc: druga } = await zapytaj('POST', `/api/zadania/${zrodlo.id}/duplikuj`);
+  const po = (await zapytaj('GET', '/api/postac')).tresc.rozbicie.zadania;
+  sprawdz('kopia nie dolicza XP za niewykonana prace', po === przed, `przed: ${przed}, po: ${po}`);
+
+  sprawdz(
+    'duplikowanie nieistniejacego zadania -> 404',
+    (await zapytaj('POST', '/api/zadania/999999/duplikuj')).status === 404
+  );
+
+  for (const id of [zrodlo.id, kopia.id, druga.id]) {
+    await zapytaj('DELETE', `/api/zadania/${id}`);
+  }
+}
+
+async function testujDomyslneOgraniczenie(reguly) {
+  sekcja('DOMYSLNE OGRANICZENIE WIDOKU');
+
+  const { regulyZadan } = reguly;
+  const slownikiTestowe = {
+    stany: ['Plan', 'Czeka', 'W trakcie', 'Zrobione', 'Blok'],
+    stanZakonczony: 'Zrobione',
+  };
+
+  sprawdzListe(
+    'widok domyslny to wszystkie stany poza zakonczonym',
+    ['Plan', 'Czeka', 'W trakcie', 'Blok'],
+    regulyZadan.domyslneStany(slownikiTestowe)
+  );
+
+  /*
+    Lista jest WYLICZANA ze slownika, nie wpisana na sztywno - dopisanie stanu
+    w config/slowniki.js ma od razu wchodzic do widoku domyslnego, bez ruszania
+    kodu strony. Gdyby ktos zamienil to na stala liste, ta asercja pekniе.
+  */
+  sprawdzListe(
+    'nowy stan ze slownika wchodzi do widoku domyslnego sam',
+    ['Plan', 'Odlozone'],
+    regulyZadan.domyslneStany({ stany: ['Plan', 'Odlozone', 'Zrobione'], stanZakonczony: 'Zrobione' })
+  );
+
+  // Odsiew liczony PRAWDZIWA funkcja filtrujaca, a nie powtorzona logika testu.
+  const zadaniaTestowe = [
+    { id: 1, nazwa: 'aktywne', stan: 'Plan' },
+    { id: 2, nazwa: 'zrobione', stan: 'Zrobione' },
+    { id: 3, nazwa: 'w toku', stan: 'W trakcie' },
+  ];
+  const filtryDomyslne = {
+    nazwa: '',
+    od: '',
+    do: '',
+    stany: new Set(regulyZadan.domyslneStany(slownikiTestowe)),
+    priorytety: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
+  };
+  sprawdzListe(
+    'widok domyslny chowa zakonczone, reszte zostawia',
+    [1, 3],
+    regulyZadan.filtrowane(zadaniaTestowe, filtryDomyslne, null).map((z) => z.id)
+  );
+
+  /*
+    PELNY ZBIOR MIMO OGRANICZONEGO WIDOKU.
+
+    Eksport CSV i backup czytaja dane niezaleznie od filtrow (eksport wola
+    posortowane() bez argumentu, backup idzie prosto do bazy zapytaniem
+    "SELECT * FROM zadania ORDER BY id"), a XP liczy serwer w routes/postac.js.
+    Wspolnym warunkiem jest to, ze GET /api/zadania nie ogranicza niczego
+    po stronie serwera - gdyby ktos "pomogl" wydajnosci, dodajac tam LIMIT
+    albo domyslny filtr, ucielby jednoczesnie eksport, backup i XP.
+  */
+  const wszystkie = (await zapytaj('GET', '/api/zadania')).tresc;
+  const zakonczone = wszystkie.filter((z) => z.stan === 'Zrobione');
+  sprawdz(
+    'GET /api/zadania zwraca takze zadania zakonczone (zrodlo eksportu i backupu)',
+    zakonczone.length > 0,
+    `zakonczonych: ${zakonczone.length} z ${wszystkie.length}`
+  );
+
+  // XP musi rosnac od zadania ZAKONCZONEGO, czyli takiego, ktorego widok domyslny nie pokazuje.
+  const przed = (await zapytaj('GET', '/api/postac')).tresc;
+  const nowe = await zapytaj('POST', '/api/zadania', { nazwa: 'XP z ukrytego zadania' });
+  await zapytaj('PATCH', `/api/zadania/${nowe.tresc.id}`, {
+    stan: 'Zrobione',
+    trudnosc: 3,
+    czas_trwania_godziny: 2,
+    czas_zakonczenia: dzienOGodzinie(0, '12:00'),
+  });
+  const po = (await zapytaj('GET', '/api/postac')).tresc;
+
+  sprawdz(
+    'XP liczy zadania ukryte w widoku domyslnym',
+    po.calkowite_xp > przed.calkowite_xp,
+    `przed: ${przed.calkowite_xp}, po: ${po.calkowite_xp}`
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.tresc.id}`);
+}
+
+async function testujParserDat() {
+  sekcja('PARSER DAT (lib/daty.js, w izolacji)');
+
+  const { parsujDateTolerancyjnie } = require('../lib/daty');
+
+  // --- formaty znane wczesniej: nie moga sie zepsuc po dolozeniu ukosnikow ---
+  sprawdzListe(
+    'formaty bez godziny daja wartosc CALODZIENNA (bez czesci T)',
+    ['2026-08-13', '2026-08-08', '2026-08-13'],
+    ['2026-08-13', 'August 8, 2026', '13.08.2026'].map(parsujDateTolerancyjnie)
+  );
+
+  // --- nowy format 1: sama data z ukosnikami (377x w kolumnie Do Date) ---
+  sprawdz(
+    'DD/MM/YYYY -> dzien jest pierwszy, nie miesiac',
+    parsujDateTolerancyjnie('29/02/2024') === '2024-02-29'
+  );
+  sprawdz(
+    'DD/MM/YYYY: dzien powyzej 12 nie jest czytany jako miesiac',
+    parsujDateTolerancyjnie('19/10/2024') === '2024-10-19'
+  );
+
+  /*
+    Nowy format 2: data z godzina i strefa (477x w Closing Date, 175x w Do Date).
+    Strefe pomijamy, godzine ZACHOWUJEMY bez przeliczania - inaczej czesc wpisow
+    przesunelaby sie na sasiedni dzien.
+  */
+  sprawdz(
+    'DD/MM/YYYY HH:MM (GMT+X) -> godzina zachowana, strefa pominieta',
+    parsujDateTolerancyjnie('02/03/2024 13:25 (GMT+1)') === '2024-03-02T13:25'
+  );
+  sprawdz(
+    'godzina jednocyfrowa "9:00" -> "09:00"',
+    parsujDateTolerancyjnie('24/08/2024 9:00 (GMT+2)') === '2024-08-24T09:00'
+  );
+  sprawdz(
+    'GMT+2 czytane tak samo jak GMT+1 (bez przesuwania godziny)',
+    parsujDateTolerancyjnie('28/05/2024 13:00 (GMT+2)') === '2024-05-28T13:00'
+  );
+
+  /*
+    Zakres dat z Notion (strzalka U+2192): bierzemy date POCZATKOWA.
+    Ciecie jest po samym znaku strzalki, wiec dziala dla obu wariantow -
+    z godzinami i bez - niezaleznie od tego, ile takich zakresow bedzie dalej.
+  */
+  sprawdz(
+    'zakres "data → data" -> data poczatkowa',
+    parsujDateTolerancyjnie('19/10/2024 → 20/10/2024') === '2024-10-19'
+  );
+  sprawdz(
+    'zakres z godzinami i strefami -> poczatek wraz z godzina',
+    parsujDateTolerancyjnie('04/08/2024 14:00 (GMT+2) → 07/08/2024 13:00 (GMT+2)') ===
+      '2024-08-04T14:00'
+  );
+
+  /*
+    SPOJNOSC CALODZIENNOSCI: postac wyniku idzie za zrodlem.
+
+    Plik podajacy sam dzien opisuje zadanie CALODZIENNE, a nie zaplanowane
+    na polnoc - i tak wlasnie ma sie zapisac. Gdyby ktos przywrocil doklejanie
+    'T00:00', kolumna renderowalaby pole daty z godzina dla kazdego zaimportowanego
+    rekordu, mimo ze w zrodle godziny nie bylo.
+  */
+  sprawdzListe(
+    'zrodlo bez godziny -> calodzienne, zrodlo z godzina -> z godzina',
+    [false, false, false, true, true],
+    [
+      '29/02/2024',
+      'August 8, 2026',
+      '19/10/2024 → 20/10/2024',
+      '02/03/2024 13:25 (GMT+1)',
+      '04/08/2024 14:00 (GMT+2) → 07/08/2024 13:00 (GMT+2)',
+    ].map((w) => parsujDateTolerancyjnie(w).includes('T'))
+  );
+
+  /*
+    Godzina 00:00 PODANA WPROST w zrodle zostaje godzina. To nie jest to samo,
+    co brak godziny - plik mowiacy "o polnocy" opisuje konkretna pore.
+  */
+  sprawdz(
+    'jawna godzina 00:00 w zrodle zostaje godzina, nie staje sie calodzienna',
+    parsujDateTolerancyjnie('02/03/2024 00:00 (GMT+1)') === '2024-03-02T00:00'
+  );
+
+  /*
+    Dziennik NIE korzysta z tego parsera - ma wlasna parsujDateWpisu dla formatu
+    "@March 2, 2024", ktora od zawsze zwracala sama date. Ta asercja pilnuje, ze
+    zmiana w parserze zadan nie przeciekla do dziennika przez wspolny modul.
+  */
+  const mapDziennika = require('../config/mapowanie-dziennika');
+  sprawdz(
+    'dziennik ma wlasny parser daty i zwraca sama date',
+    mapDziennika.parsujDateWpisu('@March 2, 2024') === '2024-03-02',
+    mapDziennika.parsujDateWpisu('@March 2, 2024')
+  );
+  sprawdz(
+    'kolumna daty dziennika idzie przez TRANSFORMACJE, nie przez pola datowe',
+    mapDziennika.TRANSFORMACJE.data === mapDziennika.parsujDateWpisu
+  );
+
+  // --- wartosci bledne nadal odrzucane: tolerancja nie moze znaczyc "cokolwiek" ---
+  sprawdz('31/02/2024 to nieistniejacy dzien -> null', parsujDateTolerancyjnie('31/02/2024') === null);
+  sprawdz(
+    'godzina 25:00 -> null',
+    parsujDateTolerancyjnie('02/03/2024 25:00 (GMT+1)') === null
+  );
+  sprawdz('tekst bez daty -> null', parsujDateTolerancyjnie('kiedys w przyszlosci') === null);
+}
+
+async function testujQuestLog() {
+  sekcja('IMPORT quest-log (dwuprzebiegowy)');
+
+  const questLog = require('../config/mapowanie-quest-log');
+
+  // --- mapowania wartosci, w izolacji ---
+  sprawdzListe(
+    'statusy Notion -> nasze stany',
+    ['Backlog', 'Ready to Start', 'In Progress', 'Complete', 'Blocked', ''].map(
+      questLog.parsujStatus
+    ),
+    ['Plan', 'Czeka', 'W trakcie', 'Zrobione', 'Blok', 'Plan']
+  );
+  sprawdzListe(
+    'Impact -> priorytet (piec poziomow + puste)',
+    ['x10 High 🔺', 'x5 Semi-High', 'x2 Impact', 'x0.5 Semi-Low', 'x0.2 Low 🔻', ''].map(
+      questLog.parsujImpact
+    ),
+    [4, 3, 2, 1, 0, 2]
+  );
+  sprawdzListe(
+    'Difficulty Score -> trudnosc',
+    ['1 - Easy', '2 - Moderate', '3 - Hard', ''].map(questLog.parsujTrudnosc),
+    [1, 2, 3, null]
+  );
+  sprawdz('"4.0" -> 4 godziny', questLog.parsujGodziny('4.0') === 4);
+  sprawdz('wartosc nieliczbowa -> brak godzin', questLog.parsujGodziny('brak') === null);
+
+  sprawdz(
+    'Upstream z URL-em -> sama nazwa',
+    questLog.parsujUpstream('Nauka hiszpanskiego (https://notion.so/abc)') === 'Nauka hiszpanskiego'
+  );
+  sprawdz(
+    'Upstream bez URL-a tez dziala',
+    questLog.parsujUpstream('Nauka hiszpanskiego') === 'Nauka hiszpanskiego'
+  );
+  /*
+    Przecinek w nazwie projektu. Wczesniej Upstream byl ciety po przecinku i te dwie
+    nazwy rozpadaly sie na kawalki ("Stan" / " ale trudniejszy"), przez co zadania
+    nie dopinaly sie do projektu. Oba przypadki pochodza z prawdziwego eksportu.
+  */
+  sprawdz(
+    'przecinek w nazwie projektu nie rozrywa Upstream',
+    questLog.parsujUpstream(
+      'Stan, ale trudniejszy  (https://app.notion.com/p/Stan-ale-trudniejszy-4f5c?pvs=21)'
+    ) === 'Stan, ale trudniejszy'
+  );
+  sprawdz(
+    'dwukropek i przecinki w dlugiej nazwie kursu',
+    questLog.parsujUpstream(
+      'The Ultimate React Course 2024: React, Next.js, Redux & More (https://app.notion.com/p/x?pvs=21)'
+    ) === 'The Ultimate React Course 2024: React, Next.js, Redux & More'
+  );
+  /*
+    Nawias obcinamy tylko na koncu wartosci - nazwa projektu sama moze zawierac
+    nawiasy i te musza przetrwac.
+  */
+  sprawdz(
+    'nawias wewnatrz nazwy zostaje, koncowy link znika',
+    questLog.parsujUpstream('Projekt (etap 2) (https://x/1)') === 'Projekt (etap 2)'
+  );
+
+  /*
+    Higiena listy kolumn ignorowanych - 46 pozycji utrzymywanych recznie.
+    Testu "czy pokrywa caly plik" tu NIE MA i byc nie moze: prawdziwy eksport lezy
+    w _test/, ktore jest poza repozytorium. Sprawdzamy to, co da sie sprawdzic bez
+    pliku - ze lista nie ma powtorzen i nie zachodzi na mapowanie.
+  */
+  const ignorowane = questLog.KOLUMNY_IGNOROWANE;
+  sprawdz(
+    'lista kolumn ignorowanych bez powtorzen',
+    new Set(ignorowane).size === ignorowane.length,
+    JSON.stringify(ignorowane.filter((n, i) => ignorowane.indexOf(n) !== i))
+  );
+  const kolizje = ignorowane.filter(
+    (n) => n in questLog.ZADANIA.mapowanie || n in questLog.PROJEKTY.mapowanie
+  );
+  sprawdz('kolumna ignorowana nie jest jednoczesnie mapowana', kolizje.length === 0, JSON.stringify(kolizje));
+
+  // --- dwuprzebiegowy import przez HTTP ---
+  const csv = [
+    'Name,Type,Status,Area,Difficulty Score,Impact,Time (Tasks Only),Do Date,Closing Date,Due Date (Optional),Upstream',
+    'Remont kuchni,Project,In Progress,,,,,,,,',
+    'Nauka hiszpanskiego,Project,Backlog,,,,,,,,',
+    'Kupic plytki,Task,Complete,Home,2 - Moderate,x5 Semi-High,4.0,2026-03-10,2026-03-05,,Remont kuchni (https://notion.so/1)',
+    'Lekcja 1,Task,In Progress,Knowledge,1 - Easy,x0.2 Low 🔻,1.5,2026-04-01,,,Nauka hiszpanskiego',
+    'Zadanie sierotka,Task,Backlog,Career,3 - Hard,x10 High 🔺,2,2026-05-01,,,Projekt ktorego nie ma',
+    'Zadanie luzne,Task,Backlog,,,,,,,,',
+    'Z nadpisanym terminem,Task,Complete,Health,1 - Easy,x2 Impact,1,2026-06-01,2026-06-02,2026-06-15,',
+    ',Task,Backlog,,,,,,,,',
+  ].join('\r\n');
+
+  const { status, tresc } = await zapytaj('POST', '/api/import/notion-quest-log/podglad', {
+    tresc: csv,
+  });
+  sprawdz('podglad quest-log odpowiada 200', status === 200);
+  sprawdz(
+    'podglad rozdziela projekty i zadania',
+    tresc.questLog.projektow === 2 && tresc.questLog.zadan === 5,
+    JSON.stringify(tresc.questLog)
+  );
+  sprawdz(
+    'wiersz bez "Name" odrzucony (1 sztuka)',
+    tresc.odrzuconych === 1,
+    JSON.stringify(tresc.odrzucone)
+  );
+  sprawdz(
+    'podglad liczy zadania z podpietym projektem i bez dopasowania',
+    tresc.questLog.zPodpietymProjektem === 2 && tresc.questLog.bezDopasowania === 1,
+    JSON.stringify(tresc.questLog)
+  );
+  sprawdzListe(
+    'brak dopasowania jest INFORMACJA - podaje nazwe nieznanego projektu',
+    tresc.questLog.nieznaneProjekty,
+    ['Projekt ktorego nie ma']
+  );
+
+  // --- zapis ---
+  const przedProjektow = (await zapytaj('GET', '/api/projekty')).tresc.length;
+  const przedZadan = (await zapytaj('GET', '/api/zadania')).tresc.length;
+
+  const zapis = await zapytaj('POST', '/api/import/notion-quest-log/zatwierdz', { tresc: csv });
+  sprawdz('zatwierdzenie odpowiada 201', zapis.status === 201);
+  sprawdz('zaimportowano 2 projekty + 5 zadan', zapis.tresc.zaimportowano === 7);
+
+  const { tresc: projekty } = await zapytaj('GET', '/api/projekty');
+  const { tresc: zadania } = await zapytaj('GET', '/api/zadania');
+  sprawdz('projekty dopisane', projekty.length === przedProjektow + 2);
+  sprawdz('zadania dopisane', zadania.length === przedZadan + 5);
+
+  const remont = projekty.find((p) => p.nazwa === 'Remont kuchni');
+  sprawdz('status projektu zmapowany: In Progress -> W trakcie', remont.status === 'W trakcie');
+
+  const plytki = zadania.find((z) => z.nazwa === 'Kupic plytki');
+  sprawdz(
+    'zadanie podpiete do projektu po nazwie z Upstream',
+    plytki.projekt_id === remont.id,
+    `${plytki.projekt_id} vs ${remont.id}`
+  );
+  sprawdz('Area -> obszar 1:1', plytki.obszar === 'Home');
+  sprawdz('Impact x5 Semi-High -> priorytet 3', plytki.priorytet === 3);
+  sprawdz('Difficulty 2 - Moderate -> trudnosc 2', plytki.trudnosc === 2);
+  sprawdz('Time 4.0 -> 4 godziny', plytki.czas_trwania_godziny === 4);
+  sprawdz(
+    'Do Date -> termin (a NIE start_zadania)',
+    plytki.termin === '2026-03-10' && plytki.start_zadania === null,
+    JSON.stringify({ termin: plytki.termin, start: plytki.start_zadania })
+  );
+  sprawdz('Closing Date -> czas_zakonczenia', plytki.czas_zakonczenia === '2026-03-05');
+
+  const nadpisany = zadania.find((z) => z.nazwa === 'Z nadpisanym terminem');
+  sprawdz(
+    'Due Date (Optional) NADPISUJE termin z Do Date',
+    nadpisany.termin === '2026-06-15',
+    nadpisany.termin
+  );
+
+  const sierotka = zadania.find((z) => z.nazwa === 'Zadanie sierotka');
+  sprawdz(
+    'brak dopasowania Upstream -> zadanie wchodzi BEZ projektu, nie jest odrzucane',
+    sierotka !== undefined && sierotka.projekt_id === null
+  );
+
+  const luzne = zadania.find((z) => z.nazwa === 'Zadanie luzne');
+  sprawdz('puste Area -> obszar zapasowy "Inne"', luzne.obszar === 'Inne');
+  sprawdz('pusty Impact -> priorytet 2', luzne.priorytet === 2);
+  sprawdz('pusty Status -> stan "Plan"', luzne.stan === 'Plan');
+
+  // Sprzatanie: usuwamy zaimportowane projekty i zadania.
+  for (const p of projekty) await zapytaj('DELETE', `/api/projekty/${p.id}`);
+  for (const z of zadania.slice(przedZadan)) await zapytaj('DELETE', `/api/zadania/${z.id}`);
 }
 
 async function testujImport() {
@@ -770,6 +1752,15 @@ async function main() {
     await testujZadania(reguly, slowniki);
     await testujDziennik(reguly);
     await testujStatystyki(reguly);
+    await testujSilnikXp();
+    await testujPostac();
+    await testujProjekty();
+    await testujDatyCalodzienne(reguly);
+    await testujDuplikowanie();
+    await testujDomyslneOgraniczenie(reguly);
+    await testujParserDat();
+    await testujQuestLog();
+    await testujNawyki();
     await testujImport();
     await testujLimityCiala();
   } catch (e) {
