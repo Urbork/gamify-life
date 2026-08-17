@@ -165,13 +165,117 @@ const POLA_DZIENNIKA = [
   'kolacja',
 ];
 
-const wstawWszystkieWpisy = db.transaction((wiersze) => {
-  for (const { dane } of wiersze) {
-    const parametry = {};
-    for (const pole of POLA_DZIENNIKA) parametry[pole] = dane[pole] ?? null;
-    wstawWpis.run(parametry);
+/*
+  DEDUPLIKACJA PO DACIE.
+
+  Import dziennika byl wylacznie dopisujacy, wiec powtorne wczytanie nakladajacego
+  sie okresu duplikowalo wpisy - a XP liczy sie z kazdego wpisu osobno, wiec razem
+  z duplikatami podwajalo sie tez punkty.
+
+  `data` jest naturalnym kluczem wpisu (jeden dzien = jeden wpis), ale NIE ma na niej
+  ograniczenia UNIQUE i to zostaje bez zmian: caly import idzie w jednej transakcji,
+  wiec pojedyncza kolizja wywracalaby zapis w calosci zamiast go poprawic.
+  Dopasowanie robimy wiec zapytaniem, a nie ograniczeniem schematu.
+
+  Gdyby w bazie mimo wszystko byly dwa wpisy o tej samej dacie, bierzemy NAJSTARSZY
+  (najnizsze id) - wybor jest arbitralny, ale musi byc powtarzalny, zeby podglad
+  pokazywal to samo, co potem zrobi zapis.
+*/
+const znajdzWpisPoDacie = db.prepare('SELECT * FROM dziennik WHERE data = ? ORDER BY id LIMIT 1');
+
+// Wszystko poza `data` - data jest kluczem dopasowania, wiec nie ma po co jej nadpisywac.
+const POLA_AKTUALIZOWALNE = POLA_DZIENNIKA.filter((p) => p !== 'data');
+
+/*
+  Pola, ktore plik NAPRAWDE wypelnia.
+
+  PUSTE POLE W PLIKU NIE KASUJE DANYCH. Miedzy eksportem a ponownym importem mozna
+  cos dopisac recznie w aplikacji; gdyby import nadpisywal wszystkie kolumny,
+  taki dopisek zniknalby bez sladu przy najblizszym wczytaniu pliku.
+
+  Silnik importu zapisuje pusta komorke jako null, wiec wystarczy odsiac null,
+  undefined i pusty tekst.
+*/
+function polaNiepuste(dane) {
+  const wynik = {};
+  for (const pole of POLA_AKTUALIZOWALNE) {
+    const wartosc = dane[pole];
+    if (wartosc === null || wartosc === undefined || wartosc === '') continue;
+    wynik[pole] = wartosc;
   }
-  return wiersze.length;
+  return wynik;
+}
+
+/** Ktore z niepustych pol pliku faktycznie ZMIENIA wartosc juz zapisana. */
+function polaDoZmiany(istniejacy, zmiany) {
+  return Object.keys(zmiany).filter((pole) => (istniejacy[pole] ?? null) !== zmiany[pole]);
+}
+
+/*
+  Podsumowanie dla PODGLADU - liczy to samo, co zrobi zapis, ale niczego nie zapisuje.
+
+  Wiersze z tego samego pliku o tej samej dacie sa symulowane po kolei (pierwszy
+  wstawia, kolejne aktualizuja), zeby podglad nie obiecywal wiecej nowych wpisow,
+  niz naprawde powstanie.
+*/
+function podsumujDziennik(gotowe) {
+  let nowych = 0;
+  let doAktualizacji = 0;
+  let polZmieni = 0;
+  const symulacja = new Map();
+
+  for (const { dane } of gotowe) {
+    const istniejacy = symulacja.has(dane.data)
+      ? symulacja.get(dane.data)
+      : znajdzWpisPoDacie.get(dane.data);
+
+    if (!istniejacy) {
+      nowych++;
+      symulacja.set(dane.data, { ...polaNiepuste(dane), data: dane.data });
+      continue;
+    }
+
+    doAktualizacji++;
+    const zmiany = polaNiepuste(dane);
+    polZmieni += polaDoZmiany(istniejacy, zmiany).length;
+    symulacja.set(dane.data, { ...istniejacy, ...zmiany });
+  }
+
+  return { nowych, doAktualizacji, polZmieni };
+}
+
+const wstawWszystkieWpisy = db.transaction((wiersze) => {
+  let nowych = 0;
+  let zaktualizowanych = 0;
+  let zmienionychPol = 0;
+
+  for (const { dane } of wiersze) {
+    const istniejacy = znajdzWpisPoDacie.get(dane.data);
+
+    if (!istniejacy) {
+      const parametry = {};
+      for (const pole of POLA_DZIENNIKA) parametry[pole] = dane[pole] ?? null;
+      wstawWpis.run(parametry);
+      nowych++;
+      continue;
+    }
+
+    zaktualizowanych++;
+    const zmiany = polaNiepuste(dane);
+    const doZapisu = polaDoZmiany(istniejacy, zmiany);
+    if (doZapisu.length === 0) continue; // wpis identyczny - nie ma czego zapisywac
+
+    /*
+      SET skladamy dynamicznie, bo kazdy wiersz wypelnia inny zestaw kolumn.
+      Nazwy kolumn pochodza z POLA_AKTUALIZOWALNE, czyli z KODU - z pliku ida
+      wylacznie wartosci, i to przez parametry. Ta sama zasada co whitelist w PATCH.
+    */
+    const set = doZapisu.map((pole) => `${pole} = @${pole}`).join(', ');
+    db.prepare(`UPDATE dziennik SET ${set} WHERE id = @id`).run({ ...zmiany, id: istniejacy.id });
+    zmienionychPol += doZapisu.length;
+  }
+
+  return { zaimportowano: nowych + zaktualizowanych, nowych, zaktualizowanych, zmienionychPol };
 });
 
 // --- profil quest-log (dwuprzebiegowy) ------------------------------------
@@ -305,7 +409,14 @@ const PROFILE = {
     zapisz: (wynik) => wstawWszystkie(wynik.gotowe),
   },
   dziennik: {
-    przygotuj: (tresc) => przygotuj(tresc, KONFIGURACJA_DZIENNIKA),
+    /*
+      Do zwyklego wyniku silnika dokladamy podsumowanie deduplikacji - podglad
+      musi pokazac skale nadpisania ZANIM cokolwiek trafi do bazy.
+    */
+    przygotuj: (tresc) => {
+      const wynik = przygotuj(tresc, KONFIGURACJA_DZIENNIKA);
+      return { ...wynik, dziennik: podsumujDziennik(wynik.gotowe) };
+    },
     zapisz: (wynik) => wstawWszystkieWpisy(wynik.gotowe),
   },
   'notion-quest-log': {
@@ -343,6 +454,8 @@ router.post('/:profil/podglad', (req, res) => {
     odrzucone: wynik.odrzucone,
     // Obecne tylko dla profilu quest-log (dwa rodzaje rekordow w jednym pliku).
     questLog: wynik.questLog,
+    // Obecne tylko dla profilu dziennika (deduplikacja po dacie).
+    dziennik: wynik.dziennik,
   });
 });
 
@@ -356,10 +469,19 @@ router.post('/:profil/zatwierdz', (req, res) => {
     throw e;
   }
 
-  // Wiersze sa DOPISYWANE - nic istniejacego nie jest nadpisywane ani usuwane.
-  const zaimportowano = profil.zapisz(wynik);
+  /*
+    Wiekszosc profili tylko DOPISUJE i zwraca sama liczbe wierszy.
+    Dziennik dodatkowo AKTUALIZUJE wpisy o istniejacej dacie, wiec zwraca rozbicie
+    (nowe / zaktualizowane / zmienione pola) - stad dwa ksztalty odpowiedzi.
+  */
+  const wynikZapisu = profil.zapisz(wynik);
+  const rozbicie = typeof wynikZapisu === 'number' ? null : wynikZapisu;
 
-  res.status(201).json({ zaimportowano, odrzuconych: wynik.odrzucone.length });
+  res.status(201).json({
+    zaimportowano: rozbicie ? rozbicie.zaimportowano : wynikZapisu,
+    odrzuconych: wynik.odrzucone.length,
+    dziennik: rozbicie,
+  });
 });
 
 module.exports = router;

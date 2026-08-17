@@ -123,7 +123,15 @@
   }
 
   function pokazPodglad(wynik) {
-    elNaglowek.textContent = `Podgląd importu: ${wynik.gotowych} gotowych do zaimportowania, ${wynik.odrzuconych} odrzuconych`;
+    /*
+      Naglowek podgladu. Dla dziennika rozbijamy gotowe wiersze na NOWE
+      i AKTUALIZOWANE, bo to dwie zupelnie inne operacje - druga nadpisuje dane,
+      ktore juz sa w bazie, i trzeba to zobaczyc PRZED zatwierdzeniem.
+    */
+    const d = wynik.dziennik;
+    elNaglowek.textContent = d
+      ? `Podgląd importu: ${d.nowych} nowych, ${d.doAktualizacji} do aktualizacji, ${wynik.odrzuconych} odrzuconych`
+      : `Podgląd importu: ${wynik.gotowych} gotowych do zaimportowania, ${wynik.odrzuconych} odrzuconych`;
 
     const uwagi = [];
     /*
@@ -141,7 +149,21 @@
     if (wynik.nieznaneKolumny.length > 0) {
       uwagi.push(`kolumny pominięte (brak w mapowaniu): ${wynik.nieznaneKolumny.join(', ')}`);
     }
-    uwagi.push('dane zostaną dopisane, nic istniejącego nie zostanie nadpisane');
+    if (d) {
+      /*
+        Skala nadpisania. "Pól zmieni wartość" liczy tylko te, ktore NAPRAWDE sie
+        roznia - powtorny import tego samego pliku pokaze tu zero, co od razu mowi,
+        ze nic sie nie wydarzy.
+      */
+      uwagi.push(
+        d.polZmieni === 0
+          ? 'żadne pole nie zmieni wartości'
+          : `pól, które zmienią wartość: ${d.polZmieni}`
+      );
+      uwagi.push('puste pola w pliku nie skasują danych już zapisanych');
+    } else {
+      uwagi.push('dane zostaną dopisane, nic istniejącego nie zostanie nadpisane');
+    }
     elUwagi.textContent = uwagi.join(' · ');
 
     elOdrzucone.replaceChildren();
@@ -181,7 +203,16 @@
       const uzytyProfil = profilPodgladu;
       const wynik = await api.post(`/api/import/${uzytyProfil}/zatwierdz`, { tresc: trescPliku });
       schowajPanel();
-      pokazStatus(`zaimportowano ${wynik.zaimportowano} wierszy`, 'ok');
+
+      // Dla dziennika komunikat rozroznia dopisanie od nadpisania - "zaimportowano
+      // 823 wierszy" po powtornym imporcie brzmialoby jak 823 nowe wpisy.
+      const dz = wynik.dziennik;
+      pokazStatus(
+        dz
+          ? `dodano ${dz.nowych}, zaktualizowano ${dz.zaktualizowanych} (zmienionych pól: ${dz.zmienionychPol})`
+          : `zaimportowano ${wynik.zaimportowano} wierszy`,
+        'ok'
+      );
 
       /*
         Tabela zyje w osobnym module - dajemy mu znac, ze dane sie zmienily.

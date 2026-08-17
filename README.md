@@ -391,8 +391,39 @@ profilu: `notion-quest-log` pisze do **dwóch** tabel naraz, więc strona zadań
 zarówno listę zadań, jak i projekty — bez tego nowy projekt siedziałby w bazie, ale nie dało
 by się go wybrać w kolumnie **Projekt** aż do odświeżenia strony.
 
-Zaimportowane zadania są **dopisywane** — nic istniejącego nie jest nadpisywane ani usuwane.
+Zaimportowane **zadania** są **dopisywane** — nic istniejącego nie jest nadpisywane ani
+usuwane. **Dziennik działa inaczej**, patrz [Deduplikacja](#deduplikacja-importu-dziennika).
 Cały import idzie w jednej transakcji: albo wejdą wszystkie poprawne wiersze, albo żaden.
+
+### Deduplikacja importu dziennika
+
+Import dziennika był wyłącznie dopisujący, więc powtórne wczytanie nakładającego się
+okresu duplikowało wpisy — a **XP liczy się z każdego wpisu osobno**, więc razem
+z duplikatami podwajały się też punkty.
+
+`data` jest naturalnym kluczem wpisu (jeden dzień = jeden wpis). Przy imporcie profilu
+`dziennik`:
+
+- **data nie istnieje w bazie** → wstawiany jest nowy wpis;
+- **data już istnieje** → istniejący wpis jest **aktualizowany**, ale **tylko w polach,
+  które w pliku są niepuste**.
+
+> **Puste pole w pliku nigdy nie kasuje danych.** Między eksportem a ponownym importem
+> można coś dopisać ręcznie w aplikacji; gdyby import nadpisywał wszystkie kolumny,
+> taki dopisek znikałby bez śladu przy najbliższym wczytaniu pliku.
+
+**Nie ma ograniczenia `UNIQUE` na kolumnie `data`** i to zostaje bez zmian: cały import
+idzie w jednej transakcji, więc pojedyncza kolizja wywracałaby zapis w całości zamiast go
+poprawić. Dopasowanie robi zapytanie, nie schemat. Gdyby w bazie mimo wszystko były dwa
+wpisy o tej samej dacie, aktualizowany jest **najstarszy** (najniższe `id`) — wybór jest
+arbitralny, ale powtarzalny, więc podgląd pokazuje to samo, co potem zrobi zapis.
+
+Podgląd rozbija gotowe wiersze na **nowe** i **do aktualizacji** oraz podaje, **ile pól
+łącznie zmieni wartość** — liczone są tylko te, które naprawdę się różnią. Powtórny import
+tego samego pliku pokazuje tu zero, co od razu mówi, że nic się nie wydarzy.
+
+Sprawdzone na prawdziwym eksporcie (821 gotowych wierszy, baza z 823 wpisami): ponowny
+import dał **0 nowych, 0 zmienionych pól**, liczba wpisów i XP bez zmian.
 
 Zatwierdzenie przesyła **treść pliku jeszcze raz**, a serwer parsuje ją ponownie, zamiast
 ufać wynikom z przeglądarki. Powód jest dwojaki: gdyby zapis przyjmował gotowe rekordy
