@@ -214,6 +214,31 @@ lokalnej kopii danych co sortowanie — potok to `posortowane(filtrowane())`.
 Brak zaznaczenia = brak filtrowania po tym polu. Gdy panel jest zwinięty, w nagłówku widać
 `— aktywne: N`, żeby krótsza lista nigdy nie wyglądała jak zgubione dane.
 
+**Uwzględnij / wyklucz (Obszar i Projekt).** Nad listą checkboxów stoi przełącznik trybu:
+
+| Tryb | Działanie |
+| --- | --- |
+| `uwzględnij` (domyślny) | zostaw **tylko** zaznaczone wartości |
+| `wyklucz` | zostaw wszystko **oprócz** zaznaczonych |
+
+Powód jest praktyczny: przy 41 projektach zaznaczenie 40, żeby ukryć jeden, jest
+bezużyteczne. Pusta lista znaczy „brak filtra" w **obu** trybach — inaczej przełączenie
+na `wyklucz` przed zaznaczeniem czegokolwiek chowałoby całą tabelę. **Wyczyść filtry**
+przywraca tryb `uwzględnij`.
+
+> Wybrano przełącznik trybu, a nie drugi zestaw checkboxów: to jedno pole stanu na filtr
+> zamiast podwojonej listy w UI. Ma to też efekt uboczny — tryb jest **jeden dla całej
+> listy**, więc wartość nie może być jednocześnie zaznaczona i wykluczona. Konflikt,
+> który trzeba by rozstrzygać regułą pierwszeństwa, nie ma jak powstać.
+>
+> Cena: nie da się wyrazić „uwzględnij A i B, ale wyklucz C" w obrębie jednego pola.
+> Przy `uwzględnij` wystarczy jednak zaznaczyć A i B, więc wykluczanie przydaje się
+> wyłącznie w wariancie „wszystko oprócz" — a ten jest w pełni obsłużony.
+
+**Termin najpóźniej.** Górna granica samego `termin`, bez dolnej. Zadania **po terminie**
+i **bez terminu** przechodzą — patrz [Domyślne ograniczenie widoku](#domyślne-ograniczenie-widoku).
+To osobne pole niż „Zakres dat" niżej, bo działa według innej reguły.
+
 **Zakres dat.** Zadanie pasuje do `[OD, DO]`, jeśli spełnia **co najmniej jeden** z warunków:
 
 - **a)** `termin` jest wypełniony **i** mieści się w zakresie;
@@ -244,18 +269,32 @@ zaczyna być odczuwalne:
 
 | Strona | Widok domyślny | Próg włączenia |
 | --- | --- | --- |
-| Zadania | tylko **aktywne** (stan inny niż `Zrobione`) | powyżej 100 zadań |
+| Zadania | **aktywne** (stan inny niż `Zrobione`) **oraz** termin nie później niż **dziś + 7 dni** | powyżej 100 zadań |
 | Dziennik | ostatnie **30 dni** | powyżej 100 wpisów |
 
 Poniżej progu ograniczenie się nie włącza — przy krótkiej liście nic nie przyspiesza,
 a filtr zaznaczony na starcie tylko myli.
 
 **Ograniczenie robi zwykły filtr**, ten sam, który jest w panelu: na stronie zadań
-zaznaczone są wszystkie stany poza `Zrobione`, w dzienniku wypełnione jest pole **od**.
-Panel filtrów pokazuje więc prawdę o tym, co widać, znacznik „aktywne: 1" się zapala,
-a **Wyczyść filtry** działa jako pokazanie wszystkiego. Nad tabelą stoi dodatkowo żółty
-pasek z liczbą ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak
-zrobionych zadań nigdy nie wyglądał jak utrata danych.
+zaznaczone są wszystkie stany poza `Zrobione` i wypełnione pole **Termin najpóźniej**,
+w dzienniku wypełnione jest pole **od**. Panel filtrów pokazuje więc prawdę o tym, co
+widać, znacznik „aktywne: 2" się zapala, a **Wyczyść filtry** działa jako pokazanie
+wszystkiego. Nad tabelą stoi dodatkowo żółty pasek opisujący oba warunki, z liczbą
+ukrytych wierszy i przyciskiem **Pokaż wszystkie (N)** — żeby brak zadań nigdy nie
+wyglądał jak utrata danych.
+
+> **Zakres terminu jest otwarty z lewej strony.** Nie ma dolnej granicy, więc zadania
+> **po terminie zostają widoczne**. Ukrycie zaległości byłoby gorsze niż problem, który
+> ten widok rozwiązuje.
+
+**Zadania bez terminu też zostają widoczne.** To zadania, o których najłatwiej zapomnieć —
+gdyby wypadały z widoku domyślnego, znikałyby bez śladu. W praktyce jest ich niewiele,
+bo każde nowe zadanie dostaje termin na dzisiaj; brak terminu to świadome wyczyszczenie pola.
+
+Realizuje to **osobna reguła** `pasujeTerminDo`, a nie konfiguracja istniejącego filtra
+„Zakres dat" — ten drugi odsiewa zadania bez żadnej z trzech dat i dopuszcza dopasowanie
+przez okres aktywności (`start`/`zakończenie`), przez co zadanie z odległym terminem, ale
+wypełnionym startem, wchodziłoby do widoku „najbliższy tydzień" wbrew jego nazwie.
 
 Wybór **nie jest zapamiętywany**: po odświeżeniu strona wraca do widoku domyślnego.
 W projekcie nie ma stanu trzymanego po stronie przeglądarki i ta zmiana tego nie wprowadza.
@@ -352,8 +391,39 @@ profilu: `notion-quest-log` pisze do **dwóch** tabel naraz, więc strona zadań
 zarówno listę zadań, jak i projekty — bez tego nowy projekt siedziałby w bazie, ale nie dało
 by się go wybrać w kolumnie **Projekt** aż do odświeżenia strony.
 
-Zaimportowane zadania są **dopisywane** — nic istniejącego nie jest nadpisywane ani usuwane.
+Zaimportowane **zadania** są **dopisywane** — nic istniejącego nie jest nadpisywane ani
+usuwane. **Dziennik działa inaczej**, patrz [Deduplikacja](#deduplikacja-importu-dziennika).
 Cały import idzie w jednej transakcji: albo wejdą wszystkie poprawne wiersze, albo żaden.
+
+### Deduplikacja importu dziennika
+
+Import dziennika był wyłącznie dopisujący, więc powtórne wczytanie nakładającego się
+okresu duplikowało wpisy — a **XP liczy się z każdego wpisu osobno**, więc razem
+z duplikatami podwajały się też punkty.
+
+`data` jest naturalnym kluczem wpisu (jeden dzień = jeden wpis). Przy imporcie profilu
+`dziennik`:
+
+- **data nie istnieje w bazie** → wstawiany jest nowy wpis;
+- **data już istnieje** → istniejący wpis jest **aktualizowany**, ale **tylko w polach,
+  które w pliku są niepuste**.
+
+> **Puste pole w pliku nigdy nie kasuje danych.** Między eksportem a ponownym importem
+> można coś dopisać ręcznie w aplikacji; gdyby import nadpisywał wszystkie kolumny,
+> taki dopisek znikałby bez śladu przy najbliższym wczytaniu pliku.
+
+**Nie ma ograniczenia `UNIQUE` na kolumnie `data`** i to zostaje bez zmian: cały import
+idzie w jednej transakcji, więc pojedyncza kolizja wywracałaby zapis w całości zamiast go
+poprawić. Dopasowanie robi zapytanie, nie schemat. Gdyby w bazie mimo wszystko były dwa
+wpisy o tej samej dacie, aktualizowany jest **najstarszy** (najniższe `id`) — wybór jest
+arbitralny, ale powtarzalny, więc podgląd pokazuje to samo, co potem zrobi zapis.
+
+Podgląd rozbija gotowe wiersze na **nowe** i **do aktualizacji** oraz podaje, **ile pól
+łącznie zmieni wartość** — liczone są tylko te, które naprawdę się różnią. Powtórny import
+tego samego pliku pokazuje tu zero, co od razu mówi, że nic się nie wydarzy.
+
+Sprawdzone na prawdziwym eksporcie (821 gotowych wierszy, baza z 823 wpisami): ponowny
+import dał **0 nowych, 0 zmienionych pól**, liczba wpisów i XP bez zmian.
 
 Zatwierdzenie przesyła **treść pliku jeszcze raz**, a serwer parsuje ją ponownie, zamiast
 ufać wynikom z przeglądarki. Powód jest dwojaki: gdyby zapis przyjmował gotowe rekordy

@@ -54,6 +54,9 @@
   const elFiltrOd = document.getElementById('filtr-od');
   const elFiltrDo = document.getElementById('filtr-do');
   const elWyczysc = document.getElementById('przycisk-wyczysc');
+  const elFiltrTerminDo = document.getElementById('filtr-termin-do');
+  const elTrybObszary = document.getElementById('tryb-obszary');
+  const elTrybProjekty = document.getElementById('tryb-projekty');
   const elOgraniczenie = document.getElementById('ograniczenie-widoku');
   const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
   const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
@@ -147,6 +150,15 @@
     priorytety: new Set(), // liczby, nie teksty
     obszary: new Set(),
     projekty: new Set(),
+    /*
+      Tryb dzialania list Obszar i Projekt: 'uwzglednij' albo 'wyklucz'.
+      Regule opisuje pasujeZbior w public/js/reguly-zadan.js.
+    */
+    obszaryTryb: 'uwzglednij',
+    projektyTryb: 'uwzglednij',
+    // Gorna granica TERMINU - podstawa domyslnego widoku. Bez dolnej granicy,
+    // wiec zadania po terminie zostaja widoczne (patrz pasujeTerminDo).
+    terminDo: '',
     od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
     do: '',
   };
@@ -517,16 +529,25 @@
   */
   function odswiezOgraniczenie() {
     const wszystkie = [...zadania.values()];
-    const chowaZrobione = filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony);
-    const ukryte = chowaZrobione
-      ? wszystkie.filter((z) => z.stan === slowniki.stanZakonczony).length
-      : 0;
+    const widoczne = filtrowane(wszystkie).length;
+    const ukryte = wszystkie.length - widoczne;
 
-    elOgraniczenie.hidden = ukryte === 0;
+    /*
+      Baner opisuje OBA warunki widoku domyslnego, ale wymienia tylko te, ktore
+      sa naprawde wlaczone - po recznej zmianie filtrow ma nadal mowic prawde.
+    */
+    const powody = [];
+    if (filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony)) {
+      powody.push('aktywnych');
+    }
+    if (filtry.terminDo) powody.push(`z terminem do ${filtry.terminDo}`);
+
+    elOgraniczenie.hidden = ukryte === 0 || powody.length === 0;
     if (elOgraniczenie.hidden) return;
 
     elOgraniczenieTekst.textContent =
-      `Widok ograniczony do aktywnych zadań — ukryto ${ukryte} zrobionych. `;
+      `Widok ograniczony do zadań ${powody.join(' i ')} — ukryto ${ukryte}. ` +
+      'Zadania po terminie i bez terminu pozostają widoczne. ';
     elPokazWszystkie.textContent = `Pokaż wszystkie (${wszystkie.length})`;
   }
 
@@ -916,8 +937,17 @@
   }
 
   /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */
+  /** Wybrany tryb ('uwzglednij' / 'wyklucz') z pary przyciskow radio. */
+  function odczytajTryb(pojemnik) {
+    const wybrany = pojemnik.querySelector('input[type="radio"]:checked');
+    return wybrany ? wybrany.value : 'uwzglednij';
+  }
+
   function zastosujFiltry() {
     filtry.nazwa = elFiltrNazwa.value.trim().toLocaleLowerCase('pl');
+    filtry.terminDo = elFiltrTerminDo.value;
+    filtry.obszaryTryb = odczytajTryb(elTrybObszary);
+    filtry.projektyTryb = odczytajTryb(elTrybProjekty);
     filtry.od = elFiltrOd.value;
     filtry.do = elFiltrDo.value;
     // Zbiory (stany, priorytety, obszary, projekty) sa aktualizowane na biezaco
@@ -932,10 +962,16 @@
 
   function wyczyscFiltry() {
     elFiltrNazwa.value = '';
+    elFiltrTerminDo.value = '';
     elFiltrOd.value = '';
     elFiltrDo.value = '';
     for (const input of elPanelFiltrow.querySelectorAll('input[type="checkbox"]')) {
       input.checked = false;
+    }
+    // Tryby wracaja do "uwzglednij" - inaczej po wyczyszczeniu zostalby
+    // przelacznik w pozycji "wyklucz" bez zaznaczonej ani jednej wartosci.
+    for (const pojemnik of [elTrybObszary, elTrybProjekty]) {
+      pojemnik.querySelector('input[value="uwzglednij"]').checked = true;
     }
     filtry.stany.clear();
     filtry.priorytety.clear();
@@ -995,6 +1031,9 @@
       */
       if (lista.length > PROG_OGRANICZENIA_WIDOKU) {
         for (const stan of regulyZadan.domyslneStany(slowniki)) filtry.stany.add(stan);
+        // Druga polowa domyslnego widoku: termin nie dalej niz dzisiaj + 7 dni.
+        // Pole jest widoczne w panelu, wiec od razu wiadomo, co odsiewa.
+        elFiltrTerminDo.value = regulyZadan.domyslnyTerminDo(dzisiajSerwera);
       }
 
       zbudujPanelFiltrow();
@@ -1061,6 +1100,10 @@
   elFiltrNazwa.addEventListener('input', zastosujFiltry);
   elFiltrOd.addEventListener('change', zastosujFiltry);
   elFiltrDo.addEventListener('change', zastosujFiltry);
+  elFiltrTerminDo.addEventListener('change', zastosujFiltry);
+  // Jeden handler na pojemnik zamiast osobnego na kazdy radio.
+  elTrybObszary.addEventListener('change', zastosujFiltry);
+  elTrybProjekty.addEventListener('change', zastosujFiltry);
 
   /*
     Inne moduly (public/js/csv-import.js) nie maja dostepu do wnetrza tego domkniecia,

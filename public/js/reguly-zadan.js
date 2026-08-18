@@ -19,7 +19,7 @@
 const regulyZadan = (() => {
   'use strict';
 
-  const { numerDnia } = filtrDat;
+  const { numerDnia, dataPlusDni } = filtrDat;
 
   // ==========================================================================
   // Kolumny wyliczane
@@ -88,10 +88,32 @@ const regulyZadan = (() => {
     return filtry.priorytety.size === 0 || filtry.priorytety.has(z.priorytet);
   }
 
+  /*
+    Wspolna regula dla filtrow, ktore moga dzialac w dwoch trybach.
+
+    'uwzglednij' (domyslny) - zostaw tylko zaznaczone wartosci,
+    'wyklucz'               - zostaw wszystko OPROCZ zaznaczonych.
+
+    Tryb wykluczania istnieje dla pol o wielu wartosciach: przy 41 projektach
+    zaznaczenie 40, zeby ukryc jeden, jest bezuzyteczne.
+
+    Pusty zbior znaczy "brak filtra" w OBU trybach - inaczej przelaczenie na
+    "wyklucz" bez zaznaczenia czegokolwiek chowaloby cala tabele.
+
+    Wartosc nie moze byc jednoczesnie zaznaczona i wykluczona: tryb jest jeden
+    dla calej listy, wiec konflikt, ktory trzeba by rozstrzygac pierwszenstwem,
+    nie ma jak powstac.
+  */
+  function pasujeZbior(wartosc, zbior, tryb) {
+    if (!zbior || zbior.size === 0) return true;
+    const zaznaczona = zbior.has(wartosc);
+    return tryb === 'wyklucz' ? !zaznaczona : zaznaczona;
+  }
+
   function pasujeObszar(z, filtry) {
-    if (filtry.obszary.size === 0) return true;
-    // Zadanie bez obszaru ma null - Set go nie zawiera, wiec zostanie odfiltrowane.
-    return filtry.obszary.has(z.obszar);
+    // Zadanie bez obszaru ma null - Set go nie zawiera, wiec w trybie
+    // "uwzglednij" odpada, a w trybie "wyklucz" zostaje. Oba wyniki sa poprawne.
+    return pasujeZbior(z.obszar, filtry.obszary, filtry.obszaryTryb);
   }
 
   /*
@@ -102,8 +124,36 @@ const regulyZadan = (() => {
     moga podawac obiekt filtrow bez tego pola.
   */
   function pasujeProjekt(z, filtry) {
-    if (!filtry.projekty || filtry.projekty.size === 0) return true;
-    return filtry.projekty.has(z.projekt_id);
+    return pasujeZbior(z.projekt_id, filtry.projekty, filtry.projektyTryb);
+  }
+
+  /*
+    Gorna granica TERMINU - podstawa domyslnego widoku "najblizszy tydzien".
+
+    Rozni sie od filtra "Zakres dat" dwiema rzeczami i dlatego jest osobna regula,
+    a nie jego konfiguracja:
+
+    1. ZAKRES OTWARTY Z LEWEJ. Nie ma dolnej granicy, wiec zadania PRZETERMINOWANE
+       zostaja widoczne. Ukrycie zaleglosci byloby gorsze niz problem, ktory
+       domyslny widok rozwiazuje.
+
+    2. ZADANIE BEZ TERMINU PRZECHODZI. "Zakres dat" odsiewa zadania bez zadnej
+       z trzech dat (patrz pasujeZakresDat) - tutaj byloby to szkodliwe, bo
+       zadanie bez terminu to wlasnie takie, o ktorym najlatwiej zapomniec,
+       a zniknieloby bez sladu.
+
+    Patrzymy WYLACZNIE na termin. "Zakres dat" dopuszcza dopasowanie takze przez
+    okres aktywnosci (start/zakonczenie), przez co zadanie z odleglym terminem,
+    ale wypelnionym startem, wchodziloby do widoku "najblizszy tydzien" wbrew nazwie.
+  */
+  function pasujeTerminDo(z, filtry) {
+    const granica = numerDnia(filtry.terminDo);
+    if (granica === null) return true; // brak granicy = brak filtra
+
+    const termin = numerDnia(z.termin);
+    if (termin === null) return true; // bez terminu - patrz punkt 2 wyzej
+
+    return termin <= granica;
   }
 
   /*
@@ -155,6 +205,7 @@ const regulyZadan = (() => {
         pasujePriorytet(z, filtry) &&
         pasujeObszar(z, filtry) &&
         pasujeProjekt(z, filtry) &&
+        pasujeTerminDo(z, filtry) &&
         pasujeZakresDat(z, filtry)
     );
   }
@@ -167,6 +218,7 @@ const regulyZadan = (() => {
       filtry.priorytety.size > 0,
       filtry.obszary.size > 0,
       Boolean(filtry.projekty && filtry.projekty.size > 0),
+      Boolean(filtry.terminDo),
       filtry.od !== '' || filtry.do !== '',
     ].filter(Boolean).length;
   }
@@ -306,6 +358,22 @@ const regulyZadan = (() => {
     return (slowniki.stany || []).filter((s) => s !== slowniki.stanZakonczony);
   }
 
+  /*
+    Ile dni do przodu siega widok domyslny. Razem z domyslneStany daje regule
+    "aktywne zadania na najblizszy tydzien".
+  */
+  const DNI_DOMYSLNEGO_WIDOKU = 7;
+
+  /**
+   * Gorna granica terminu w widoku domyslnym: dzisiaj + 7 dni.
+   *
+   * Dolnej granicy NIE MA i to jest celowe - zadania po terminie zostaja widoczne.
+   * Zadania bez terminu tez przechodza (patrz pasujeTerminDo).
+   */
+  function domyslnyTerminDo(dzisiaj) {
+    return dataPlusDni(dzisiaj, DNI_DOMYSLNEGO_WIDOKU);
+  }
+
   return {
     dniDoTerminu,
     maDaneDoXp,
@@ -314,5 +382,10 @@ const regulyZadan = (() => {
     posortowane,
     kolumnySortowania,
     domyslneStany,
+    domyslnyTerminDo,
+    DNI_DOMYSLNEGO_WIDOKU,
+    // eksportowane do testow
+    pasujeZbior,
+    pasujeTerminDo,
   };
 })();

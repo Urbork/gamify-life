@@ -80,14 +80,46 @@
           <div id="filtr-priorytety" class="checkboxy"></div>
         </fieldset>
 
+        <!--
+          Obszar i Projekt maja przelacznik trybu: "uwzglednij" zostawia tylko
+          zaznaczone, "wyklucz" zostawia wszystko oprocz zaznaczonych.
+          Tryb jest JEDEN dla calej listy, wiec wartosc nie moze byc jednoczesnie
+          zaznaczona i wykluczona - nie ma konfliktu do rozstrzygania.
+
+          Pusta lista znaczy "brak filtra" w obu trybach.
+        -->
         <fieldset class="filtr filtr-szeroki">
           <legend>Obszar</legend>
+          <div class="tryb-filtra" id="tryb-obszary">
+            <label><input type="radio" name="tryb-obszary" value="uwzglednij" checked /> uwzględnij</label>
+            <label><input type="radio" name="tryb-obszary" value="wyklucz" /> wyklucz</label>
+          </div>
           <div id="filtr-obszary" class="checkboxy"></div>
         </fieldset>
 
         <fieldset class="filtr filtr-szeroki">
           <legend>Projekt</legend>
+          <div class="tryb-filtra" id="tryb-projekty">
+            <label><input type="radio" name="tryb-projekty" value="uwzglednij" checked /> uwzględnij</label>
+            <label><input type="radio" name="tryb-projekty" value="wyklucz" /> wyklucz</label>
+          </div>
           <div id="filtr-projekty" class="checkboxy"></div>
+        </fieldset>
+
+        <!--
+          Gorna granica terminu - to ona realizuje domyslny widok "najblizszy tydzien".
+          Osobne pole, a nie czesc "Zakresu dat" nizej, bo dziala inaczej:
+          nie ma dolnej granicy (przeterminowane zostaja widoczne) i przepuszcza
+          zadania BEZ terminu. Patrz pasujeTerminDo w public/js/reguly-zadan.js.
+        -->
+        <fieldset class="filtr">
+          <legend>Termin najpóźniej</legend>
+          <label class="zakres">
+            do <input type="date" id="filtr-termin-do" />
+          </label>
+          <p class="filtr-podpowiedz">
+            Zadania po terminie i bez terminu zostają widoczne.
+          </p>
         </fieldset>
 
         <!--
