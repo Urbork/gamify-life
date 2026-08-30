@@ -262,6 +262,41 @@ OD i DO — zawsze widać, jaki zakres jest naprawdę użyty, i można go ręczn
 > Zamiana to jedna linijka opisana w komentarzu przy `pasujeZakresDat`
 > w [public/js/zadania.js](public/js/zadania.js).
 
+### Motyw jasny i ciemny
+
+**Cała paleta siedzi w zmiennych CSS** w `:root` — w ciałach reguł nie ma ani jednego
+literału koloru. Dzięki temu motyw ciemny to jeden blok nadpisujący zmienne, a nie
+polowanie po kilkunastu miejscach.
+
+Motyw idzie **wyłącznie za ustawieniem systemu** (`prefers-color-scheme`) — nie ma
+przełącznika w interfejsie.
+
+> **Dlaczego bez przełącznika.** Wymagałby zapamiętania wyboru, czyli pierwszego
+> w tym projekcie stanu trzymanego po stronie przeglądarki (`localStorage`). Ta sama
+> zasada przesądziła wcześniej o tym, że widok domyślny zadań nie zapamiętuje
+> „Pokaż wszystkie". System zna porę dnia i preferencje użytkownika lepiej niż ta aplikacja.
+
+`color-scheme` przestawia się razem z paletą. Bez tego kontrolki rysowane przez
+przeglądarkę — `<select>`, `<input type="date">` z ikoną kalendarza — zostałyby jasne
+na ciemnym wierszu; to dokładnie odwrotny problem niż ten, który rozwiązywała pierwotna
+deklaracja `color-scheme: light`.
+
+Odcienie są **dobrane, nie odwrócone mechanicznie**: czysta inwersja dałaby jaskrawe tło
+błędu i nieczytelny akcent. Tło jest ciemnoszare (`#1c1c1e`), a nie czarne — czysta czerń
+przy jasnym tekście męczy wzrok kontrastem. Akcent rozjaśniony do `#6ea8fe`, bo `#3b7ddd`
+ma na ciemnym tle za mały kontrast.
+
+Zmierzone kontrasty w motywie ciemnym (próg WCAG AA dla zwykłego tekstu to **4,5**):
+
+| Element | Kontrast |
+| --- | --- |
+| tekst na tle strony | 13,9 |
+| bieżąca pozycja menu | 11,7 |
+| baner ograniczenia | 11,8 |
+| link menu | 7,1 |
+| tekst słaby (podsumowanie) | 6,1 |
+| nagłówek tabeli | 5,1 |
+
 ### Domyślne ograniczenie widoku
 
 Przy większych zbiorach obie tabele startują **ograniczone**, bo pełne przerysowanie
@@ -1007,7 +1042,7 @@ routes/projekty.js           REST API projektów
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
-public/css/style.css         styl (paleta zbudowana pod jasne tło — patrz color-scheme)
+public/css/style.css         styl (paleta w zmiennych CSS, motyw jasny i ciemny)
 public/js/api.js             wspólny wrapper na fetch    — do użycia w każdym module
 public/js/csv.js             generowanie i pobieranie CSV — j.w.
 public/js/filtr-dat.js       arytmetyka dat i presety zakresu — j.w.

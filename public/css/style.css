@@ -3,27 +3,99 @@
   Zasada: kolor niesie informacje (po terminie, zrobione, blad), a nie dekoracje.
 */
 
+/*
+  PALETA. Wszystkie kolory interfejsu sa TUTAJ - w cialach regul nie ma ani jednego
+  literalu. Dzieki temu motyw ciemny to jeden blok nadpisujacy zmienne, a nie
+  polowanie po kilkunastu miejscach.
+
+  Zasada z naglowka pliku zostaje: kolor niesie informacje (po terminie, zrobione,
+  blad), a nie dekoracje. Motyw ciemny zmienia ODCIENIE, nie znaczenia.
+*/
 :root {
-  --ramka: #ccc;
-  --tlo-naglowka: #f0f0f0;
+  color-scheme: light;
+
+  /* powierzchnie i tekst */
+  --tlo: #fff;
+  --tekst: #111;
   --tekst-slaby: #888;
+  --ramka: #ccc;
+  --cien: rgba(0, 0, 0, 0.15);
+
+  /* naglowki tabeli i kontrolki */
+  --tlo-naglowka: #f0f0f0;
+  --tlo-naglowka-hover: #e4e4e4;
+  --tlo-wybrane: #e0e0e0;
+  --tlo-kontrolki: #f4f4f5;
+  --tlo-toru: #eee;
+
+  /* wiersze tabeli */
+  --tlo-zebry: #f6f6f7;
+  --tlo-hover: #e6eefb;
+  --edycja-tlo: #eef4ff;
+
+  /* znaczenia */
+  --akcent: #3b7ddd;
   --alarm: #b00020;
+  --blad-tlo: #ffecec;
   --ok: #0a7a2f;
+  --zapis-tlo: #e3f7e3;
   /* Uwaga, nie blad: cos wartego zauwazenia, ale nieblokujacego (duplikat daty).
      Celowo inny kolor niz --alarm, ktory znaczy "nie zapisano". */
   --uwaga: #b8860b;
   --uwaga-tlo: #fff8e1;
+  --info-tlo: #fffbe6;
+  --info-ramka: #e0d28a;
+}
 
-  /*
-    Cala paleta jest zbudowana pod JASNE tlo (ramki #ccc, naglowki #f0f0f0, tekst #111).
-    Bez tej deklaracji przegladarka ustawiona na motyw ciemny malowala ciemne plotno,
-    na ktorym prawie czarny tekst byl nieczytelny.
+/*
+  MOTYW CIEMNY - sterowany wylacznie ustawieniem systemu (prefers-color-scheme).
 
-    color-scheme obejmuje takze kontrolki rysowane przez przegladarke - <select>
-    i <input type="datetime-local"> (razem z ikona kalendarza) - ktore inaczej
-    zostalyby ciemne na jasnym wierszu.
-  */
-  color-scheme: light;
+  DLACZEGO BEZ PRZELACZNIKA W INTERFEJSIE
+  Przelacznik wymagalby zapamietania wyboru, czyli pierwszego w tym projekcie stanu
+  trzymanego po stronie przegladarki (localStorage). Ta sama zasada przesadzila
+  wczesniej o tym, ze widok domyslny zadan nie zapamietuje "Pokaz wszystkie".
+  System i tak zna pore dnia i preferencje uzytkownika lepiej niz ta aplikacja.
+
+  color-scheme przestawiamy razem z paleta: bez tego kontrolki rysowane przez
+  przegladarke (<select>, <input type="date"> z ikona kalendarza) zostalyby jasne
+  na ciemnym wierszu - dokladnie odwrotny problem niz ten, ktory rozwiazywala
+  pierwotna deklaracja color-scheme: light.
+
+  Odcienie sa DOBRANE, nie odwrocone mechanicznie: czysta inwersja dalaby
+  jaskrawe tlo bledu i nieczytelny akcent. Tlo jest ciemnoszare (#1c1c1e),
+  a nie czarne - czysta czern przy jasnym tekscie meczy wzrok kontrastem.
+*/
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --tlo: #1c1c1e;
+    --tekst: #e8e8ea;
+    --tekst-slaby: #9a9aa0;
+    --ramka: #3a3a3e;
+    --cien: rgba(0, 0, 0, 0.6);
+
+    --tlo-naglowka: #2a2a2e;
+    --tlo-naglowka-hover: #35353a;
+    --tlo-wybrane: #3d3d43;
+    --tlo-kontrolki: #26262a;
+    --tlo-toru: #35353a;
+
+    --tlo-zebry: #202024;
+    --tlo-hover: #26303f;
+    --edycja-tlo: #22304a;
+
+    /* Akcent rozjasniony - #3b7ddd na ciemnym tle ma za maly kontrast. */
+    --akcent: #6ea8fe;
+    --alarm: #ff7b8a;
+    --blad-tlo: #3a2226;
+    --ok: #6fd48a;
+    --zapis-tlo: #1e3a24;
+    --uwaga: #e0b84a;
+    --uwaga-tlo: #332c14;
+    --info-tlo: #2e2a18;
+    --info-ramka: #5c5326;
+  }
 }
 
 * {
@@ -34,9 +106,9 @@ body {
   margin: 0;
   padding: 16px;
   font: 14px/1.4 system-ui, sans-serif;
-  color: #111;
+  color: var(--tekst);
   /* Jawne tlo - patrz color-scheme wyzej. Zebra i hover licza na to, ze plotno jest biale. */
-  background: #fff;
+  background: var(--tlo);
 }
 
 h1 {
@@ -93,8 +165,8 @@ h1 {
 .ograniczenie {
   margin: 8px 0;
   padding: 6px 10px;
-  background: #fffbe6;
-  border: 1px solid #e0d28a;
+  background: var(--info-tlo);
+  border: 1px solid var(--info-ramka);
 }
 
 .ograniczenie button {
@@ -235,7 +307,7 @@ button {
 /* Preset, ktory odpowiada aktualnie wpisanemu zakresowi. Recznie zmieniona data
    gasi to podswietlenie, bo zakres przestaje byc "tym presetem". */
 .presety button[data-aktywny='tak'] {
-  background: #d0d0d0;
+  background: var(--tlo-wybrane);
   font-weight: bold;
 }
 
@@ -247,7 +319,7 @@ button {
 
 .import {
   border: 1px solid var(--ramka);
-  border-left: 3px solid #3b7ddd;
+  border-left: 3px solid var(--akcent);
   padding: 8px;
   margin-bottom: 12px;
   font-size: 13px;
@@ -320,7 +392,7 @@ th[data-kolumna] {
 }
 
 th[data-kolumna]:hover {
-  background: #e4e4e4;
+  background: var(--tlo-naglowka-hover);
 }
 
 /* Strzalka pokazuje aktywna kolumne i kierunek. Rysuje ja CSS na podstawie
@@ -335,7 +407,7 @@ th[data-kierunek='malejaco']::after {
 
 th[data-kierunek='rosnaco'],
 th[data-kierunek='malejaco'] {
-  background: #e0e0e0;
+  background: var(--tlo-wybrane);
 }
 
 /* Szerokosci kolumn: nazwa dostaje reszte miejsca, pozostale tylko tyle, ile trzeba. */
@@ -422,7 +494,7 @@ td.brak-danych-xp {
   (skala odwrocona) prowadzilo by wprost do blednych wnioskow.
 */
 td select.plakietka {
-  background: #f4f4f5;
+  background: var(--tlo-kontrolki);
   border: 1px solid var(--ramka);
   border-radius: 10px;
   padding: 1px 4px;
@@ -474,7 +546,7 @@ td.komorka-nawykow {
 }
 
 td.komorka-nawykow:hover {
-  outline: 1px solid #3b7ddd;
+  outline: 1px solid var(--akcent);
   outline-offset: -1px;
 }
 
@@ -489,9 +561,9 @@ td.komorka-nawykow:empty::before {
   width: 320px;
   max-height: 60vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--tlo);
   border: 1px solid var(--ramka);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--cien);
   padding: 8px;
   font-size: 13px;
 }
@@ -644,13 +716,13 @@ td.komorka-nawykow:empty::before {
 .slupek {
   display: block;
   height: 10px;
-  background: #3b7ddd;
+  background: var(--akcent);
   min-width: 1px;
 }
 
 .slupek-tlo {
   width: 120px;
-  background: #eee;
+  background: var(--tlo-toru);
 }
 
 /* Ostrzezenie o odwroconej skali stresu - musi rzucac sie w oczy przy odczycie sredniej. */
@@ -697,14 +769,14 @@ td.komorka-nawykow:empty::before {
 /* Pasek postepu do nastepnego poziomu - zwykly div, bez biblioteki. */
 .postep-tlo {
   height: 14px;
-  background: #eee;
+  background: var(--tlo-toru);
   border: 1px solid var(--ramka);
   margin-bottom: 4px;
 }
 
 .postep {
   height: 100%;
-  background: #3b7ddd;
+  background: var(--akcent);
   min-width: 1px;
 }
 
@@ -776,7 +848,7 @@ td.komorka-nawykow:empty::before {
 }
 
 .nawigacja a {
-  color: #3b7ddd;
+  color: var(--akcent);
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
@@ -803,7 +875,7 @@ td.komorka-nawykow:empty::before {
 .nawigacja a[aria-current='page'] {
   background: var(--tlo-naglowka);
   border-color: var(--ramka);
-  color: #111;
+  color: var(--tekst);
   font-weight: bold;
   cursor: default;
 }
@@ -838,7 +910,7 @@ td[contenteditable] {
 td[contenteditable]:focus,
 td select:focus,
 td input:focus {
-  outline: 2px solid #3b7ddd;
+  outline: 2px solid var(--akcent);
   outline-offset: -2px;
 }
 
@@ -865,7 +937,7 @@ td.kol-nazwa[contenteditable]:empty::before {
    kolumnach. Roznica jest minimalna (bialy -> #f6f6f6): ma pomagac czytac,
    a nie rysowac pasy przez cala tabele. */
 tbody tr:nth-child(even) {
-  background: #f6f6f7;
+  background: var(--tlo-zebry);
 }
 
 /* Hover jest WYRAZNIE mocniejszy od zebry, zeby dalo sie jednym rzutem oka
@@ -875,7 +947,7 @@ tbody tr:nth-child(even) {
    Regula MUSI stac PO zebrze: obie maja te sama specyficznosc (0,1,2),
    wiec o pierwszenstwie decyduje kolejnosc w pliku. */
 tbody tr:hover {
-  background: #e6eefb;
+  background: var(--tlo-hover);
 }
 
 /* --- sygnaly wizualne --- */
@@ -898,7 +970,7 @@ tr[data-stan='Blok'] td:first-child {
 
 /* Wiersz, ktorego zapis sie nie powiodl. */
 tr.blad-zapisu td {
-  background: #ffecec;
+  background: var(--blad-tlo);
 }
 
 /*
@@ -911,7 +983,7 @@ tr.blad-zapisu td {
   tabeli zostaje nietkniety.
 */
 tbody tr:focus-within td {
-  background: #eef4ff;
+  background: var(--edycja-tlo);
 }
 
 /*
@@ -950,7 +1022,7 @@ tr.poza-filtrami td:first-child {
 */
 @keyframes blysk-zapisu {
   from {
-    background: #e3f7e3;
+    background: var(--zapis-tlo);
   }
   to {
     background: transparent;
@@ -964,7 +1036,7 @@ tr.zapisano td {
 @media (prefers-reduced-motion: reduce) {
   tr.zapisano td {
     animation: none;
-    background: #e3f7e3;
+    background: var(--zapis-tlo);
   }
 }
 
