@@ -48,56 +48,80 @@
 }
 
 /*
-  MOTYW CIEMNY - sterowany wylacznie ustawieniem systemu (prefers-color-scheme).
+  MOTYW CIEMNY.
 
-  DLACZEGO BEZ PRZELACZNIKA W INTERFEJSIE
-  Przelacznik wymagalby zapamietania wyboru, czyli pierwszego w tym projekcie stanu
-  trzymanego po stronie przegladarki (localStorage). Ta sama zasada przesadzila
-  wczesniej o tym, ze widok domyslny zadan nie zapamietuje "Pokaz wszystkie".
-  System i tak zna pore dnia i preferencje uzytkownika lepiej niz ta aplikacja.
+  Reguła reaguje na atrybut data-motyw ustawiany przez public/js/motyw.js,
+  a NIE na @media (prefers-color-scheme). To celowe: skrypt zamienia wybor
+  uzytkownika (system / jasny / ciemny) na konkretny motyw, wiec ciemna paleta
+  jest tu w JEDNEJ kopii. Gdyby stala i w @media, i w regule atrybutowej,
+  istnialyby dwie kopie tych samych kolorow - a rozjazd miedzy kopiami to blad,
+  ktory w tym projekcie zdarzyl sie juz kilka razy.
 
-  color-scheme przestawiamy razem z paleta: bez tego kontrolki rysowane przez
+  Skrypt ustawia atrybut synchronicznie w <head>, przed pierwszym malowaniem,
+  wiec jasna strona nie miga przed przelaczeniem na ciemna.
+
+  color-scheme przestawia sie RAZEM z paleta: bez tego kontrolki rysowane przez
   przegladarke (<select>, <input type="date"> z ikona kalendarza) zostalyby jasne
-  na ciemnym wierszu - dokladnie odwrotny problem niz ten, ktory rozwiazywala
-  pierwotna deklaracja color-scheme: light.
+  na ciemnym wierszu.
 
   Odcienie sa DOBRANE, nie odwrocone mechanicznie: czysta inwersja dalaby
   jaskrawe tlo bledu i nieczytelny akcent. Tlo jest ciemnoszare (#1c1c1e),
   a nie czarne - czysta czern przy jasnym tekscie meczy wzrok kontrastem.
 */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+:root[data-motyw='ciemny'] {
+  color-scheme: dark;
 
-    --tlo: #1c1c1e;
-    --tekst: #e8e8ea;
-    --tekst-slaby: #9a9aa0;
-    --ramka: #3a3a3e;
-    --cien: rgba(0, 0, 0, 0.6);
+  --tlo: #1c1c1e;
+  --tekst: #e8e8ea;
+  --tekst-slaby: #9a9aa0;
+  --ramka: #3a3a3e;
+  --cien: rgba(0, 0, 0, 0.6);
 
-    --tlo-naglowka: #2a2a2e;
-    --tlo-naglowka-hover: #35353a;
-    --tlo-wybrane: #3d3d43;
-    --tlo-kontrolki: #26262a;
-    --tlo-toru: #35353a;
+  --tlo-naglowka: #2a2a2e;
+  --tlo-naglowka-hover: #35353a;
+  --tlo-wybrane: #3d3d43;
+  --tlo-kontrolki: #26262a;
+  --tlo-toru: #35353a;
 
-    --tlo-zebry: #202024;
-    --tlo-hover: #26303f;
-    --edycja-tlo: #22304a;
+  --tlo-zebry: #202024;
+  --tlo-hover: #26303f;
+  --edycja-tlo: #22304a;
 
-    /* Akcent rozjasniony - #3b7ddd na ciemnym tle ma za maly kontrast. */
-    --akcent: #6ea8fe;
-    --alarm: #ff7b8a;
-    --blad-tlo: #3a2226;
-    --ok: #6fd48a;
-    --zapis-tlo: #1e3a24;
-    --uwaga: #e0b84a;
-    --uwaga-tlo: #332c14;
-    --info-tlo: #2e2a18;
-    --info-ramka: #5c5326;
-  }
+  /* Akcent rozjasniony - #3b7ddd na ciemnym tle ma za maly kontrast. */
+  --akcent: #6ea8fe;
+  --alarm: #ff7b8a;
+  --blad-tlo: #3a2226;
+  --ok: #6fd48a;
+  --zapis-tlo: #1e3a24;
+  --uwaga: #e0b84a;
+  --uwaga-tlo: #332c14;
+  --info-tlo: #2e2a18;
+  --info-ramka: #5c5326;
 }
 
+/*
+  Przelacznik motywu. Wyglada jak pozostale pozycje menu, ale nie jest linkiem -
+  to przycisk, bo zmienia stan strony, a nie prowadzi do innej sekcji.
+*/
+.przelacznik-motywu {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.przelacznik-motywu:hover {
+  background: var(--tlo-naglowka);
+}
+
+/* Wybor inny niz systemowy jest wyrozniony - inaczej nie bylo by widac,
+   ze motyw jest wymuszony recznie i nie podaza juz za systemem. */
+.przelacznik-motywu:not([data-wybor='system']) {
+  border-color: var(--ramka);
+  background: var(--tlo-naglowka);
+}
 * {
   box-sizing: border-box;
 }

@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Statystyki</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!--
+      Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
+      wyborze ciemnym mignelaby jasna strona. Stad zwykly <script> w <head>,
+      bez defer i bez async.
+    -->
+    <script src="/js/motyw.js"></script>
   </head>
   <body>
     <header class="pasek">
@@ -27,6 +33,8 @@
         <a href="/projekty.html">📁 Projekty</a>
         <a href="/postac.html">🎮 Postać</a>
       </nav>
+      <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
+      <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
 

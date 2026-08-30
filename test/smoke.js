@@ -109,10 +109,29 @@ function dzienOGodzinie(n, godzina) {
 
 /** Laduje pliki public/js w jednym sandboksie, tak jak robi to przegladarka. */
 function zaladujReguly() {
-  const sandbox = { console };
+  /*
+    motyw.js dotyka DOM i localStorage juz przy starcie (ustawia motyw przed
+    pierwszym malowaniem), wiec sandbox dostaje minimalne atrapy. Testujemy
+    z niego wylacznie czysta funkcje rozstrzygnij().
+  */
+  const sandbox = {
+    console,
+    document: {
+      documentElement: { dataset: {} },
+      addEventListener() {},
+      getElementById: () => null,
+    },
+    window: { matchMedia: null },
+    localStorage: {
+      getItem: () => null,
+      setItem() {},
+      removeItem() {},
+    },
+  };
   vm.createContext(sandbox);
 
   for (const plik of [
+    'motyw.js',
     'filtr-dat.js',
     'reguly-zadan.js',
     'reguly-dziennika.js',
@@ -129,7 +148,7 @@ function zaladujReguly() {
     wykonanym w tym samym kontekscie.
   */
   return vm.runInContext(
-    '({ filtrDat, regulyZadan, regulyDziennika, regulyStatystyk })',
+    '({ motyw, filtrDat, regulyZadan, regulyDziennika, regulyStatystyk })',
     sandbox
   );
 }
@@ -1218,6 +1237,51 @@ async function testujProjekty() {
 
   Sprawdzamy OBA kierunki: wartosc slownika bez plakietki i plakietka bez wartosci.
 */
+/*
+  MOTYW JASNY / CIEMNY.
+
+  Testujemy czysta funkcje rozstrzygajaca - reszta modulu to DOM i localStorage.
+  To ona decyduje, czy wybor uzytkownika bierze gore nad ustawieniem systemu.
+*/
+async function testujMotyw(reguly) {
+  sekcja('MOTYW JASNY / CIEMNY');
+
+  const { rozstrzygnij, WYBORY } = reguly.motyw;
+
+  sprawdzListe('trzy stany wyboru, systemowy jako pierwszy', ['system', 'jasny', 'ciemny'], WYBORY);
+
+  /*
+    Wybor RECZNY ma pierwszenstwo nad systemem - w obie strony. To sedno
+    przelacznika: uzytkownik z jasnym systemem musi moc obejrzec motyw ciemny.
+  */
+  sprawdzListe(
+    'wybor reczny wygrywa z ustawieniem systemu',
+    ['jasny', 'jasny', 'ciemny', 'ciemny'],
+    [
+      rozstrzygnij('jasny', false),
+      rozstrzygnij('jasny', true),
+      rozstrzygnij('ciemny', false),
+      rozstrzygnij('ciemny', true),
+    ]
+  );
+
+  sprawdzListe(
+    'wybor systemowy idzie za systemem',
+    ['jasny', 'ciemny'],
+    [rozstrzygnij('system', false), rozstrzygnij('system', true)]
+  );
+
+  /*
+    Nieznana wartosc (recznie zepsuty localStorage, starsza wersja aplikacji)
+    ma dawac motyw systemowy, a nie pusty atrybut albo wyjatek.
+  */
+  sprawdzListe(
+    'nieznany wybor zachowuje sie jak systemowy',
+    ['jasny', 'ciemny'],
+    [rozstrzygnij('cokolwiek', false), rozstrzygnij(undefined, true)]
+  );
+}
+
 async function testujPlakietkiZadan() {
   sekcja('PLAKIETKI POL ZADAN');
 
@@ -2474,6 +2538,7 @@ async function main() {
     await testujSilnikXp();
     await testujPostac();
     await testujProjekty();
+    await testujMotyw(reguly);
     await testujPlakietkiZadan();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();

@@ -268,13 +268,32 @@ OD i DO — zawsze widać, jaki zakres jest naprawdę użyty, i można go ręczn
 literału koloru. Dzięki temu motyw ciemny to jeden blok nadpisujący zmienne, a nie
 polowanie po kilkunastu miejscach.
 
-Motyw idzie **wyłącznie za ustawieniem systemu** (`prefers-color-scheme`) — nie ma
-przełącznika w interfejsie.
+W nagłówku każdej strony jest **przełącznik** o trzech stanach:
 
-> **Dlaczego bez przełącznika.** Wymagałby zapamiętania wyboru, czyli pierwszego
-> w tym projekcie stanu trzymanego po stronie przeglądarki (`localStorage`). Ta sama
-> zasada przesądziła wcześniej o tym, że widok domyślny zadań nie zapamiętuje
-> „Pokaż wszystkie". System zna porę dnia i preferencje użytkownika lepiej niż ta aplikacja.
+| Stan | Ikona | Zachowanie |
+| --- | --- | --- |
+| systemowy (domyślny) | 🖥️ | idzie za `prefers-color-scheme`, reaguje na zmianę w trakcie |
+| jasny | ☀️ | wymuszony, niezależnie od systemu |
+| ciemny | 🌙 | wymuszony, niezależnie od systemu |
+
+Trzy stany, nie dwa: sam przełącznik jasny/ciemny odebrałby możliwość podążania
+za systemem. Wybór inny niż systemowy jest wyróżniony ramką — inaczej nie byłoby
+widać, że motyw jest wymuszony ręcznie.
+
+> **To jedyny stan trzymany po stronie przeglądarki** w całym projekcie (`localStorage`).
+> Reszta aplikacji świadomie go unika — widok domyślny zadań nie zapamiętuje nawet
+> „Pokaż wszystkie". Wyjątek jest tu uzasadniony: bez zapisu wybór gasłby przy każdym
+> przejściu między stronami. Brak dostępu do `localStorage` (tryb prywatny, zablokowane
+> dane witryn) nie jest błędem — oznacza po prostu powrót do ustawienia systemu.
+
+**Ciemna paleta istnieje w JEDNEJ kopii**, w regule `:root[data-motyw='ciemny']`.
+To skrypt zamienia wybór na konkretny motyw i ustawia atrybut; gdyby paleta stała
+dodatkowo w `@media (prefers-color-scheme: dark)`, byłyby dwie kopie tych samych
+kolorów — a rozjazd między kopiami to błąd, który w tym projekcie zdarzył się
+już kilka razy.
+
+`public/js/motyw.js` ładuje się **synchronicznie w `<head>`**, przed pierwszym
+malowaniem — inaczej przy wyborze ciemnym mignęłaby jasna strona.
 
 `color-scheme` przestawia się razem z paletą. Bez tego kontrolki rysowane przez
 przeglądarkę — `<select>`, `<input type="date">` z ikoną kalendarza — zostałyby jasne
