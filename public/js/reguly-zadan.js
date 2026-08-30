@@ -32,15 +32,48 @@ const regulyZadan = (() => {
     nieco ponad 24 godziny.
   */
 
-  /** Ile pelnych dni zostalo do terminu wzgledem podanego "dzisiaj" (ujemne = po terminie). */
+  /**
+   * Ile pelnych dni dzieli termin od punktu odniesienia (ujemne = po terminie).
+   *
+   * PUNKT ODNIESIENIA ZALEZY OD TEGO, CZY ZADANIE JEST ZAMKNIETE:
+   *   czas_zakonczenia WYPELNIONY -> termin - czas_zakonczenia  (wartosc ZAMROZONA)
+   *   czas_zakonczenia PUSTY      -> termin - dzisiaj           (wartosc biezaca)
+   *   termin pusty                -> null
+   *
+   * Wczesniej kolumna zawsze liczyla 'termin - dzisiaj', wiec dla zadan zamknietych
+   * rosla w nieskonczonosc (-451 przy zadaniu sprzed roku) i nie niosla zadnej
+   * informacji - odleglosc od dzisiaj nic nie mowi o czyms, co juz sie skonczylo.
+   *
+   * DLACZEGO AKURAT termin - czas_zakonczenia
+   * Dokladnie te dwie daty porownuje mnoznikTerminowosci w lib/nagrody.js, decydujac
+   * o premii albo karze w XP. Po tej zmianie kolumna pokazuje TE SAMA wielkosc,
+   * na ktorej opiera sie punktacja - wczesniej pokazywala co innego.
+   *
+   * Obie postacie to ten sam zapas wzgledem terminu, wiec sortowanie po tej kolumnie
+   * pozostaje sensowne. Dodatkowo grupa() i tak spycha zadania zakonczone na dol,
+   * wiec wartosci zamrozone i biezace nie przeplataja sie na ekranie.
+   */
   function dniDoTerminu(z, dzisiaj) {
     const termin = numerDnia(z.termin);
     if (termin === null) return null;
+
+    // Zamkniete zadanie: liczymy wzgledem dnia zamkniecia, nie wzgledem dzisiaj.
+    const zakonczenie = numerDnia(z.czas_zakonczenia);
+    if (zakonczenie !== null) return termin - zakonczenie;
 
     const dzien = numerDnia(dzisiaj);
     if (dzien === null) return null;
 
     return termin - dzien;
+  }
+
+  /**
+   * Czy wartosc kolumny "Dni do terminu" jest ZAMROZONA (policzona w chwili
+   * zamkniecia zadania), a nie biezaca. Interfejs wyswietla ja wtedy przygaszona,
+   * zeby przy skanowaniu wzrokiem nie mylila sie z licznikiem, ktory jeszcze biegnie.
+   */
+  function dniDoTerminuZamrozone(z) {
+    return numerDnia(z.termin) !== null && numerDnia(z.czas_zakonczenia) !== null;
   }
 
   /*
@@ -370,12 +403,33 @@ const regulyZadan = (() => {
    * Dolnej granicy NIE MA i to jest celowe - zadania po terminie zostaja widoczne.
    * Zadania bez terminu tez przechodza (patrz pasujeTerminDo).
    */
+  /*
+    Doklada do wyniku filtrowania zadania WYMUSZONE - pokazywane mimo filtrow.
+
+    Sluzy nowo utworzonym i zduplikowanym zadaniom: widok domyslny odsiewa po stanie
+    i terminie, wiec kopia zadania zrobionego albo zadania z odleglym terminem znikala
+    natychmiast po powstaniu i nie bylo jak do niej dotrzec.
+
+    NIE zmienia filtrow - to wyjatek dolozony do wyniku, zeby nie mieszac
+    uzytkownikowi w ustawieniach, ktorych sam nie ruszal. Kolejnosc ustala
+    dopiero sortowanie, wiec wiersz ląduje w swoim NATURALNYM miejscu:
+    duplikat obok oryginalu, nowe zadanie tam, gdzie wynika z terminu.
+  */
+  function zWymuszonymi(przefiltrowane, wszystkie, wymuszoneId) {
+    if (!wymuszoneId || wymuszoneId.size === 0) return przefiltrowane;
+
+    const juzSa = new Set(przefiltrowane.map((z) => z.id));
+    const dolozone = wszystkie.filter((z) => wymuszoneId.has(z.id) && !juzSa.has(z.id));
+    return dolozone.length === 0 ? przefiltrowane : [...przefiltrowane, ...dolozone];
+  }
+
   function domyslnyTerminDo(dzisiaj) {
     return dataPlusDni(dzisiaj, DNI_DOMYSLNEGO_WIDOKU);
   }
 
   return {
     dniDoTerminu,
+    dniDoTerminuZamrozone,
     maDaneDoXp,
     filtrowane,
     ileAktywnych,
@@ -383,6 +437,7 @@ const regulyZadan = (() => {
     kolumnySortowania,
     domyslneStany,
     domyslnyTerminDo,
+    zWymuszonymi,
     DNI_DOMYSLNEGO_WIDOKU,
     // eksportowane do testow
     pasujeZbior,

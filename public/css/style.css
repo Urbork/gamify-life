@@ -172,6 +172,25 @@ button {
   flex: 1 1 320px;
 }
 
+/*
+  Zwijane pole filtra. Wyglada jak pozostale (.filtr daje ramke i odstepy),
+  wiec zwiniecie nie zmienia ukladu panelu - dochodzi tylko klikalny naglowek.
+*/
+.filtr-zwijany > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: var(--tekst-slaby);
+  text-transform: uppercase;
+}
+
+/* Pole z aktywnym wyborem ma wyrazniejszy naglowek - inaczej zwiniete pole
+   ukrywaloby fakt, ze cos odsiewa. */
+.filtr-zwijany > summary[data-aktywny='tak'] {
+  color: var(--alarm);
+  font-weight: bold;
+}
+
 .filtr legend,
 .filtr-tytul {
   font-size: 11px;
@@ -849,6 +868,73 @@ tr[data-stan='Blok'] td:first-child {
 /* Wiersz, ktorego zapis sie nie powiodl. */
 tr.blad-zapisu td {
   background: #ffecec;
+}
+
+/*
+  Wiersz, w ktorym trwa edycja. :focus-within zapala sie, gdy fokus jest
+  w DOWOLNEJ kontrolce wiersza - dziala wiec bez ani jednej linijki JS
+  i gasnie samo po wyjsciu fokusu.
+
+  Tlo jest jasniejsze niz pasek zebry i niz podswietlenie hover, zeby te trzy
+  stany dalo sie od siebie odroznic. Nie zmienia zadnych wymiarow, wiec uklad
+  tabeli zostaje nietkniety.
+*/
+tbody tr:focus-within td {
+  background: #eef4ff;
+}
+
+/*
+  Kolumna "Dni do terminu" dla zadania ZAMKNIETEGO: wartosc jest zamrozona
+  (termin minus dzien zakonczenia), a nie biegnacym licznikiem. Przygaszenie
+  odroznia te dwa znaczenia przy skanowaniu wzrokiem, bez zmiany szerokosci
+  ani wysokosci komorki.
+*/
+td.wyliczone-zamrozone {
+  color: var(--tekst-slaby);
+  font-style: italic;
+}
+
+/*
+  Wiersz pokazany MIMO aktywnych filtrow (nowo utworzone albo zduplikowane zadanie).
+  Lewa krawedz w kolorze uwagi - to nie blad, tylko informacja, ze ten wiersz
+  jest wyjatkiem i zniknie po odswiezeniu listy.
+
+  box-shadow zamiast border-left, zeby nie zmieniac szerokosci komorki
+  i nie przesuwac calej tabeli o kilka pikseli.
+*/
+tr.poza-filtrami td:first-child {
+  box-shadow: inset 3px 0 0 var(--uwaga);
+}
+
+/*
+  Potwierdzenie udanego zapisu NA WIERSZU.
+
+  Komunikat 'zapisano' pojawia sie w pasku na gorze strony, a wzrok jest w tym
+  momencie na edytowanej komorce - przy 12 kolumnach i przewinietej tabeli
+  praktycznie go nie widac. Stad krotki zielony blysk symetryczny do czerwonego
+  tla bledu (.blad-zapisu).
+
+  Animacja sama wygasza tlo, wiec JS tylko dodaje klase i zdejmuje ja po czasie.
+  Uzytkownicy z ustawieniem 'ogranicz ruch' dostaja samo tlo, bez animacji.
+*/
+@keyframes blysk-zapisu {
+  from {
+    background: #e3f7e3;
+  }
+  to {
+    background: transparent;
+  }
+}
+
+tr.zapisano td {
+  animation: blysk-zapisu 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  tr.zapisano td {
+    animation: none;
+    background: #e3f7e3;
+  }
 }
 
 /*

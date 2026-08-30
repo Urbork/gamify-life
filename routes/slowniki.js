@@ -15,6 +15,7 @@ const {
   OBSZARY,
 } = require('../config/slowniki');
 const { OCENY } = require('../config/mapowanie-ocen');
+const plakietkiZadan = require('../config/plakietki-zadan');
 
 const router = express.Router();
 
@@ -29,6 +30,12 @@ router.get('/', (req, res) => {
     // Opisy slowne ocen dziennika (plakietki w listach rozwijanych).
     // Lista nawykow NIE jest tu wystawiana - mieszka w bazie, patrz GET /api/nawyki.
     oceny: OCENY,
+    /*
+      Plakietki pol zadan (emoji do etykiet). Wartosci zapisywane w bazie sa nadal
+      surowe - to wylacznie warstwa prezentacji, patrz config/plakietki-zadan.js.
+      Trudnosc przychodzi tu z KOMPLETEM wartosci, bo jako jedyna nie ma slownika wyzej.
+    */
+    plakietkiZadan,
   });
 });
 

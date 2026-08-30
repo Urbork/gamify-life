@@ -62,11 +62,31 @@ const filtrDat = (() => {
     DZIS_JUTRO: { etykieta: 'Dziś + jutro', dni: 2 },
     TYDZIEN: { etykieta: '7 dni', dni: 7 },
     MIESIAC: { etykieta: '30 dni', dni: 30 },
+
+    /*
+      WARIANTY WSTECZNE: dzis-(dni-1) .. dzis.
+
+      Kierunek zalezy od tego, CZEGO dotyczy widok, a nie od samej liczby dni:
+      - zadania opisuja PRZYSZLOSC (termin, co mam zrobic), wiec licza w przod;
+      - dziennik opisuje PRZESZLOSC - wpisu z jutra po prostu nie ma, wiec preset
+        liczacy w przod pokazywal najwyzej dzisiejszy wpis i byl bezuzyteczny.
+
+      Etykiety zostaja te same ('7 dni'), bo w dzienniku nie ma dwuznacznosci:
+      wszystkie jego presety patrza wstecz.
+    */
+    OSTATNIE_7_DNI: { etykieta: '7 dni', dni: 7, wstecz: true },
+    OSTATNIE_30_DNI: { etykieta: '30 dni', dni: 30, wstecz: true },
   };
 
-  /** Zakres dla presetu, liczony od podanej daty. Zwraca { od, do } - puste dla "Wszystkie". */
-  function zakresPresetu(dzisiaj, dni) {
+  /**
+   * Zakres dla presetu, liczony od podanej daty. Zwraca { od, do } - puste dla "Wszystkie".
+   *
+   * `wstecz` odwraca kierunek: zamiast dzis .. dzis+(dni-1) daje dzis-(dni-1) .. dzis.
+   * Obie postacie obejmuja DZISIAJ i licza `dni` pelnych dni kalendarzowych.
+   */
+  function zakresPresetu(dzisiaj, dni, wstecz = false) {
     if (dni === null || !dzisiaj) return { od: '', do: '' };
+    if (wstecz) return { od: dataPlusDni(dzisiaj, -(dni - 1)), do: dzisiaj };
     return { od: dzisiaj, do: dataPlusDni(dzisiaj, dni - 1) };
   }
 
@@ -87,8 +107,12 @@ const filtrDat = (() => {
         // Liczba dni w atrybucie, zeby odswiezPrzyciski() mogl odtworzyc zakres
         // bez trzymania osobnego stanu.
         btn.dataset.dni = preset.dni === null ? '' : preset.dni;
+        // Kierunek tez trafia do atrybutu - odswiezPrzyciski odtwarza z niego zakres.
+        btn.dataset.wstecz = preset.wstecz ? 'tak' : 'nie';
 
-        btn.addEventListener('click', () => przyWyborze(zakresPresetu(dajDzisiaj(), preset.dni)));
+        btn.addEventListener('click', () =>
+          przyWyborze(zakresPresetu(dajDzisiaj(), preset.dni, Boolean(preset.wstecz)))
+        );
 
         return btn;
       })
@@ -102,7 +126,7 @@ const filtrDat = (() => {
   function odswiezPrzyciski(pojemnik, { od, do: doDnia, dzisiaj }) {
     for (const btn of pojemnik.querySelectorAll('button')) {
       const dni = btn.dataset.dni === '' ? null : Number(btn.dataset.dni);
-      const oczekiwany = zakresPresetu(dzisiaj, dni);
+      const oczekiwany = zakresPresetu(dzisiaj, dni, btn.dataset.wstecz === 'tak');
 
       const pasuje =
         dni === null

@@ -173,12 +173,69 @@ const KOLUMNY_WYMAGANE = ['Name'];
   ze eksport zmienil ksztalt.
 */
 const KOLUMNY_IGNOROWANE = [
+  // Liczniki pomocnicze Notion - liczymy je sami z zapisanych wartosci.
   '# of Habits',
   '# of Meals',
   '# of Reflections',
   '# of Skills Practiced',
   '# of Skills To Practice',
   '# of Supplementary Habits',
+
+  // Naglowki sekcji - w Notion to wizualne przekladki, zawsze puste.
+  '> Badges',
+  '> Calculations',
+  '> Connectors',
+  '> Information',
+  '> Loot Box',
+  '> Make Work Fun',
+  '> Morning Report',
+  '> Overall Progress',
+  '> Reflection Progress',
+
+  // Grywalizacja Notion. Mamy wlasny silnik (lib/nagrody.js), ktory liczy to sam.
+  'Badge: Exercise This Week?',
+  'Badge: Habit Details',
+  'Badge: Over 70% yesterday?',
+  'Badge: Reflection This Week?',
+  'Badge: Slept Well Yesterday?',
+  'Choose Your Reward',
+  'EXP Multiplier',
+  'Habit Multiplier',
+  'Item Purchased?',
+  'Of Times Purchased',
+  'Reflection Multiplier',
+  'Reward Matches?',
+  'Reward Rarity',
+  'Reward Rarity Earned',
+  'Stress Level Modifier',
+  'Supplementary Multiplier',
+
+  // Postep i wskazniki liczone formula z innych kolumn.
+  'Completion %',
+  'Daily Habit Goal',
+  'Intentionality #',
+  'Remaining Energy',
+  'Sleep Quality Output',
+  'Slept Enough',
+  "Today's Energy",
+  "Today's Progress",
+  'Reflection Details',
+  '🎲 Dice Roll',
+
+  // Duplikaty i warianty pol, ktore bierzemy z kolumn zrodlowych.
+  'Wake Up Time',
+  '🙌 Automatic Wake Up Time',
+  '🎶 Skills Practice',
+
+  // Metadane i organizacja bez odpowiednika w naszym modelu.
+  'Details',
+  'Family Connection',
+  'Medical Assignment',
+  'Share With Family?',
+  'Show?',
+  'Tag',
+  'Type',
+  'Week',
 ];
 
 /**
