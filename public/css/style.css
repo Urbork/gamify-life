@@ -761,9 +761,18 @@ td.komorka-nawykow:empty::before {
 }
 
 /* Linki nawigacyjne miedzy stronami. */
+/*
+  Menu sekcji. Czyta sie jak pasek zakladek, ale zostaje zwyklym <nav> z linkami -
+  bez JS i bez zmiany ukladu naglowka.
+
+  Odstep jest maly (2px), bo separacje daje teraz tlo pozycji pod kursorem
+  i wyroznienie biezacej strony. Przy odstepie 10px i braku tla wszystkie linki
+  zlewaly sie w jeden ciag niebieskiego tekstu.
+*/
 .nawigacja {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .nawigacja a {
@@ -771,10 +780,32 @@ td.komorka-nawykow:empty::before {
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 3px;
+  /* Przezroczysta ramka trzyma stala szerokosc pozycji - bez niej wyroznienie
+     biezacej strony przesuwaloby sasiadow o kilka pikseli. */
+  border: 1px solid transparent;
 }
 
 .nawigacja a:hover {
-  text-decoration: underline;
+  background: var(--tlo-naglowka);
+}
+
+/*
+  BIEZACA STRONA. Wczesniej menu w ogole jej nie zaznaczalo - jedyna wskazowka
+  byl naglowek <h1> obok, wiec przy szybkim zerknieciu nie bylo wiadomo,
+  gdzie sie jest.
+
+  Selektor idzie po aria-current, a nie po dodatkowej klasie: ten sam atrybut
+  niesie te informacje czytnikom ekranu, wiec nie da sie wyroznic pozycji
+  wizualnie, zapominajac o dostepnosci.
+*/
+.nawigacja a[aria-current='page'] {
+  background: var(--tlo-naglowka);
+  border-color: var(--ramka);
+  color: #111;
+  font-weight: bold;
+  cursor: default;
 }
 
 td.kol-liczba {
