@@ -118,9 +118,17 @@
     do: '',
   };
 
-  // Dziennik nie potrzebuje presetu "Dziś + jutro" - wpisy dotycza dni, ktore juz byly.
   const P = filtrDat.PRESETY;
-  const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.TYDZIEN, P.MIESIAC];
+  /*
+    Presety dziennika licza WSTECZ (dzis-6 .. dzis), inaczej niz w zadaniach.
+
+    Dziennik opisuje PRZESZLOSC - wpisu z jutra po prostu nie ma. Warianty liczace
+    w przod pokazywaly wiec najwyzej dzisiejszy wpis i byly bezuzyteczne.
+    Z tego samego powodu nie ma tu presetu "Dziś + jutro".
+
+    "Dziś" i "Wszystkie" sa kierunkowo neutralne, wiec zostaja wspolne z zadaniami.
+  */
+  const PRESETY_DAT = [P.WSZYSTKIE, P.DZIS, P.OSTATNIE_7_DNI, P.OSTATNIE_30_DNI];
 
   /*
     Predykaty filtrow siedza w public/js/reguly-dziennika.js - to czyste funkcje

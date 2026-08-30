@@ -12,7 +12,7 @@
   - Kolumny "Dni do terminu" i "Czas trwania" NIE sa zapisywane.
 
   Cala logika siedzi w IIFE, zeby nie zasmiecac globalnego zakresu -
-  przyszly modul dziennika bedzie mogl uzyc tych samych nazw funkcji.
+  modul dziennika uzywa tych samych nazw funkcji, nie kolidujac z tym plikiem.
 */
 
 (() => {
@@ -26,11 +26,32 @@
     priorytety: [],
     priorytetDomyslny: 2,
     obszary: [],
+    /*
+      Plakietki (emoji) z config/plakietki-zadan.js przez /api/slowniki.
+      Pusty zestaw awaryjny znaczy tylko tyle, ze etykiety beda bez emoji -
+      lista rozwijana ma dzialac nawet wtedy, gdy slowniki sie nie pobiora.
+    */
+    plakietkiZadan: { TRUDNOSCI: [], PRIORYTETY: {}, STANY: {}, OBSZARY: {} },
   };
 
   // Lokalna kopia stanu bazy. Zrodlo prawdy dla sortowania, kolumn wyliczanych,
   // eksportu i cofania nieudanych zmian.
   const zadania = new Map();
+
+  /*
+    Zadania WYMUSZONE w widoku: pokazywane mimo aktywnych filtrow.
+
+    Bez tego nowo utworzone albo zduplikowane zadanie bywalo nieosiagalne -
+    widok domyslny odsiewa po stanie i terminie, wiec kopia zadania zrobionego
+    albo zadania z odleglym terminem znikala natychmiast po powstaniu. Zostawal
+    komunikat 'ukrywaja je filtry' i nic wiecej.
+
+    Zbior NIE zmienia filtrow - to wyjatek dolozony do wyniku filtrowania,
+    zeby nie namieszac uzytkownikowi w ustawieniach, ktorych sam nie ruszal.
+    Zyje do najblizszego PELNEGO odswiezenia danych (przeladujZadania) albo
+    przeladowania strony.
+  */
+  const wymuszoneId = new Set();
 
   // Aktualne sortowanie. Domyslnie: najblizsze terminy u gory.
   const sortowanie = { kolumna: 'termin', kierunek: 'rosnaco' };
@@ -57,6 +78,8 @@
   const elFiltrTerminDo = document.getElementById('filtr-termin-do');
   const elTrybObszary = document.getElementById('tryb-obszary');
   const elTrybProjekty = document.getElementById('tryb-projekty');
+  const elPodsumowanieObszary = document.getElementById('podsumowanie-obszary');
+  const elPodsumowanieProjekty = document.getElementById('podsumowanie-projekty');
   const elOgraniczenie = document.getElementById('ograniczenie-widoku');
   const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
   const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
@@ -77,17 +100,23 @@
   // ==========================================================================
 
   /*
-    Daty trzymamy jako znaczniki ISO 8601: 'YYYY-MM-DDTHH:MM' (dokladnie w tej postaci
-    przyjmuje i zwraca je <input type="datetime-local">).
+    Daty maja DWIE postacie i obie sa prawidlowe:
+      'YYYY-MM-DD'        - zadanie CALODZIENNE   -> <input type="date">
+      'YYYY-MM-DDTHH:MM'  - konkretna godzina     -> <input type="datetime-local">
+
+    Typ pola dobiera sie DO WARTOSCI (patrz komorkaZnacznikCzasu), a przelacznik
+    z ikona zegara dodaje albo obcina czesc godzinowa. Nowe zadania sa calodzienne.
 
     WAZNE ROZROZNIENIE:
     - kolumny WYLICZANE ("Dni do terminu", "Czas trwania") licza w PELNYCH DNIACH
       KALENDARZOWYCH i godzine CALKOWICIE IGNORUJA - stad numerDnia() bierze same
-      pierwsze 10 znakow. To swiadoma decyzja: godzina jest na razie dodatkowa
-      informacja do zapisu i wyswietlenia, a logika wyliczen zostaje prosta;
+      pierwsze 10 znakow. Dla tych obliczen obie postacie sa NIEROZROZNIALNE
+      i wlasnie dlatego dodanie dat calodziennych nie wymagalo zmian w regulach;
     - SORTOWANIE uwzglednia godzine, bo przy dwoch zadaniach na ten sam dzien
-      naturalne jest, zeby wczesniejsza godzina byla wyzej. To nie koliduje
-      z powyzszym - dotyczy porzadkowania wierszy, a nie wartosci w kolumnach.
+      naturalne jest, zeby wczesniejsza godzina byla wyzej. Porownanie jest tekstowe
+      i dziala dla obu postaci: pierwsze 10 znakow to zawsze data o stalej szerokosci,
+      a przy tym samym dniu postac calodzienna jest prefiksem dluzszej, wiec wypada
+      PRZED zadaniem o konkretnej godzinie.
   */
 
   /*
@@ -330,47 +359,78 @@
     td.className = 'kol-data';
     td.dataset.pole = pole;
 
-    const wartosc = z[pole] ?? '';
-    const zGodzina = maGodzine(wartosc);
-
     const input = document.createElement('input');
-    input.type = zGodzina ? 'datetime-local' : 'date';
-    input.value = wartosc;
     input.addEventListener('change', () => zapisz(td.closest('tr'), pole, input.value));
 
     const przelacznik = document.createElement('button');
     przelacznik.type = 'button';
     przelacznik.className = 'przelacznik-godziny';
     przelacznik.textContent = '🕑';
-    przelacznik.title = zGodzina ? 'Usuń godzinę (całodzienne)' : 'Dodaj godzinę';
-    /*
-      Puste pole nie ma czego przelaczac - bez daty godzina nie ma sensu,
-      a doklejenie 'T00:00' do pustki daloby wartosc niepoprawna.
-    */
-    przelacznik.disabled = input.value === '';
+
+    td.append(input, przelacznik);
+    odswiezKomorkeDaty(td, z[pole] ?? '');
 
     przelacznik.addEventListener('click', () => {
       const teraz = input.value;
       if (teraz === '') return;
+
       // Dodanie godziny ustawia polnoc, usuniecie obcina do samej daty.
       const nowa = maGodzine(teraz) ? teraz.slice(0, 10) : `${teraz}T00:00`;
       zapisz(td.closest('tr'), pole, nowa);
     });
 
-    td.append(input, przelacznik);
     return td;
   }
 
   /*
-    Trudnosc: 1-3, opcjonalna. Etykiety slowne, bo sama cyfra nic nie mowi.
-    Wartosci sa krotka, zamknieta lista, wiec wystarcza staly zestaw w kodzie -
-    inaczej niz stany czy klienci, ktore mieszkaja w slownikach.
+    JEDYNE miejsce, w ktorym ustala sie stan komorki daty: typ pola, wartosc
+    oraz stan przelacznika godziny.
+
+    DLACZEGO OSOBNA FUNKCJA, A NIE KILKA LINII W komorkaZnacznikCzasu
+    Komorka ma STAN POCHODNY od wartosci (typ pola i `disabled` przelacznika).
+    Dopoki liczyl sie on tylko przy TWORZENIU komorki, aktualizacja w miejscu
+    - ta, ktora robi zaktualizujWiersz, zeby wiersz nie skakal pod kursorem -
+    podmieniala wartosc, ale zostawiala stary `disabled`. Skutek: po wpisaniu daty
+    w PUSTE pole zegar zostawal wyszarzony i nie dalo sie dodac godziny, dopoki
+    cokolwiek nie wymusilo pelnego przerysowania (np. zmiana dowolnego filtra).
+
+    Teraz obie sciezki - tworzenie i aktualizacja - przechodza tedy, wiec kazdy
+    kolejny stan pochodny tej komorki wystarczy dopisac w JEDNYM miejscu.
   */
-  const TRUDNOSCI = [
-    { wartosc: 1, etykieta: '1 Łatwe' },
-    { wartosc: 2, etykieta: '2 Średnie' },
-    { wartosc: 3, etykieta: '3 Trudne' },
-  ];
+  function odswiezKomorkeDaty(td, wartosc) {
+    const input = td.querySelector('input');
+    const przelacznik = td.querySelector('.przelacznik-godziny');
+    const zGodzina = maGodzine(wartosc);
+
+    /*
+      KOMORKA DATY NIE MA STRAZNIKA FOKUSU, ktory chroni pozostale pola przed
+      nadpisaniem tekstu pisanego w danej chwili.
+
+      Powod: pole daty nie ma stanu "w polowie wpisanego", ktory dalo by sie
+      zgubic - przegladarka zglasza `change` dopiero przy KOMPLETNEJ dacie,
+      a wartosc, ktora tu podstawiamy, jest tym, co wlasnie potwierdzil serwer.
+
+      Typowy przeplyw to wpisanie daty w puste pole i siegniecie po zegar BEZ
+      opuszczania komorki. Ze strazikiem komorka zostawala wtedy w starej postaci,
+      mimo ze baza miala juz nowa - i zegar wygladal na zepsuty.
+    */
+    // Typ ustawiamy ZAWSZE - <input type="date"> po cichu odrzuca wartosc z godzina.
+    const typ = zGodzina ? 'datetime-local' : 'date';
+    if (input.type !== typ) input.type = typ;
+    if (input.value !== wartosc) input.value = wartosc;
+
+    /*
+      Puste pole nie ma czego przelaczac - bez daty godzina nie ma sensu,
+      a doklejenie 'T00:00' do pustki daloby wartosc niepoprawna.
+    */
+    przelacznik.disabled = wartosc === '';
+    przelacznik.title = przelacznik.disabled
+      ? 'Najpierw wpisz datę'
+      : zGodzina
+        ? 'Usuń godzinę (całodzienne)'
+        : 'Dodaj godzinę';
+  }
+
 
   /** Komorka z recznie wpisywanym czasem trwania w godzinach (liczy sie do XP). */
   function komorkaGodzin(z) {
@@ -427,35 +487,67 @@
 
   // Slowniki stanow i klientow przychodza jako zwykle listy tekstow, a select
   // oczekuje par {wartosc, etykieta} - tu je ujednolicamy.
-  const jakoOpcje = (teksty) => teksty.map((t) => ({ wartosc: t, etykieta: t }));
+  /*
+    ETYKIETY Z EMOJI.
+
+    Emoji wchodzi w ETYKIETE ISTNIEJACEJ opcji - nie dokladamy ani jednego elementu.
+    Wszystkie cztery pola sa juz listami rozwijanymi z pelnym kompletem opcji
+    (60 opcji na wiersz), wiec czas renderowania nie ma z czego wzrosnac.
+
+    Wartosc opcji zostaje SUROWA (liczba albo tekst) - to ona idzie do bazy.
+    Ten sam wzorzec co plakietki ocen w dzienniku.
+  */
+  const zPlakietka = (emoji, tekst) => (emoji ? emoji + ' ' + tekst : tekst);
+
+  /** Opcje z listy tekstow (stan, obszar) + emoji ze slownika plakietek. */
+  const jakoOpcje = (teksty, plakietki) =>
+    teksty.map((t) => ({ wartosc: t, etykieta: zPlakietka(plakietki && plakietki[t], t) }));
+
+  /** Opcje priorytetu: numer zostaje wartoscia, etykieta dostaje emoji. */
+  const opcjePriorytetow = () =>
+    slowniki.priorytety.map((p) => ({
+      wartosc: p.numer,
+      etykieta: zPlakietka(slowniki.plakietkiZadan.PRIORYTETY[p.numer], p.etykieta),
+    }));
+
+  /*
+    Opcje trudnosci przychodza z serwera w calosci (wartosc + emoji + opis),
+    bo trudnosc jako jedyna nie ma slownika w config/slowniki.js.
+    Lista NIE istnieje juz w tym pliku - jedynym zrodlem jest config/plakietki-zadan.js.
+  */
+  const opcjeTrudnosci = () =>
+    slowniki.plakietkiZadan.TRUDNOSCI.map((t) => ({
+      wartosc: t.wartosc,
+      etykieta: zPlakietka(t.emoji, t.opis),
+    }));
 
   function zbudujWiersz(z) {
     const tr = document.createElement('tr');
     tr.dataset.id = z.id;
     tr.dataset.stan = z.stan; // wykorzystywane przez CSS (wyszarzenie "Zrobione" itd.)
 
+    // Wiersz pokazany MIMO filtrow - patrz wymuszoneId.
+    if (wymuszoneId.has(z.id) && !pasujeWidokowi(z)) {
+      tr.classList.add('poza-filtrami');
+      tr.title = 'To zadanie nie pasuje do aktywnych filtrów — zniknie po odświeżeniu listy.';
+    }
+
     // KOLEJNOSC KOLUMN musi sie zgadzac z naglowkami w public/index.html
     // oraz z KOLUMNY_CSV nizej.
     tr.append(
       komorkaId(z),
-      komorkaSelect(z, 'stan', 'kol-stan', jakoOpcje(slowniki.stany), false),
+      komorkaSelect(z, 'stan', 'kol-stan', jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY), false),
       komorkaTekst(z, 'nazwa', 'kol-nazwa'),
-      komorkaSelect(
-        z,
-        'priorytet',
-        'kol-priorytet',
-        slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
-        false
-      ),
+      komorkaSelect(z, 'priorytet', 'kol-priorytet', opcjePriorytetow(), false),
       komorkaSelect(
         z,
         'trudnosc',
         'kol-trudnosc',
-        TRUDNOSCI,
+        opcjeTrudnosci(),
         true // trudnosc jest opcjonalna - wolno ja zostawic pusta
       ),
       komorkaGodzin(z),
-      komorkaSelect(z, 'obszar', 'kol-obszar', jakoOpcje(slowniki.obszary), true),
+      komorkaSelect(z, 'obszar', 'kol-obszar', jakoOpcje(slowniki.obszary, slowniki.plakietkiZadan.OBSZARY), true),
       komorkaSelect(z, 'projekt_id', 'kol-projekt', opcjeProjektow(), true),
       komorkaZnacznikCzasu(z, 'start_zadania'),
       komorkaZnacznikCzasu(z, 'termin'),
@@ -504,7 +596,9 @@
     na calym zbiorze, zeby filtry nie okrajaly eksportowanego pliku.
   */
   function doWyswietlenia() {
-    return posortowane(filtrowane());
+    const wszystkie = [...zadania.values()];
+    // Regula wyjatku siedzi w reguly-zadan.js, zeby dala sie przetestowac bez DOM.
+    return posortowane(regulyZadan.zWymuszonymi(filtrowane(wszystkie), wszystkie, wymuszoneId));
   }
 
   function renderuj() {
@@ -527,28 +621,67 @@
     "wszystkie", wiec musi zdjac rowniez pozostale filtry, inaczej klikniecie
     pokazaloby mniej, niz zapowiada liczba w nawiasie.
   */
+  /*
+    Baner o ograniczonym widoku.
+
+    DWA OGRANICZENIA SA ROZDZIELONE i przycisk zdejmuje TYLKO JEDNO - granice
+    terminu. Ukrycie zadan zrobionych ZOSTAJE, dopoki uzytkownik sam nie zmieni
+    filtra stanu: ukonczone zasmiecaja ekran przy szybkim zerknieciu, a wlaczenie
+    ich z powrotem jednym klikiem, ktory miał tylko poszerzyc zakres dat,
+    bylo zaskoczeniem.
+
+    Baner pokazuje sie WYLACZNIE wtedy, gdy dziala granica terminu - bo tylko
+    ona jest zdejmowana przyciskiem. Po klknieciu znika, a informacje o dalej
+    ukrytych zrobionych niesie panel filtrow (znacznik 'aktywne: N' i zaznaczone
+    stany). Zanim zniknie, mowi wprost, ze zrobione zostana ukryte.
+  */
   function odswiezOgraniczenie() {
     const wszystkie = [...zadania.values()];
-    const widoczne = filtrowane(wszystkie).length;
-    const ukryte = wszystkie.length - widoczne;
+
+    if (!filtry.terminDo) {
+      elOgraniczenie.hidden = true;
+      return;
+    }
 
     /*
-      Baner opisuje OBA warunki widoku domyslnego, ale wymienia tylko te, ktore
-      sa naprawde wlaczone - po recznej zmianie filtrow ma nadal mowic prawde.
+      Dwa NIEZALEZNE liczniki - kazdy mowi, ile wierszy chowa dane ograniczenie
+      z osobna. Nie sumujemy ich, bo zadanie moze wpadac w oba naraz.
     */
-    const powody = [];
-    if (filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony)) {
-      powody.push('aktywnych');
-    }
-    if (filtry.terminDo) powody.push(`z terminem do ${filtry.terminDo}`);
+    const bezGranicyTerminu = { ...filtry, terminDo: '' };
+    const ukryteTerminem = wszystkie.filter(
+      (z) => regulyZadan.filtrowane([z], bezGranicyTerminu).length === 1 && !pasujeWidokowi(z)
+    ).length;
 
-    elOgraniczenie.hidden = ukryte === 0 || powody.length === 0;
+    const chowaZrobione = filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony);
+    const ukryteZrobione = chowaZrobione
+      ? wszystkie.filter((z) => z.stan === slowniki.stanZakonczony).length
+      : 0;
+
+    elOgraniczenie.hidden = ukryteTerminem === 0 && ukryteZrobione === 0;
     if (elOgraniczenie.hidden) return;
 
-    elOgraniczenieTekst.textContent =
-      `Widok ograniczony do zadań ${powody.join(' i ')} — ukryto ${ukryte}. ` +
-      'Zadania po terminie i bez terminu pozostają widoczne. ';
-    elPokazWszystkie.textContent = `Pokaż wszystkie (${wszystkie.length})`;
+    const czesci = [`Widok ograniczony do terminu ${filtry.terminDo} — ukryto ${ukryteTerminem}.`];
+    if (ukryteZrobione > 0) {
+      czesci.push(`Zrobionych ukrytych: ${ukryteZrobione} (zostaną ukryte także po kliknięciu).`);
+    }
+    czesci.push('Zadania po terminie i bez terminu pozostają widoczne.');
+
+    elOgraniczenieTekst.textContent = czesci.join(' ') + ' ';
+    elPokazWszystkie.textContent = `Pokaż wszystkie terminy (${ukryteTerminem})`;
+  }
+
+  /** Czy zadanie przechodzi przez KOMPLET aktywnych filtrow. */
+  function pasujeWidokowi(z) {
+    return regulyZadan.filtrowane([z], filtry).length === 1;
+  }
+
+  /*
+    Przycisk banera: zdejmuje WYLACZNIE granice terminu.
+    Filtr stanu (i kazdy inny) zostaje nietkniety - patrz komentarz wyzej.
+  */
+  function pokazWszystkieTerminy() {
+    elFiltrTerminDo.value = '';
+    zastosujFiltry();
   }
 
   /**
@@ -576,6 +709,21 @@
       'po-terminie',
       doTerminu !== null && doTerminu < 0 && z.stan !== slowniki.stanZakonczony
     );
+
+    /*
+      Wartosc ZAMROZONA (zadanie ma date zakonczenia) jest przygaszona, zeby przy
+      skanowaniu wzrokiem nie mylila sie z licznikiem, ktory jeszcze biegnie.
+      Czerwieni celowo NIE zapalamy dla zadan zrobionych - czerwony znaczy
+      "zareaguj", a zamkniete zadanie nie wymaga juz reakcji.
+    */
+    const zamrozone = regulyZadan.dniDoTerminuZamrozone(z);
+    tdTermin.classList.toggle('wyliczone-zamrozone', zamrozone);
+    if (zamrozone) {
+      const opis = doTerminu >= 0 ? `${doTerminu} dni przed terminem` : `${-doTerminu} dni po terminie`;
+      tdTermin.title = `Zamrożone w chwili ukończenia: ${opis}`;
+    } else {
+      tdTermin.removeAttribute('title');
+    }
 
     odswiezWskazowkeXp(tr, z);
   }
@@ -613,25 +761,22 @@
     for (const td of tr.querySelectorAll('[data-pole]')) {
       const kontrolka = td.querySelector('select, input');
       const element = kontrolka || td;
-      // Pola, w ktorym ktos wlasnie pisze, nie ruszamy - nie chcemy zabrac mu tekstu
-      // spod kursora, gdy w tle przyjdzie odpowiedz na wczesniejszy zapis.
-      if (element === document.activeElement) continue;
-
       const wartosc = z[td.dataset.pole] ?? '';
 
       /*
-        Komorka daty moze wymagac INNEGO TYPU pola niz ma teraz - po przelaczeniu
-        zegarem 'YYYY-MM-DD' zamienia sie w 'YYYY-MM-DDTHH:MM' albo odwrotnie.
-        Samo podstawienie wartosci by nie zadzialalo: <input type="date"> odrzuca
-        wartosc z godzina i wyzerowalby sie po cichu. Dlatego w takim wypadku
-        budujemy komorke od nowa.
+        Komorka daty ma STAN POCHODNY (typ pola, `disabled` przelacznika) i idzie
+        wlasna sciezka PRZED strazikiem fokusu nizej. Sama pilnuje, zeby nie ruszyc
+        pola pod kursorem, ale przelacznik odswieza zawsze - inaczej po wpisaniu daty
+        w puste pole zegar zostawalby wyszarzony az do pelnego przerysowania.
       */
       if (td.classList.contains('kol-data')) {
-        if (kontrolka && kontrolka.type !== (maGodzine(wartosc) ? 'datetime-local' : 'date')) {
-          td.replaceWith(komorkaZnacznikCzasu(z, td.dataset.pole));
-          continue;
-        }
+        odswiezKomorkeDaty(td, wartosc);
+        continue;
       }
+
+      // Pola, w ktorym ktos wlasnie pisze, nie ruszamy - nie chcemy zabrac mu tekstu
+      // spod kursora, gdy w tle przyjdzie odpowiedz na wczesniejszy zapis.
+      if (element === document.activeElement) continue;
 
       if (kontrolka) kontrolka.value = wartosc;
       else td.textContent = wartosc;
@@ -649,13 +794,9 @@
     const wartosc = z[pole] ?? '';
     const kontrolka = td.querySelector('select, input');
 
-    // Jak w zaktualizujWiersz: przy dacie moze sie zmienic TYP pola, a nie tylko wartosc.
-    if (
-      td.classList.contains('kol-data') &&
-      kontrolka &&
-      kontrolka.type !== (maGodzine(wartosc) ? 'datetime-local' : 'date')
-    ) {
-      td.replaceWith(komorkaZnacznikCzasu(z, pole));
+    // Jak w zaktualizujWiersz: komorka daty ma stan pochodny, nie tylko wartosc.
+    if (td.classList.contains('kol-data')) {
+      odswiezKomorkeDaty(td, wartosc);
       return;
     }
 
@@ -694,6 +835,15 @@
       }
 
       pokazStatus('zapisano', 'ok');
+      /*
+        Potwierdzenie NA WIERSZU. Komunikat wyzej ladbuje w pasku na gorze strony,
+        a wzrok jest w tym momencie na edytowanej komorce - przy 12 kolumnach
+        i przewinietej tabeli praktycznie go nie widac.
+
+        Wiersz szukamy PONOWNIE po id, bo renderuj() mogl przed chwila przebudowac
+        cala tabele i `tr` wskazywaloby wtedy na element wyrzucony z drzewa.
+      */
+      blysnijZapisem(id);
     } catch (e) {
       // Serwer odrzucil zmiane - pokazujemy jego komunikat i cofamy komorke,
       // zeby tabela zgadzala sie z baza.
@@ -712,19 +862,23 @@
     zadania, a filtry moga odsiac takze kopie. Bez komunikatu klikniecie
     wygladaloby wtedy jak brak reakcji.
   */
-  function pokazNowyWiersz(nowe, komunikatGdyUkryte) {
+  function pokazNowyWiersz(nowe) {
     zadania.set(nowe.id, nowe);
+
+    /*
+      Wymuszamy widocznosc ZANIM przerysujemy. Wczesniej wiersz niepasujacy
+      do filtrow po prostu nie powstawal, a uzytkownik dostawal komunikat
+      o zadaniu, do ktorego nie mial jak dotrzec.
+    */
+    wymuszoneId.add(nowe.id);
     renderuj();
 
     const tr = elWiersze.querySelector(`tr[data-id="${nowe.id}"]`);
-    if (!tr) {
-      pokazStatus(komunikatGdyUkryte, 'blad');
-      return false;
-    }
+    if (!tr) return false; // nie powinno sie zdarzyc - wymuszenie omija filtry
 
     tr.scrollIntoView({ block: 'nearest' });
     zaznaczTresc(tr.querySelector('[data-pole="nazwa"]'));
-    return true;
+    return !tr.classList.contains('poza-filtrami');
   }
 
   async function dodajZadanie() {
@@ -732,7 +886,8 @@
       // Wartosci domyslne (nazwa, stan, priorytet, dzisiejszy termin)
       // nadaje serwer - patrz routes/zadania.js.
       const nowe = await api.post('/api/zadania');
-      pokazNowyWiersz(nowe, 'Dodano zadanie, ale ukrywają je filtry.');
+      const pasuje = pokazNowyWiersz(nowe);
+      pokazStatus(pasuje ? 'dodano zadanie' : 'dodano zadanie — nie pasuje do filtrów, ale jest widoczne', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -749,9 +904,8 @@
       const kopia = await api.post(`/api/zadania/${id}/duplikuj`);
       // Komunikat o sukcesie tylko wtedy, gdy kopie widac - inaczej nadpisalby
       // ostrzezenie o tym, ze ukrywaja ja filtry.
-      if (pokazNowyWiersz(kopia, 'Utworzono kopię, ale ukrywają ją filtry.')) {
-        pokazStatus('utworzono kopię', 'ok');
-      }
+      const pasuje = pokazNowyWiersz(kopia);
+      pokazStatus(pasuje ? 'utworzono kopię' : 'utworzono kopię — nie pasuje do filtrów, ale jest widoczna', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -799,9 +953,27 @@
   ];
 
   function eksportujCsv() {
-    // Celowo bierzemy WSZYSTKIE zadania z lokalnej kopii, a nie wiersze z DOM-u:
-    // gdy w przyszlosci dojda filtry, eksport ma dalej obejmowac calosc,
-    // zachowujac przy tym aktualna kolejnosc sortowania.
+    /*
+      GWARANCJA: EKSPORT, KOPIA ZAPASOWA I XP ZAWSZE OBEJMUJA PELNY ZBIOR,
+      NIEZALEZNIE OD TEGO, CO WIDAC NA EKRANIE.
+
+      To nie jest zabezpieczenie na przyszlosc - filtry istnieja i sa aktywne
+      od pierwszego otwarcia strony (widok domyslny to aktywne zadania z terminem
+      do dzisiaj + 7 dni). Bez tej regulyeksport dawalby dzis ~5 wierszy zamiast
+      kilkuset, a uzytkownik nie mialby jak tego zauwazyc.
+
+      Realizuja ja trzy niezalezne sciezki:
+      - tutaj: posortowane() BEZ filtrowane(), na calej lokalnej kopii, nie na DOM-ie,
+      - kopia zapasowa: scripts/backup.js czyta prosto z bazy (SELECT * FROM zadania),
+      - XP: routes/postac.js liczy po stronie serwera.
+
+      Wspolnym warunkiem jest to, ze GET /api/zadania nie ogranicza niczego -
+      dodanie tam LIMIT albo domyslnego filtra 'dla wydajnosci' ucieloby
+      jednoczesnie eksport, kopie zapasowa i XP. Pilnuja tego asercje w test/smoke.js
+      (sekcja DOMYSLNE OGRANICZENIE WIDOKU).
+
+      Kolejnosc sortowania zostaje ta z ekranu - to jedyne, co eksport z widoku bierze.
+    */
     const wszystkie = posortowane();
 
     if (wszystkie.length === 0) {
@@ -937,6 +1109,29 @@
   }
 
   /** Przepisuje stan kontrolek do obiektu `filtry` i przerysowuje tabele. */
+  /*
+    Podsumowanie zwinietego pola filtra: 'Obszar — wszystkie' / '3 wybrane' / '2 wykluczone'.
+
+    Bez tego zwiniete pole ukrywaloby fakt, ze cos odsiewa - a to dokladnie ten
+    rodzaj cichego znikania wierszy, ktoremu ma zapobiegac baner nad tabela.
+    Naglowek pola z aktywnym wyborem jest dodatkowo wyrozniony (data-aktywny).
+  */
+  function opiszPole(nazwa, zbior, tryb) {
+    if (!zbior || zbior.size === 0) return `${nazwa} — wszystkie`;
+    const forma = tryb === 'wyklucz' ? 'wykluczone' : 'wybrane';
+    return `${nazwa} — ${zbior.size} ${forma}`;
+  }
+
+  function odswiezPodsumowaniaZwijanych() {
+    for (const [el, nazwa, zbior, tryb] of [
+      [elPodsumowanieObszary, 'Obszar', filtry.obszary, filtry.obszaryTryb],
+      [elPodsumowanieProjekty, 'Projekt', filtry.projekty, filtry.projektyTryb],
+    ]) {
+      el.textContent = opiszPole(nazwa, zbior, tryb);
+      el.dataset.aktywny = zbior && zbior.size > 0 ? 'tak' : 'nie';
+    }
+  }
+
   /** Wybrany tryb ('uwzglednij' / 'wyklucz') z pary przyciskow radio. */
   function odczytajTryb(pojemnik) {
     const wybrany = pojemnik.querySelector('input[type="radio"]:checked');
@@ -955,6 +1150,8 @@
 
     const ile = ileAktywnychFiltrow();
     elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+
+    odswiezPodsumowaniaZwijanych();
 
     odswiezPresety();
     renderuj();
@@ -1029,12 +1226,7 @@
         Zbior zostaje pusty, gdy zadan jest malo: przy kilkunastu wierszach
         ograniczenie nic nie daje, a filtr na starcie tylko myli.
       */
-      if (lista.length > PROG_OGRANICZENIA_WIDOKU) {
-        for (const stan of regulyZadan.domyslneStany(slowniki)) filtry.stany.add(stan);
-        // Druga polowa domyslnego widoku: termin nie dalej niz dzisiaj + 7 dni.
-        // Pole jest widoczne w panelu, wiec od razu wiadomo, co odsiewa.
-        elFiltrTerminDo.value = regulyZadan.domyslnyTerminDo(dzisiajSerwera);
-      }
+      if (lista.length > PROG_OGRANICZENIA_WIDOKU) ustawWidokDomyslny();
 
       zbudujPanelFiltrow();
 
@@ -1055,12 +1247,14 @@
   /**
    * Pobiera liste zadan od nowa i przerysowuje tabele.
    * Uzywane po operacjach, ktore zmieniaja dane hurtowo poza tym modulem -
-   * dzis to import z CSV, w przyszlosci moze byc synchronizacja czy cofniecie zmian.
+   * dzis to import z CSV (takze profil quest-log, ktory tworzy projekty i zadania naraz).
    */
   async function przeladujZadania() {
     try {
       const lista = await api.get('/api/zadania');
       zadania.clear();
+      // Pelne odswiezenie konczy zycie wyjatkow od filtrow - patrz wymuszoneId.
+      wymuszoneId.clear();
       for (const z of lista) zadania.set(z.id, z);
       renderuj();
     } catch (e) {
@@ -1091,10 +1285,97 @@
     }
   }
 
+  /*
+    Zielony blysk na wierszu po udanym zapisie. Klasa jest zdejmowana po czasie
+    trwania animacji, zeby kolejny zapis w tym samym wierszu zapalil ja od nowa -
+    bez tego druga zmiana z rzedu nie dalaby zadnego sygnalu.
+  */
+  const CZAS_BLYSKU_MS = 1200;
+
+  function blysnijZapisem(id) {
+    const tr = elWiersze.querySelector(`tr[data-id="${id}"]`);
+    if (!tr) return; // wiersz wypadl z widoku przez filtry - nie ma czego podswietlac
+    tr.classList.remove('zapisano');
+    // Wymuszenie przeliczenia stylu, inaczej przegladarka nie zauwazy ponownego dodania klasy.
+    void tr.offsetWidth;
+    tr.classList.add('zapisano');
+    setTimeout(() => tr.classList.remove('zapisano'), CZAS_BLYSKU_MS);
+  }
+
+  /*
+    SKROTY KLAWISZOWE.
+
+    Pojedyncze litery, bez modyfikatora - ale TYLKO wtedy, gdy fokus nie jest
+    w polu do pisania. Bez tej blokady litera 'n' wpisana w nazwe zadania
+    albo w wyszukiwarke tworzylaby nowe zadania zamiast sie wpisac.
+
+    Sprawdzamy takze isContentEditable - komorka nazwy jest wlasnie takim polem,
+    a nie <input>.
+  */
+  function piszeGdzieIndziej() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    return ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    // Modyfikatory zostawiamy przegladarce i systemowi (Ctrl+N, Cmd+W itd.).
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (piszeGdzieIndziej()) return;
+
+    const klawisz = e.key.toLowerCase();
+
+    // n - nowe zadanie. Najczestsza akcja wykonywana wielokrotnie pod rzad.
+    if (klawisz === 'n') {
+      e.preventDefault();
+      dodajZadanie();
+      return;
+    }
+
+    /*
+      w - przelacz widok ograniczony / pelny.
+      Widok domyslny pokazuje kilka zadan z kilkuset, wiec przelaczanie jest czeste,
+      a dzis wymaga przewiniecia do paska i klikniecia.
+    */
+    if (klawisz === 'w') {
+      e.preventDefault();
+      /*
+        Przelaczamy sie po STANIE FILTRA, nie po widocznosci banera - baner
+        chowa sie takze wtedy, gdy granica terminu niczego nie odsiewa.
+      */
+      if (filtry.terminDo) pokazWszystkieTerminy();
+      else przywrocWidokDomyslny();
+    }
+  });
+
+  /*
+    Widok domyslny: aktywne zadania z terminem nie dalej niz dzisiaj + 7 dni.
+
+    JEDNO ZRODLO dla startu strony i dla skrotu 'w'. Gdyby kazde z nich ustawialo
+    filtry samodzielnie, wystarczylaby zmiana w jednym miejscu, zeby skrot
+    przywracal co innego niz otwarcie strony.
+
+    Ta funkcja ustawia WYLACZNIE stan filtrow - odswiezeniem interfejsu zajmuje sie
+    wolajacy, bo start() buduje caly panel od zera, a skrot tylko go aktualizuje.
+  */
+  function ustawWidokDomyslny() {
+    filtry.stany.clear();
+    for (const stan of regulyZadan.domyslneStany(slowniki)) filtry.stany.add(stan);
+    elFiltrTerminDo.value = regulyZadan.domyslnyTerminDo(dzisiajSerwera || dzisiajISO());
+  }
+
+  /** Powrot do widoku domyslnego z poziomu skrotu: stan + odswiezenie panelu. */
+  function przywrocWidokDomyslny() {
+    ustawWidokDomyslny();
+    zbudujCheckboxy(elFiltrStany, jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY), filtry.stany);
+    zastosujFiltry();
+  }
+
   elDodaj.addEventListener('click', dodajZadanie);
   elEksport.addEventListener('click', eksportujCsv);
   elWyczysc.addEventListener('click', wyczyscFiltry);
-  elPokazWszystkie.addEventListener('click', wyczyscFiltry);
+  elPokazWszystkie.addEventListener('click', pokazWszystkieTerminy);
 
   // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
   elFiltrNazwa.addEventListener('input', zastosujFiltry);
@@ -1108,7 +1389,7 @@
   /*
     Inne moduly (public/js/csv-import.js) nie maja dostepu do wnetrza tego domkniecia,
     wiec o hurtowej zmianie danych informuja zdarzeniem na dokumencie.
-    Luzne powiazanie: przyszly dziennik moze wyslac to samo zdarzenie.
+    Luzne powiazanie: dziennik nasluchuje analogicznego zdarzenia u siebie.
   */
   document.addEventListener('dane-zadania-zmienione', przeladujZadania);
   document.addEventListener('dane-projekty-zmienione', przeladujProjekty);

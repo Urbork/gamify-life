@@ -1,6 +1,6 @@
 /*
   Generowanie i pobieranie plikow CSV - modul niezalezny od zadan,
-  do wykorzystania takze przez przyszly dziennik i statystyki.
+  uzywany takze przez dziennik (eksport wpisow).
 
   Wszystko dzieje sie w przegladarce: plik powstaje jako Blob i jest pobierany
   przez sztuczne klikniecie w link. Serwer o eksporcie w ogole nie wie

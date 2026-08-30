@@ -619,11 +619,33 @@ Eksport CSV, tak jak w zadaniach, obejmuje **pełny zbiór** — filtry go nie o
 
 Arytmetyka dat i mechanika presetów żyją w [public/js/filtr-dat.js](public/js/filtr-dat.js),
 używanym przez oba moduły. Moduł daje `numerDnia`, `dataPlusDni`, `dzisiajLokalnie`,
-nazwane presety (`WSZYSTKIE`, `DZIS`, `DZIS_JUTRO`, `TYDZIEN`, `MIESIAC`) oraz budowanie
-i podświetlanie przycisków.
+nazwane presety oraz budowanie i podświetlanie przycisków.
 
-Presety są wystawione **pojedynczo**, a nie jako gotowa lista, bo zestawy się różnią:
-zadania mają „Dziś + jutro", dziennik nie. Każdy widok składa własną listę z tych samych klocków.
+Presety są wystawione **pojedynczo**, a nie jako gotowa lista, bo zestawy się różnią.
+Każdy widok składa własną listę z tych samych klocków.
+
+#### Kierunek presetów
+
+**Zadania liczą w przód, dziennik wstecz** — i to jest różnica merytoryczna, nie kosmetyczna:
+
+| Widok | Preset „7 dni" | Dlaczego |
+| --- | --- | --- |
+| Zadania | `dziś .. dziś+6` | opisują **przyszłość** — termin, co jest do zrobienia |
+| Dziennik | `dziś-6 .. dziś` | opisuje **przeszłość** — wpisu z jutra po prostu nie ma |
+
+Kierunek niesie sam preset (`wstecz: true`), a nie widok, który go używa — dzięki temu
+`zbudujPrzyciski` i `odswiezPrzyciski` działają bez dodatkowego parametru, a podświetlanie
+odtwarza zakres w tym samym kierunku, w którym go zbudowano.
+
+> **To była usterka, nie decyzja.** Dziennik używał wcześniej presetów zadaniowych,
+> więc „7 dni" pytało o zakres `dziś .. dziś+6` — a że wpisów z przyszłości nie ma,
+> filtr pokazywał najwyżej dzisiejszy wpis. Na prawdziwych danych „30 dni" dawało
+> **0 wpisów** zamiast 7.
+
+Zestawy: zadania `WSZYSTKIE, DZIS, DZIS_JUTRO, TYDZIEN, MIESIAC`; dziennik
+`WSZYSTKIE, DZIS, OSTATNIE_7_DNI, OSTATNIE_30_DNI`. „Dziś" i „Wszystkie" są kierunkowo
+neutralne, więc są wspólne. Dziennik nie ma „Dziś + jutro" z tego samego powodu,
+dla którego liczy wstecz.
 
 Czego w module **nie ma**: reguł dopasowania wiersza do zakresu. Są różne w każdym module
 (zadania sprawdzają termin *oraz* okres aktywności, dziennik jedno pole `data`),

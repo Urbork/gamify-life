@@ -94,6 +94,11 @@ function dzien(n) {
   return dzienOGodzinie(n, '00:00');
 }
 
+/** To samo, ale jako SAMA data 'YYYY-MM-DD' - w tej postaci dzialaja pola zakresu. */
+function dzienISO(n) {
+  return dzien(n).slice(0, 10);
+}
+
 /** To samo, ale z podana godzina - do przypadkow granicznych wokol polnocy. */
 function dzienOGodzinie(n, godzina) {
   const data = new Date((numerDnia(DZIS) + n) * MS_W_DNIU).toISOString().slice(0, 10);
@@ -346,6 +351,58 @@ async function testujZadania(reguly, slowniki) {
     'E zrobione dzis',
     'G trwanie przez polnoc',
   ]);
+
+  /*
+    KIERUNEK PRESETOW.
+
+    Zadania opisuja przyszlosc (termin), wiec licza W PRZOD. Dziennik opisuje
+    przeszlosc - wpisu z jutra po prostu nie ma - wiec ma warianty liczace WSTECZ.
+    Wczesniej dziennik uzywal presetow zadaniowych i pokazywal najwyzej dzisiejszy
+    wpis, czyli filtr byl bezuzyteczny.
+
+    Obie postacie obejmuja DZISIAJ i licza tyle samo pelnych dni kalendarzowych.
+  */
+  const zakres = (preset) => reguly.filtrDat.zakresPresetu(DZIS, preset.dni, Boolean(preset.wstecz));
+
+  sprawdzListe(
+    'preset zadaniowy "7 dni" liczy W PRZOD: dzis .. dzis+6',
+    [DZIS, dzienISO(6)],
+    [zakres(P.TYDZIEN).od, zakres(P.TYDZIEN).do]
+  );
+  sprawdzListe(
+    'preset dziennika "7 dni" liczy WSTECZ: dzis-6 .. dzis',
+    [dzienISO(-6), DZIS],
+    [zakres(P.OSTATNIE_7_DNI).od, zakres(P.OSTATNIE_7_DNI).do]
+  );
+  sprawdzListe(
+    'preset dziennika "30 dni" liczy WSTECZ: dzis-29 .. dzis',
+    [dzienISO(-29), DZIS],
+    [zakres(P.OSTATNIE_30_DNI).od, zakres(P.OSTATNIE_30_DNI).do]
+  );
+
+  // "Dziś" jest kierunkowo neutralny - jeden dzien to ten sam zakres w obie strony.
+  sprawdzListe(
+    'preset "Dziś" daje ten sam zakres niezaleznie od kierunku',
+    [DZIS, DZIS],
+    [
+      reguly.filtrDat.zakresPresetu(DZIS, 1, false).od,
+      reguly.filtrDat.zakresPresetu(DZIS, 1, true).od,
+    ]
+  );
+
+  /*
+    Kontrola regresji: zadania NIE MOGA zaczac liczyc wstecz. Gdyby ktos przestawil
+    kierunek globalnie zamiast dodac warianty, ta asercja peknie.
+  */
+  sprawdz(
+    'presety zadaniowe nadal nie maja kierunku wstecznego',
+    [P.DZIS, P.DZIS_JUTRO, P.TYDZIEN, P.MIESIAC].every((x) => !x.wstecz)
+  );
+  sprawdz(
+    '"Wszystkie" czysci oba pola niezaleznie od kierunku',
+    reguly.filtrDat.zakresPresetu(DZIS, null, true).od === '' &&
+      reguly.filtrDat.zakresPresetu(DZIS, null, true).do === ''
+  );
   sprawdz(
     'preset "Wszystkie" nie filtruje (takze zadanie bez dat)',
     przezPreset(P.WSZYSTKIE).length === ZADANIA.length
@@ -785,6 +842,55 @@ async function testujSilnikXp() {
     nagrody.POLA_REFLEKSYJNE,
     reguly.regulyStatystyk.POLA_REFLEKSYJNE
   );
+  /*
+    numerDnia rowniez istnieje w DWOCH kopiach: lib/nagrody.js (serwer, XP)
+    i public/js/filtr-dat.js (przegladarka, kolumny wyliczane i filtry).
+
+    To funkcja, na ktorej stoi KAZDE porownanie dat w projekcie - zasada pelnych
+    dni kalendarzowych, 'Dni do terminu', zakresy, pasujeTerminDo, mnoznik
+    terminowosci. Rozjazd miedzy kopiami bylby calkowicie cichy: serwer liczylby
+    XP inaczej, niz przegladarka pokazuje dni do terminu, i nic by tego nie zlapalo.
+
+    Karmimy obie TYM SAMYM zestawem i porownujemy wyniki parami. Zestaw obejmuje
+    takze wartosci puste i niepoprawne, bo wlasnie tam obie implementacje roznia
+    sie kodem (wypelnione() kontra proste !znacznik) i najlatwiej o rozjazd.
+
+    Wejscia NIE-TEKSTOWE sa poza zakresem: obie funkcje sa opisane jako
+    przyjmujace znacznik tekstowy, a filtr-dat wola .slice() bez konwersji.
+  */
+  const WEJSCIA_DAT = [
+    '2026-08-16',
+    '2026-08-16T00:00',
+    '2026-08-16T23:59',
+    '2024-02-29',
+    '2024-03-02T13:25',
+    '1999-12-31',
+    '',
+    '   ',
+    'kiedys w przyszlosci',
+    '2026-08',
+    null,
+    undefined,
+  ];
+  sprawdzListe(
+    'numerDnia daje te same wyniki po stronie serwera i przegladarki',
+    WEJSCIA_DAT.map((w) => nagrody.numerDnia(w)),
+    WEJSCIA_DAT.map((w) => reguly.filtrDat.numerDnia(w))
+  );
+
+  /*
+    Trzecia kopia zyje w tym pliku (funkcja numerDnia u gory) i sluzy do budowania
+    dat testowych. Jest CELOWO wezsza - nie ma zadnego zabezpieczenia przed pusta
+    wartoscia, bo fixture'y zawsze podaja poprawna date. Porownujemy ja wiec tylko
+    na poprawnych datach; gdyby rozjechala sie arytmetyka dni, zestaw testowy
+    liczylby sie wzgledem innego 'dzisiaj' niz aplikacja.
+  */
+  const POPRAWNE_DATY = WEJSCIA_DAT.filter((w) => typeof w === 'string' && w.includes('-') && w.length >= 10);
+  sprawdzListe(
+    'numerDnia z tego pliku zgadza sie z produkcyjnym na poprawnych datach',
+    POPRAWNE_DATY.map((w) => nagrody.numerDnia(w)),
+    POPRAWNE_DATY.map((w) => numerDnia(w))
+  );
 }
 
 async function testujPostac() {
@@ -1103,6 +1209,122 @@ async function testujProjekty() {
   straznikiem formatu jest normalizacja w API i to, ze wszystkie obliczenia
   porownuja pelne dni kalendarzowe.
 */
+/*
+  PLAKIETKI POL ZADAN (config/plakietki-zadan.js).
+
+  Plakietki sa DRUGA lista obok slownika, wiec grozi im rozjazd - dokladnie ten,
+  ktory w audycie dal martwe wpisy 'Sub-Type' i 'Research' na liscie kolumn
+  ignorowanych. Roznica jest taka, ze tam rozjazd byl cichy, a tu pekna asercje.
+
+  Sprawdzamy OBA kierunki: wartosc slownika bez plakietki i plakietka bez wartosci.
+*/
+async function testujPlakietkiZadan() {
+  sekcja('PLAKIETKI POL ZADAN');
+
+  const plakietki = require('../config/plakietki-zadan');
+  const slowniki = require('../config/slowniki');
+
+  // --- kierunek 1: kazda wartosc slownika ma plakietke ---
+  sprawdzListe(
+    'kazdy stan ze slownika ma plakietke',
+    [],
+    slowniki.STANY.filter((s) => !plakietki.STANY[s])
+  );
+  sprawdzListe(
+    'kazdy obszar ze slownika ma plakietke',
+    [],
+    slowniki.OBSZARY.filter((o) => !plakietki.OBSZARY[o])
+  );
+  sprawdzListe(
+    'kazdy priorytet ze slownika ma plakietke',
+    [],
+    slowniki.PRIORYTETY.filter((p) => !plakietki.PRIORYTETY[p.numer]).map((p) => p.numer)
+  );
+
+  // --- kierunek 2: zadna plakietka nie wisi w prozni ---
+  sprawdzListe(
+    'zadna plakietka stanu nie wskazuje na nieistniejacy stan',
+    [],
+    Object.keys(plakietki.STANY).filter((s) => !slowniki.STANY.includes(s))
+  );
+  sprawdzListe(
+    'zadna plakietka obszaru nie wskazuje na nieistniejacy obszar',
+    [],
+    Object.keys(plakietki.OBSZARY).filter((o) => !slowniki.OBSZARY.includes(o))
+  );
+  sprawdzListe(
+    'zadna plakietka priorytetu nie wskazuje na nieistniejacy numer',
+    [],
+    Object.keys(plakietki.PRIORYTETY).filter(
+      (n) => !slowniki.PRIORYTETY.some((p) => String(p.numer) === n)
+    )
+  );
+
+  /*
+    PRIORYTET 0 ma wlasna asercje, bo zero jest w JS wartoscia falszywa i juz raz
+    bylo w tym projekcie zrodlem bledu (znikalo z interfejsu przy uzyciu ||).
+  */
+  sprawdz(
+    'priorytet 0 ma plakietke (zero nie jest traktowane jak brak)',
+    plakietki.PRIORYTETY[0] === '⚪',
+    JSON.stringify(plakietki.PRIORYTETY[0])
+  );
+
+  // --- trudnosc: komplet 1-3, bez luk i bez duplikatow ---
+  sprawdzListe(
+    'trudnosc ma wartosci 1-3 w kolejnosci',
+    [1, 2, 3],
+    plakietki.TRUDNOSCI.map((t) => t.wartosc)
+  );
+  sprawdz(
+    'kazda trudnosc ma emoji i opis',
+    plakietki.TRUDNOSCI.every((t) => t.emoji && t.opis),
+    JSON.stringify(plakietki.TRUDNOSCI)
+  );
+
+  // --- higiena: brak duplikatow emoji w obrebie jednego pola ---
+  for (const [nazwa, wartosci] of [
+    ['stanow', Object.values(plakietki.STANY)],
+    ['obszarow', Object.values(plakietki.OBSZARY)],
+    ['priorytetow', Object.values(plakietki.PRIORYTETY)],
+    ['trudnosci', plakietki.TRUDNOSCI.map((t) => t.emoji)],
+  ]) {
+    sprawdz(
+      'plakietki ' + nazwa + ' sa rozne (emoji rozroznia wartosci)',
+      new Set(wartosci).size === wartosci.length,
+      JSON.stringify(wartosci)
+    );
+  }
+
+  // --- wystawienie przez API ---
+  const { tresc } = await zapytaj('GET', '/api/slowniki');
+  sprawdz(
+    '/api/slowniki wystawia plakietki wszystkich czterech pol',
+    ['TRUDNOSCI', 'PRIORYTETY', 'STANY', 'OBSZARY'].every((k) => tresc.plakietkiZadan[k]),
+    JSON.stringify(Object.keys(tresc.plakietkiZadan || {}))
+  );
+
+  /*
+    REGRESJA: w bazie ma ladowac SUROWA wartosc, nie etykieta z emoji.
+    To jedyna asercja, ktora chroni przed tym, ze ktos zacznie zapisywac etykiete.
+  */
+  const { tresc: nowe } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${nowe.id}`, {
+    stan: 'W trakcie',
+    obszar: 'Health',
+    priorytet: 4,
+    trudnosc: 2,
+  });
+  const { tresc: zapisane } = await zapytaj('GET', '/api/zadania');
+  const rekord = zapisane.find((z) => z.id === nowe.id);
+  sprawdzListe(
+    'w bazie zapisana jest surowa wartosc, bez emoji',
+    ['W trakcie', 'Health', 4, 2],
+    [rekord.stan, rekord.obszar, rekord.priorytet, rekord.trudnosc]
+  );
+  await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+}
+
 async function testujDatyCalodzienne(reguly) {
   sekcja('DATY CALODZIENNE I DOMYSLNY TERMIN');
 
@@ -1131,9 +1353,22 @@ async function testujDatyCalodzienne(reguly) {
     ze godzina nie wplywa na obliczenia. Gdyby ktos zaczal porownywac znaczniki
     jako pelne teksty, te asercje pekna.
   */
-  sprawdz(
-    'numerDnia: obie postacie to ten sam dzien',
-    filtrDat.numerDnia('2026-08-16') === filtrDat.numerDnia('2026-08-16T23:59')
+  /*
+    KOTWICA: 20681 to liczba dni od 1970-01-01 do 2026-08-16.
+
+    Bez niej asercja porownywalaby funkcje sama ze soba (numerDnia(a) === numerDnia(b))
+    i przeszlaby rowniez dla implementacji zwracajacej stala - np. zawsze null.
+    Trzecia wartosc (dzien pozniej) dokłada dowod, ze to naprawde licznik dni,
+    a nie dowolna funkcja dajaca dwa razy ten sam wynik.
+  */
+  sprawdzListe(
+    'numerDnia: obie postacie daja ten sam, konkretny numer dnia',
+    [20681, 20681, 20682],
+    [
+      filtrDat.numerDnia('2026-08-16'),
+      filtrDat.numerDnia('2026-08-16T23:59'),
+      filtrDat.numerDnia('2026-08-17'),
+    ]
   );
   sprawdz(
     'Dni do terminu: termin calodzienny liczy sie jak z godzina',
@@ -1143,10 +1378,20 @@ async function testujDatyCalodzienne(reguly) {
 
   // Mnoznik terminowosci (XP) - zakonczenie o 23:00 w dniu terminu to NADAL na czas.
   const { mnoznikTerminowosci } = require('../lib/nagrody');
-  sprawdz(
-    'mnoznik terminowosci: termin calodzienny, zakonczenie z godzina',
-    mnoznikTerminowosci('2026-08-16', '2026-08-16T23:00') ===
-      mnoznikTerminowosci('2026-08-16T00:00', '2026-08-16T23:00')
+  /*
+    KOTWICA jak wyzej: wczesniej obie strony porownania wolaly te sama funkcje,
+    wiec mnoznik zwracajacy zawsze 1 - czyli martwa mechanika premii i kary
+    za termin - przeszedlby ten test. Trzeci przypadek (po terminie -> 0.5) jest
+    tu po to, zeby stala 1 nie mogla sie przemknac.
+  */
+  sprawdzListe(
+    'mnoznik terminowosci: obie postacie terminu daja 1, przekroczenie daje 0.5',
+    [1, 1, 0.5],
+    [
+      mnoznikTerminowosci('2026-08-16', '2026-08-16T23:00'),
+      mnoznikTerminowosci('2026-08-16T00:00', '2026-08-16T23:00'),
+      mnoznikTerminowosci('2026-08-16', '2026-08-20'),
+    ]
   );
 
   // --- domyslny termin przez HTTP ---
@@ -1409,6 +1654,185 @@ async function testujDomyslneOgraniczenie(reguly) {
     'zadanie bez obszaru przechodzi przez wykluczenie innej wartosci',
     regulyZadan.pasujeZbior(null, new Set(['Career']), 'wyklucz') === true
   );
+  /*
+    LICZNIK AKTYWNYCH FILTROW (znacznik ' - aktywne: N' przy zwinietym panelu).
+
+    ileAktywnych trzeba recznie rozszerzac przy KAZDYM nowym polu filtra - i nic
+    poza tym testem tego nie pilnuje. Pominiecie jest ciche i uderza dokladnie
+    w mechanizm, ktory ma zapobiegac wrazeniu zgubionych danych: zwiniety panel
+    twierdzilby, ze filtrow nie ma, mimo ze tabela jest odsiana.
+
+    Ostatnia asercja wylicza pola obiektu filtrow na podstawie widoku domyslnego
+    i porownuje z liczba pol, ktore licznik zna. Gdy dojdzie nowe pole filtrujace,
+    a ileAktywnych o nim nie bedzie wiedzialo, ta asercja peknie.
+  */
+  const pustyFiltrPelny = () => ({
+    nazwa: '',
+    od: '',
+    do: '',
+    terminDo: '',
+    stany: new Set(),
+    priorytety: new Set(),
+    obszary: new Set(),
+    projekty: new Set(),
+  });
+
+  sprawdz('brak filtrow -> licznik 0', regulyZadan.ileAktywnych(pustyFiltrPelny()) === 0);
+
+  /*
+    ZAMROZONE "DNI DO TERMINU".
+
+    Dla zadania ZAMKNIETEGO kolumna liczy termin - czas_zakonczenia (wartosc stala),
+    a nie termin - dzisiaj. Wczesniej rosla w nieskonczonosc i nie niosla informacji.
+    Po zmianie pokazuje TE SAMA wielkosc, na ktorej opiera sie mnoznikTerminowosci.
+  */
+  const DZIS_Z = '2026-08-16';
+  sprawdzListe(
+    'zadanie otwarte liczy wzgledem DZISIAJ, zamkniete wzgledem ZAKONCZENIA',
+    [4, 2, -3, null],
+    [
+      regulyZadan.dniDoTerminu({ termin: '2026-08-20' }, DZIS_Z),
+      regulyZadan.dniDoTerminu({ termin: '2026-08-20', czas_zakonczenia: '2026-08-18' }, DZIS_Z),
+      regulyZadan.dniDoTerminu({ termin: '2026-08-20', czas_zakonczenia: '2026-08-23' }, DZIS_Z),
+      regulyZadan.dniDoTerminu({ termin: null, czas_zakonczenia: '2026-08-23' }, DZIS_Z),
+    ]
+  );
+
+  /*
+    Sedno zmiany: wartosc zamrozona NIE ZALEZY od tego, kiedy patrzymy.
+    Ta sama para dat, dwa rozne "dzisiaj" - wynik musi byc identyczny.
+  */
+  const zamkniete = { termin: '2026-08-20', czas_zakonczenia: '2026-08-18' };
+  sprawdz(
+    'wartosc zamrozona nie zmienia sie wraz z uplywem czasu',
+    regulyZadan.dniDoTerminu(zamkniete, '2026-08-16') ===
+      regulyZadan.dniDoTerminu(zamkniete, '2027-12-31'),
+    `${regulyZadan.dniDoTerminu(zamkniete, '2026-08-16')} vs ${regulyZadan.dniDoTerminu(zamkniete, '2027-12-31')}`
+  );
+
+  // Kontrola przeciwna: wartosc BIEZACA ma sie zmieniac z uplywem czasu.
+  const otwarte = { termin: '2026-08-20' };
+  sprawdz(
+    'wartosc biezaca ZALEZY od dzisiaj (inaczej test wyzej nic nie dowodzi)',
+    regulyZadan.dniDoTerminu(otwarte, '2026-08-16') !==
+      regulyZadan.dniDoTerminu(otwarte, '2026-08-19')
+  );
+
+  sprawdzListe(
+    'znacznik zamrozenia: tylko gdy sa OBIE daty',
+    [true, false, false, false],
+    [
+      regulyZadan.dniDoTerminuZamrozone({ termin: '2026-08-20', czas_zakonczenia: '2026-08-18' }),
+      regulyZadan.dniDoTerminuZamrozone({ termin: '2026-08-20' }),
+      regulyZadan.dniDoTerminuZamrozone({ czas_zakonczenia: '2026-08-18' }),
+      regulyZadan.dniDoTerminuZamrozone({}),
+    ]
+  );
+
+  /*
+    ROZDZIELENIE DWOCH OGRANICZEN WIDOKU.
+
+    Zdjecie granicy terminu NIE MOZE odslonic zadan zrobionych - to dwa niezalezne
+    warunki i przycisk banera zdejmuje tylko pierwszy.
+  */
+  const zestawDwa = [
+    { id: 30, stan: 'Plan', termin: DZIS_Z },
+    { id: 31, stan: 'Plan', termin: '2026-12-31' },
+    { id: 32, stan: 'Zrobione', termin: DZIS_Z },
+    { id: 33, stan: 'Zrobione', termin: '2026-12-31' },
+  ];
+  const filtryObaWarunki = {
+    ...pustyFiltrPelny(),
+    stany: new Set(regulyZadan.domyslneStany(slownikiTestowe)),
+    terminDo: regulyZadan.domyslnyTerminDo(DZIS_Z),
+  };
+  sprawdzListe(
+    'oba ograniczenia razem: tylko aktywne w oknie terminu',
+    [30],
+    regulyZadan.filtrowane(zestawDwa, filtryObaWarunki).map((z) => z.id)
+  );
+  sprawdzListe(
+    'po zdjeciu granicy terminu zrobione NADAL sa ukryte',
+    [30, 31],
+    regulyZadan.filtrowane(zestawDwa, { ...filtryObaWarunki, terminDo: '' }).map((z) => z.id)
+  );
+  /*
+    WYJATEK OD FILTROW dla nowo utworzonych i zduplikowanych zadan.
+
+    Bez niego kopia zadania zrobionego albo zadanie z odleglym terminem znikalo
+    natychmiast po powstaniu - zostawal komunikat i nic wiecej.
+  */
+  const wymuszone = new Set([31, 33]);
+  const przefiltrowane = regulyZadan.filtrowane(zestawDwa, filtryObaWarunki);
+  sprawdzListe(
+    'wymuszone zadania dochodza do wyniku mimo filtrow',
+    [30, 31, 33],
+    regulyZadan.zWymuszonymi(przefiltrowane, zestawDwa, wymuszone).map((z) => z.id)
+  );
+  sprawdz(
+    'pusty zbior wymuszonych nie zmienia wyniku',
+    regulyZadan.zWymuszonymi(przefiltrowane, zestawDwa, new Set()) === przefiltrowane
+  );
+  sprawdzListe(
+    'zadanie pasujace do filtrow NIE jest dublowane',
+    [30],
+    regulyZadan.zWymuszonymi(przefiltrowane, zestawDwa, new Set([30])).map((z) => z.id)
+  );
+  /*
+    Wyjatek NIE ZMIENIA filtrow - to samo wywolanie filtrowane() musi dawac
+    dalej ten sam wynik, inaczej wymuszenie zaczeloby po cichu poszerzac widok.
+  */
+  sprawdzListe(
+    'wymuszenie nie zmienia samego filtrowania',
+    [30],
+    regulyZadan.filtrowane(zestawDwa, filtryObaWarunki).map((z) => z.id)
+  );
+
+  sprawdzListe(
+    'dopiero zdjecie filtra stanu odslania zrobione',
+    [30, 31, 32, 33],
+    regulyZadan
+      .filtrowane(zestawDwa, { ...filtryObaWarunki, terminDo: '', stany: new Set() })
+      .map((z) => z.id)
+  );
+
+  sprawdzListe(
+    'kazde pole filtra z osobna podbija licznik o 1',
+    [1, 1, 1, 1, 1, 1, 1],
+    [
+      { ...pustyFiltrPelny(), nazwa: 'raport' },
+      { ...pustyFiltrPelny(), stany: new Set(['Plan']) },
+      { ...pustyFiltrPelny(), priorytety: new Set([2]) },
+      { ...pustyFiltrPelny(), obszary: new Set(['Career']) },
+      { ...pustyFiltrPelny(), projekty: new Set([1]) },
+      { ...pustyFiltrPelny(), terminDo: '2026-08-23' },
+      { ...pustyFiltrPelny(), od: '2026-08-01' },
+    ].map(regulyZadan.ileAktywnych)
+  );
+
+  // Zakres dat to JEDNO pole filtra, mimo dwoch pol formularza (od i do).
+  sprawdz(
+    'od i do licza sie razem jako jeden filtr',
+    regulyZadan.ileAktywnych({ ...pustyFiltrPelny(), od: '2026-08-01', do: '2026-08-31' }) === 1
+  );
+
+  sprawdz(
+    'widok domyslny to dokladnie 2 aktywne filtry (stan + termin)',
+    regulyZadan.ileAktywnych({
+      ...pustyFiltrPelny(),
+      stany: new Set(regulyZadan.domyslneStany(slownikiTestowe)),
+      terminDo: regulyZadan.domyslnyTerminDo(DZIS_T),
+    }) === 2
+  );
+
+  /*
+    Tryb wykluczania NIE jest osobnym filtrem - odsiew i tak wynika z niepustego
+    zbioru, wiec liczenie go drugi raz zawyzaloby znacznik.
+  */
+  sprawdz(
+    'sam tryb wykluczania, bez zaznaczen, nie jest aktywnym filtrem',
+    regulyZadan.ileAktywnych({ ...pustyFiltrPelny(), obszaryTryb: 'wyklucz' }) === 0
+  );
 
   /*
     PELNY ZBIOR MIMO OGRANICZONEGO WIDOKU.
@@ -1577,6 +2001,23 @@ async function testujParserDat() {
   sprawdz(
     'kolumna daty dziennika idzie przez TRANSFORMACJE, nie przez pola datowe',
     mapDziennika.TRANSFORMACJE.data === mapDziennika.parsujDateWpisu
+  );
+  /*
+    Higiena listy kolumn ignorowanych dziennika - 52 pozycje utrzymywane recznie.
+    Testu 'czy pokrywa caly plik' tu nie ma i byc nie moze: prawdziwy eksport lezy
+    w gitignorowanym _test/. Sprawdzamy to, co da sie sprawdzic bez pliku.
+  */
+  const ignDziennika = mapDziennika.KOLUMNY_IGNOROWANE;
+  sprawdz(
+    'lista kolumn ignorowanych dziennika bez powtorzen',
+    new Set(ignDziennika).size === ignDziennika.length,
+    JSON.stringify(ignDziennika.filter((n, i) => ignDziennika.indexOf(n) !== i))
+  );
+  const kolizjeDziennika = ignDziennika.filter((n) => n in mapDziennika.MAPOWANIE_KOLUMN);
+  sprawdz(
+    'kolumna ignorowana dziennika nie jest jednoczesnie mapowana',
+    kolizjeDziennika.length === 0,
+    JSON.stringify(kolizjeDziennika)
   );
 
   // --- wartosci bledne nadal odrzucane: tolerancja nie moze znaczyc "cokolwiek" ---
@@ -2033,6 +2474,7 @@ async function main() {
     await testujSilnikXp();
     await testujPostac();
     await testujProjekty();
+    await testujPlakietkiZadan();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();
     await testujDomyslneOgraniczenie(reguly);

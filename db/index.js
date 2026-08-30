@@ -6,7 +6,7 @@
  * kod w routach czyta sie jak zwykle funkcje, nie ma wyscigow.
  *
  * Modul eksportuje jedna, wspolna instancje polaczenia (Node cache'uje moduly),
- * wiec kazdy przyszly modul (dziennik, statystyki) robi po prostu:
+ * wiec kazdy modul (zadania, dziennik, projekty, statystyki, postac) robi po prostu:
  *   const db = require('../db');
  */
 
