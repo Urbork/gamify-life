@@ -60,7 +60,17 @@ function stanPostaci() {
 // --- trasy ----------------------------------------------------------------
 
 router.get('/postac', (req, res) => {
-  res.json(stanPostaci());
+  /*
+    Do wyliczonego stanu dokladamy STALE, na ktorych sie opiera - strona Postaci
+    pokazuje je obok rozbicia XP, zeby dalo sie odczytac, SKAD biora sie proporcje.
+    Bez tego widac tylko, ze dziennik daje 70% XP, ale nie dlaczego.
+
+    Sa tu tylko DO ODCZYTU. Zmiana ktorejkolwiek przelicza cala historie wstecz
+    (podniesienie XP_ZA_POLE_REFLEKSYJNE z 10 na 20 przesuwa poziom z 74 na 17,
+    bo przekracza prog prestizu), wiec nie jest to pokretlo do krecenia w locie.
+    Wartosci zmienia sie w lib/nagrody.js i restartuje serwer.
+  */
+  res.json({ ...stanPostaci(), zasady: nagrody.STALE });
 });
 
 router.get('/zakupy', (req, res) => {

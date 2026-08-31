@@ -1243,6 +1243,65 @@ async function testujProjekty() {
   Testujemy czysta funkcje rozstrzygajaca - reszta modulu to DOM i localStorage.
   To ona decyduje, czy wybor uzytkownika bierze gore nad ustawieniem systemu.
 */
+/*
+  ZASADY NALICZANIA XP wystawiane na stronie Postaci (tylko do odczytu).
+
+  Opisy zyja w public/js/postac.js, a wartosci w lib/nagrody.js - to DWIE listy
+  obok siebie, wiec grozi im rozjazd. Ten sam wzorzec co przy plakietkach:
+  sprawdzamy OBA kierunki, bo dopisanie stalej bez opisu jest rownie ciche
+  jak opis wskazujacy na stala, ktorej juz nie ma.
+*/
+async function testujZasadyXp() {
+  sekcja('ZASADY NALICZANIA XP');
+
+  const { tresc } = await zapytaj('GET', '/api/postac');
+  const nagrody = require('../lib/nagrody');
+
+  sprawdz(
+    '/api/postac wystawia zasady naliczania',
+    tresc.zasady && typeof tresc.zasady === 'object',
+    JSON.stringify(tresc.zasady)
+  );
+  sprawdzListe(
+    'wystawione zasady to dokladnie STALE z lib/nagrody.js',
+    Object.keys(nagrody.STALE).sort(),
+    Object.keys(tresc.zasady).sort()
+  );
+
+  // Opisy z interfejsu - wyciagamy je z pliku, bo postac.js dotyka DOM przy starcie.
+  const kod = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'postac.js'), 'utf8');
+  const blok = kod.slice(kod.indexOf('const OPISY_ZASAD = {'));
+  // Bez wyrazenia regularnego - wystarczy odczytac nazwy kluczy z linii.
+  const opisy = blok
+    .slice(0, blok.indexOf('};'))
+    .split(String.fromCharCode(10))
+    .map((l) => l.trim())
+    .filter((l) => l.includes(':') && !l.startsWith('const'))
+    .map((l) => l.slice(0, l.indexOf(':')).trim());
+
+  sprawdzListe(
+    'kazda stala ma opis w interfejsie',
+    [],
+    Object.keys(nagrody.STALE).filter((k) => !opisy.includes(k))
+  );
+  sprawdzListe(
+    'zaden opis nie wskazuje na nieistniejaca stala',
+    [],
+    opisy.filter((k) => !(k in nagrody.STALE))
+  );
+
+  /*
+    REGRESJA: zasady sa TYLKO DO ODCZYTU. Gdyby ktos dorobil zapis, ten test
+    przypomni, ze zmiana stalej przelicza cala historie wstecz.
+  */
+  const proba = await zapytaj('PATCH', '/api/postac', { zasady: { PROG_POZIOMU: 1 } });
+  sprawdz(
+    'nie ma endpointu do zmiany zasad (PATCH /api/postac)',
+    proba.status === 404 || proba.status === 405,
+    'status: ' + proba.status
+  );
+}
+
 async function testujMotyw(reguly) {
   sekcja('MOTYW JASNY / CIEMNY');
 
@@ -2539,6 +2598,7 @@ async function main() {
     await testujPostac();
     await testujProjekty();
     await testujMotyw(reguly);
+    await testujZasadyXp();
     await testujPlakietkiZadan();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();

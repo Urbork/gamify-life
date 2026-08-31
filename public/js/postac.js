@@ -78,6 +78,73 @@
     return k;
   }
 
+  /*
+    JAK LICZY SIE XP - sekcja wylacznie DO ODCZYTU.
+
+    Rozbicie wyzej pokazuje, ze dziennik daje ~70% XP, ale nie tlumaczy DLACZEGO.
+    Powod siedzi w stalych: jeden wpis to 5 XP plus 10 za kazde z szesciu pol
+    refleksyjnych, czyli do 65 XP dziennie - a typowe zadanie daje kilka.
+
+    DLACZEGO NIE DA SIE TEGO EDYTOWAC W INTERFEJSIE
+    XP nie jest nigdzie zapisywane, tylko liczone od zera przy kazdym wejsciu.
+    Zmiana stalej przelicza wiec CALA HISTORIE wstecz: podniesienie
+    XP_ZA_POLE_REFLEKSYJNE z 10 na 20 daje 58 tys. XP zamiast 37 tys., ale poziom
+    SPADA z 74 na 17, bo przekracza prog prestizu. Suwak robilby takie rzeczy
+    jednym przeciagnieciem. Wartosci zmienia sie swiadomie w lib/nagrody.js.
+
+    OPISY sa tutaj, a nie przy stalych na serwerze, bo to tekst interfejsu.
+    Zgodnosci obu list pilnuje asercja w test/smoke.js - inaczej dopisanie stalej
+    bez opisu (albo opisu bez stalej) przeszloby niezauwazone.
+  */
+  const OPISY_ZASAD = {
+    PROG_POZIOMU: 'Ile XP trzeba zebrać, żeby awansować o jeden poziom.',
+    POZIOMOW_DO_RESETU: 'Po tylu poziomach licznik wraca do 1, a prestiż rośnie o 1.',
+    XP_ZA_NAWYK: 'Za każdy odhaczony nawyk w dniu.',
+    XP_ZA_WPIS: 'Za sam fakt wypełnienia czegokolwiek w danym dniu.',
+    XP_ZA_POLE_REFLEKSYJNE: 'Za każde wypełnione pole refleksyjne (jest ich sześć).',
+    DNI_NA_PREMIE: 'Taki zapas dni przed terminem daje mnożnik premiowy do XP zadania.',
+  };
+
+  function zbudujZasady(p) {
+    if (!p.zasady) return null;
+
+    const sekcja = el('section');
+    sekcja.appendChild(el('h2', null, 'Jak liczy się XP'));
+
+    const tabela = el('table');
+    const thead = el('thead');
+    const trN = el('tr');
+    trN.append(el('th', null, 'Ustawienie'), el('th', 'liczbowa', 'Wartość'), el('th', null, 'Znaczenie'));
+    thead.appendChild(trN);
+
+    const tbody = el('tbody');
+    for (const [klucz, wartosc] of Object.entries(p.zasady)) {
+      const tr = el('tr');
+      tr.append(
+        el('td', null, klucz),
+        el('td', 'liczbowa', liczba(wartosc)),
+        // Brak opisu nie moze wywrocic strony - asercja i tak to zlapie w testach.
+        el('td', null, OPISY_ZASAD[klucz] || '')
+      );
+      tbody.appendChild(tr);
+    }
+
+    tabela.append(thead, tbody);
+    sekcja.appendChild(tabela);
+
+    sekcja.appendChild(
+      el(
+        'p',
+        'podstawa',
+        'Wartości są stałe i zmienia się je w pliku lib/nagrody.js. Nie ma ich tu do ' +
+          'edycji celowo: XP liczy się od zera przy każdym wejściu, więc zmiana ' +
+          'dowolnej z nich przelicza całą dotychczasową historię wstecz.'
+      )
+    );
+
+    return sekcja;
+  }
+
   function zbudujRozbicie(p) {
     const zrodla = [
       ['Zadania', p.rozbicie.zadania, 'ukończone zadania z wpisaną trudnością i czasem'],
@@ -114,7 +181,10 @@
     }
 
     tabela.append(thead, tbody);
-    elRozbicie.replaceChildren(tabela);
+
+    // Sekcja z zasadami idzie POD rozbiciem - najpierw wynik, potem wyjasnienie.
+    const zasady = zbudujZasady(p);
+    elRozbicie.replaceChildren(...(zasady ? [tabela, zasady] : [tabela]));
   }
 
   // ==========================================================================

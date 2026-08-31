@@ -959,9 +959,27 @@ kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + d
 9. Zakładka **Warunki**: odznacz **Uruchamiaj tylko wtedy, gdy komputer jest zasilany
    z sieci**, jeśli pracujesz na laptopie — inaczej zadanie nie odpali na baterii.
 
-> **Pole „Rozpocznij w" jest obowiązkowe.** Bez niego zadanie startuje w `C:\Windows\System32`,
-> a skrypt szuka bazy względem katalogu projektu i zakończy się błędem. To najczęstsza
-> przyczyna „zadanie się wykonało, ale kopii nie ma".
+> **Pole „Rozpocznij w" nie jest wymagane.** Skrypt liczy wszystkie ścieżki od `__dirname`,
+> a nie od katalogu roboczego — sprawdzone uruchomieniem z `C:\Windows\System32`, kopie
+> powstały poprawnie. Wypełnienie tego pola i tak nie zaszkodzi.
+
+#### Szybsza droga — jedna komenda
+
+Zamiast klikać w kreatorze, w PowerShell (wystarczą zwykłe uprawnienia):
+
+```powershell
+$akcja = New-ScheduledTaskAction -Execute "C:\Program Files\nodejs\node.exe" -Argument '"C:\Users\Jon\Documents\_gamify-life\scripts\backup.js"'
+$wyzwalacz = New-ScheduledTaskTrigger -Daily -At "21:00"
+$ustawienia = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "gamify-life backup" -Action $akcja -Trigger $wyzwalacz -Settings $ustawienia -Force
+```
+
+`-StartWhenAvailable` dogrywa kopię po włączeniu komputera, jeśli o 21:00 był wyłączony —
+bez tego dzień bez włączonego komputera to dzień bez kopii. Dwa pozostałe przełączniki
+pozwalają zadaniu działać na baterii.
+
+Sprawdzenie: `Start-ScheduledTask -TaskName "gamify-life backup"`, potem
+`(Get-ScheduledTaskInfo "gamify-life backup").LastTaskResult` — ma być `0`.
 
 Sprawdzenie po skonfigurowaniu: kliknij zadanie prawym → **Uruchom**, a potem zajrzyj
 do `backups/`. Kolumna **Wynik ostatniego uruchomienia** powinna pokazać `0x0`.
