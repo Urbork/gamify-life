@@ -922,23 +922,86 @@ w sandboksie (`vm`) — tak samo, jak przeglądarka ładuje kolejne `<script>`. 
 sprawdza **ten sam kod, który wykonuje aplikacja**, a nie jego kopię, która przechodziłaby
 też wtedy, gdy aplikacja jest zepsuta.
 
-## Kopia zapasowa CSV
+## Kopia zapasowa
 
 ```bash
 npm run backup
 ```
 
-Zapisuje `backups/zadania-RRRR-MM-DD.csv` i `backups/dziennik-RRRR-MM-DD.csv`, po czym
-kasuje kopie starsze niż **30 dni**. Katalog `backups/` jest w `.gitignore` — zawiera
-te same prywatne dane co baza.
+Zapisuje do `backups/` **sześć plików dziennie** i kasuje starsze niż **30 dni**.
+Katalog jest w `.gitignore` — zawiera te same prywatne dane co baza.
+
+| Plik | Zawartość | Rola |
+| --- | --- | --- |
+| `baza-RRRR-MM-DD.db` | **wszystkie tabele z relacjami** | **odtwarzanie** |
+| `zadania-RRRR-MM-DD.csv` | 526 zadań | odczyt, częściowe odtwarzanie |
+| `dziennik-RRRR-MM-DD.csv` | 823 wpisy | odczyt |
+| `projekty-RRRR-MM-DD.csv` | 32 projekty | odczyt |
+| `zakupy-RRRR-MM-DD.csv` | wydana waluta | odczyt |
+| `nawyki-RRRR-MM-DD.csv` | słownik nawyków | odczyt |
 
 Skrypt czyta bazę **bezpośrednio**, więc działa również przy wyłączonej aplikacji.
-CSV, a nie kopia pliku `.db`, bo arkusz otworzysz za pięć lat niezależnie od tego,
-czy projekt jeszcze działa. (Na kopię 1:1 zostaje `VACUUM INTO` opisane niżej.)
 
 Retencja liczy się z **daty w nazwie pliku**, nie z czasu modyfikacji — skopiowanie
 albo przeniesienie folderu odświeża znaczniki czasu i przy retencji po `mtime`
-kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + data) są pomijane.
+kasowałoby złe pliki. Pliki niepasujące do wzorca są pomijane.
+
+### Dlaczego i CSV, i `.db`
+
+Bo służą do czego innego i żadne z nich nie zastępuje drugiego:
+
+- **CSV jest dla człowieka.** Arkusz otworzysz za pięć lat niezależnie od tego, czy ten
+  projekt jeszcze działa. Nie niesie jednak identyfikatorów, więc relacja
+  zadanie–projekt (333 powiązania) nie da się z niego odtworzyć.
+- **`.db` jest do odtwarzania.** `VACUUM INTO` daje spójną kopię wszystkich tabel
+  z relacjami, jednym poleceniem i bez konwersji.
+
+> **Zmierzone na prawdziwych danych.** Odtworzenie z migawki `.db` daje stan
+> **identyczny co do znaku**: 526 zadań, 823 wpisy, 32 projekty, 15 nawyków,
+> 333 powiązania z projektami, XP 36 773, poziom 74, `user_version` 7.
+> Odtworzenie z samych CSV daje 526 zadań i **nic więcej** — bez dziennika,
+> projektów i powiązań.
+
+### Odtwarzanie z migawki `.db` — droga podstawowa
+
+1. **Zatrzymaj aplikację** (zamknij okno `npm start`). SQLite trzyma pliki
+   `baza.db-wal` i `baza.db-shm` obok bazy; podmiana przy działającym serwerze
+   pomiesza je z nową bazą.
+2. Odłóż obecną bazę zamiast ją kasować — na wypadek, gdyby to ona była tą właściwą:
+   ```bash
+   mv data/baza.db data/baza-przed-odtworzeniem.db
+   rm -f data/baza.db-wal data/baza.db-shm
+   ```
+3. Skopiuj wybraną migawkę na miejsce bazy:
+   ```bash
+   cp backups/baza-2026-08-31.db data/baza.db
+   ```
+4. Uruchom `npm start`. Migracje wykryją aktualny `user_version` i nie zrobią nic.
+5. Sprawdź stronę **Postać** — poziom i XP muszą się zgadzać z tym, co pamiętasz.
+
+### Odtwarzanie z CSV — droga awaryjna
+
+> ### ⚠️ Import jest wyłącznie DOPISUJĄCY
+> Wczytanie kopii do tabeli, w której coś już jest, **zduplikuje wszystko** —
+> nie ma tu żadnego dopasowywania po nazwie ani po id. Tabela **musi być pusta**.
+> (Wyjątek: dziennik deduplikuje po dacie, ale jego kopii CSV i tak nie da się wczytać.)
+
+Używaj tej drogi tylko wtedy, gdy migawka `.db` jest niedostępna albo uszkodzona.
+
+1. Zatrzymaj aplikację i **wyczyść tabelę zadań** — bez tego dostaniesz duplikaty:
+   ```bash
+   node -e "require('better-sqlite3')('data/baza.db').exec('DELETE FROM zadania')"
+   ```
+2. Uruchom `npm start`, wejdź na stronę **Zadania**.
+3. Wybierz źródło **„Zadania — eksport z tej aplikacji"** i wczytaj
+   `backups/zadania-RRRR-MM-DD.csv`.
+4. Sprawdź podgląd: ma pokazać **tyle wierszy, ile jest w pliku, i zero odrzuconych**.
+   Dopiero wtedy zatwierdź.
+
+Czego ta droga **nie odtworzy**: dziennika (jego CSV ma nagłówki kolumn bazy,
+a profil importu dziennika czyta eksport z Notion), projektów, powiązań
+zadanie–projekt oraz zakupów. Kolumny `Projekt` i `Priorytet (opis)` w pliku zadań
+są **informacyjne** — import je pomija.
 
 ### Codzienne uruchamianie — Harmonogram zadań Windows
 

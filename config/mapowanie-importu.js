@@ -28,6 +28,15 @@ const MAPOWANIE_KOLUMN = {
   'Start zadania': 'start_zadania',
   Termin: 'termin',
   'Czas zakończenia': 'czas_zakonczenia',
+
+  /*
+    Kolumny obecne we WLASNEJ kopii zapasowej (scripts/backup.js). Bez nich
+    odtworzenie z kopii gubilo priorytet, trudnosc i czas trwania, czyli komplet
+    danych potrzebnych do naliczenia XP.
+  */
+  Priorytet: 'priorytet',
+  Trudność: 'trudnosc',
+  'Czas trwania (h)': 'czas_trwania_godziny',
 };
 
 /*
@@ -35,7 +44,20 @@ const MAPOWANIE_KOLUMN = {
   sama przy renderowaniu i nie przechowuje ich w bazie.
   Lista sluzy tylko temu, zeby nie raportowac ich jako "nieznane kolumny".
 */
-const KOLUMNY_IGNOROWANE = ['Dni do terminu', 'Czas trwania (dni)'];
+/*
+  Kolumny swiadomie POMIJANE przy imporcie.
+
+  'Priorytet (opis)' i 'Projekt' pochodza z wlasnej kopii zapasowej i sa tam
+  DLA CZLOWIEKA. Opis priorytetu wynika z numeru obok, a projekt zapisany nazwa
+  wymagalby rozwiazywania relacji po tekscie - do wiernego odtworzenia relacji
+  sluzy migawka baza-*.db, nie CSV (patrz komentarz przy migawkaBazy).
+*/
+const KOLUMNY_IGNOROWANE = [
+  'Dni do terminu',
+  'Czas trwania (dni)',
+  'Priorytet (opis)',
+  'Projekt',
+];
 
 /*
   Naglowki, bez ktorych plik nie ma sensu. Ich brak przerywa caly import

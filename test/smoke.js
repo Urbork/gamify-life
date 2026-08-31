@@ -1251,6 +1251,65 @@ async function testujProjekty() {
   sprawdzamy OBA kierunki, bo dopisanie stalej bez opisu jest rownie ciche
   jak opis wskazujacy na stala, ktorej juz nie ma.
 */
+/*
+  KOPIA ZAPASOWA - format musi byc ODCZYTYWALNY Z POWROTEM.
+
+  Kopia zadan miala wczesniej naglowki nazwane jak kolumny bazy ('stan', 'nazwa'),
+  przez co import odrzucal wlasny plik bledem 'brakuje kolumn: Nazwa zadania, Stan'.
+  Kopia, ktorej nie da sie wczytac, nie jest kopia zapasowa - stad te asercje.
+*/
+async function testujFormatKopii() {
+  sekcja('FORMAT KOPII ZAPASOWEJ');
+
+  const backup = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'scripts', 'backup.js'), 'utf8');
+  const mapowanie = require('../config/mapowanie-importu');
+
+  /*
+    Naglowki wyciagamy z KODU skryptu, a nie z pliku w backups/ - katalog jest
+    gitignorowany i moze nie istniec na swiezym klonie.
+  */
+  const blok = backup.slice(backup.indexOf('const naglowki = ['));
+  const naglowkiZadan = [...blok.slice(0, blok.indexOf(']')).matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+  sprawdz(
+    'kopia zadan ma komplet kolumn wymaganych przez import',
+    mapowanie.KOLUMNY_WYMAGANE.every((k) => naglowkiZadan.includes(k)),
+    'naglowki: ' + JSON.stringify(naglowkiZadan)
+  );
+
+  /*
+    Kazdy naglowek kopii musi byc albo mapowany, albo swiadomie ignorowany.
+    Inaczej odtwarzanie po cichu gubiloby kolumne, a podglad zasypywalby
+    ostrzezeniem 'kolumny pominiete'.
+  */
+  const nieobsluzone = naglowkiZadan.filter(
+    (h) => !(h in mapowanie.MAPOWANIE_KOLUMN) && !mapowanie.KOLUMNY_IGNOROWANE.includes(h)
+  );
+  sprawdzListe('kazdy naglowek kopii jest mapowany albo ignorowany', [], nieobsluzone);
+
+  // Pola decydujace o XP musza przetrwac odtworzenie.
+  for (const pole of ['priorytet', 'trudnosc', 'czas_trwania_godziny']) {
+    sprawdz(
+      'kopia niesie pole do XP: ' + pole,
+      Object.values(mapowanie.MAPOWANIE_KOLUMN).includes(pole),
+      JSON.stringify(Object.values(mapowanie.MAPOWANIE_KOLUMN))
+    );
+  }
+
+  /*
+    Skrypt musi obejmowac WSZYSTKIE tabele. Wczesniej zapisywal tylko zadania
+    i dziennik, wiec projekty, zakupy i slownik nawykow nie istnialy w zadnej kopii.
+  */
+  for (const tabela of ['projekty', 'zakupy', 'nawyki_slownik']) {
+    sprawdz('kopia obejmuje tabele ' + tabela, backup.includes(tabela), 'brak w scripts/backup.js');
+  }
+  sprawdz(
+    'kopia zawiera migawke calej bazy (VACUUM INTO)',
+    backup.includes('VACUUM INTO'),
+    'brak migawki - odtworzenie relacji nie byloby mozliwe'
+  );
+}
+
 async function testujZasadyXp() {
   sekcja('ZASADY NALICZANIA XP');
 
@@ -2599,6 +2658,7 @@ async function main() {
     await testujProjekty();
     await testujMotyw(reguly);
     await testujZasadyXp();
+    await testujFormatKopii();
     await testujPlakietkiZadan();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();
