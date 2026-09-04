@@ -514,8 +514,8 @@ td.brak-danych-xp {
 
 /*
   Plakietka oceny. Styl NEUTRALNY - jasnoszare tlo i ramka, bez kolorowania
-  wg wartosci. Kolorowanie sugerowaloby ocene "dobra/zla", a przy stresie
-  (skala odwrocona) prowadzilo by wprost do blednych wnioskow.
+  wg wartosci. Kolorowanie sugerowaloby ocene "dobra/zla", a o tym, czy niski
+  Spokoj jest "zly", decyduje kontekst dnia, nie sama liczba.
 */
 td select.plakietka {
   background: var(--tlo-kontrolki);
@@ -747,15 +747,6 @@ td.komorka-nawykow:empty::before {
 .slupek-tlo {
   width: 120px;
   background: var(--tlo-toru);
-}
-
-/* Ostrzezenie o odwroconej skali stresu - musi rzucac sie w oczy przy odczycie sredniej. */
-.odwrocona-skala {
-  border-left: 3px solid var(--uwaga);
-  background: var(--uwaga-tlo);
-  padding: 6px 10px;
-  margin: 6px 0;
-  font-size: 12px;
 }
 
 .brak-danych {

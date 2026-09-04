@@ -81,15 +81,16 @@
   /*
     JAK LICZY SIE XP - sekcja wylacznie DO ODCZYTU.
 
-    Rozbicie wyzej pokazuje, ze dziennik daje ~70% XP, ale nie tlumaczy DLACZEGO.
-    Powod siedzi w stalych: jeden wpis to 5 XP plus 10 za kazde z szesciu pol
-    refleksyjnych, czyli do 65 XP dziennie - a typowe zadanie daje kilka.
+    Rozbicie wyzej pokazuje, ze dziennik daje wiekszosc XP, ale nie tlumaczy DLACZEGO.
+    Powod siedzi w czestotliwosci, nie w stawkach: kazde pole wazy 1 XP, ale wpis
+    powstaje codziennie i ma osiemnascie miejsc do wypelnienia, a zadanie zamyka
+    sie rzadziej i daje tyle, ile godzin przeliczonych na trudnosc.
 
     DLACZEGO NIE DA SIE TEGO EDYTOWAC W INTERFEJSIE
     XP nie jest nigdzie zapisywane, tylko liczone od zera przy kazdym wejsciu.
-    Zmiana stalej przelicza wiec CALA HISTORIE wstecz: podniesienie
-    XP_ZA_POLE_REFLEKSYJNE z 10 na 20 daje 58 tys. XP zamiast 37 tys., ale poziom
-    SPADA z 74 na 17, bo przekracza prog prestizu. Suwak robilby takie rzeczy
+    Zmiana stalej przelicza wiec CALA HISTORIE wstecz - i to nie tylko w gore:
+    podwojenie stawki za pole podwaja XP, ale poziom potrafi SPASC, bo suma
+    przeskakuje prog prestizu i licznik wraca do jedynki. Suwak robilby takie rzeczy
     jednym przeciagnieciem. Wartosci zmienia sie swiadomie w lib/nagrody.js.
 
     OPISY sa tutaj, a nie przy stalych na serwerze, bo to tekst interfejsu.
@@ -99,9 +100,8 @@
   const OPISY_ZASAD = {
     PROG_POZIOMU: 'Ile XP trzeba zebrać, żeby awansować o jeden poziom.',
     POZIOMOW_DO_RESETU: 'Po tylu poziomach licznik wraca do 1, a prestiż rośnie o 1.',
-    XP_ZA_NAWYK: 'Za każdy odhaczony nawyk w dniu.',
-    XP_ZA_WPIS: 'Za sam fakt wypełnienia czegokolwiek w danym dniu.',
-    XP_ZA_POLE_REFLEKSYJNE: 'Za każde wypełnione pole refleksyjne (jest ich sześć).',
+    XP_ZA_UTWORZENIE_WPISU: 'Za sam wpis w dzienniku, nawet gdy nie ma w nim ani jednego pola.',
+    XP_ZA_POLE_WPISU: 'Za każde wypełnione pole wpisu. Nawyki liczą się jako jedno pole.',
     DNI_NA_PREMIE: 'Taki zapas dni przed terminem daje mnożnik premiowy do XP zadania.',
   };
 
@@ -147,9 +147,8 @@
 
   function zbudujRozbicie(p) {
     const zrodla = [
-      ['Zadania', p.rozbicie.zadania, 'ukończone zadania z wpisaną trudnością i czasem'],
-      ['Nawyki', p.rozbicie.nawyki, 'odhaczone nawyki we wpisach dziennika'],
-      ['Dziennik', p.rozbicie.dziennik, 'wpisy i wypełnione pola refleksyjne'],
+      ['Zadania', p.rozbicie.zadania, 'ukończone zadania: godziny przeliczone na trudność'],
+      ['Dziennik', p.rozbicie.dziennik, 'wpisy i wypełnione w nich pola'],
     ];
 
     const tabela = el('table');

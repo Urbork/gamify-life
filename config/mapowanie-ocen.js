@@ -23,20 +23,26 @@ const JAKOSC_SNU = [
 ];
 
 /*
-  STRES MA SKALE ODWROCONA wzgledem pozostalych ocen: 0 = najgorzej (bardzo wysoki
-  stres), 5 = najlepiej (brak stresu). Tak jest w zrodle danych i tego nie zmieniamy.
+  SPOKOJ - dawniej "Stres".
 
-  Opisy slowne sa tu szczegolnie wazne: to one sprawiaja, ze przy wystawianiu oceny
-  nie trzeba pamietac, w ktora strone leci skala. Widok statystyk osobno ostrzega
-  o tym przy sredniej.
+  Wartosci w bazie sie NIE ZMIENILY: od poczatku 5 znaczylo brak stresu, a 0 stres
+  skrajny. Zla byla wylacznie nazwa - przy etykiecie "Stres" wyzsza liczba czytala sie
+  jako gorszy wynik, choc znaczyla lepszy, i trzeba to bylo tlumaczyc ostrzezeniem
+  w statystykach. Po zmianie nazwy kierunek tlumaczy sie sam: wiecej spokoju to lepiej,
+  dokladnie tak jak przy pozostalych ocenach.
+
+  ZAKRES ZOSTAJE 0-5, w odroznieniu od pozostalych ocen (1-5). Sklejenie zera z jedynka
+  ujednoliciloby skale, ale bezpowrotnie zatarloby dwanascie dni skrajnego stresu -
+  a te dwanascie dni to najrzadszy i przez to najbardziej wymowny sygnal w calym
+  dzienniku. Niespojnosc zakresu jest tu tansza niz utrata danych.
 */
-const STRES = [
-  { wartosc: 5, emoji: '🧘', opis: 'Brak stresu' },
-  { wartosc: 4, emoji: '😌', opis: 'Bardzo niski' },
-  { wartosc: 3, emoji: '🙂', opis: 'Niski' },
-  { wartosc: 2, emoji: '😬', opis: 'Średni' },
-  { wartosc: 1, emoji: '😰', opis: 'Wysoki' },
-  { wartosc: 0, emoji: '🔥', opis: 'Bardzo wysoki' },
+const SPOKOJ = [
+  { wartosc: 5, emoji: '🧘', opis: 'Pełny spokój' },
+  { wartosc: 4, emoji: '😌', opis: 'Duży spokój' },
+  { wartosc: 3, emoji: '🙂', opis: 'Umiarkowany' },
+  { wartosc: 2, emoji: '😬', opis: 'Niepokój' },
+  { wartosc: 1, emoji: '😰', opis: 'Duży stres' },
+  { wartosc: 0, emoji: '🔥', opis: 'Skrajny stres' },
 ];
 
 const NASTROJ = [
@@ -58,10 +64,15 @@ const INTENCJONALNOSC = [
 /*
   Klucz odpowiada nazwie kolumny w tabeli `dziennik`, dzieki czemu frontend
   moze siegnac po opisy bez zadnego dodatkowego mapowania.
+
+  Kolumna nazywa sie nadal `stres`, choc pole nazywa sie juz "Spokoj". Zmiana nazwy
+  kolumny to migracja calej bazy plus poprawki w profilu importu, eksporcie i kopii
+  zapasowej - za duzo ruchu jak na zmiane etykiety. Nazwe kolumny zmienimy przy
+  najblizszej migracji, ktora i tak bedzie dotykac dziennika.
 */
 const OCENY = {
   jakosc_snu: JAKOSC_SNU,
-  stres: STRES,
+  stres: SPOKOJ,
   nastroj: NASTROJ,
   intencjonalnosc: INTENCJONALNOSC,
 };

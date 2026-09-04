@@ -85,7 +85,7 @@
     { pole: 'pobudka', typ: 'godzina', klasa: 'kol-godzina' },
     { pole: 'godziny_snu', typ: 'liczba', klasa: 'kol-ocena', min: 0, max: 24, krok: 0.5 },
     { pole: 'jakosc_snu', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
-    // Stres ma skale od 0 (0 = bardzo wysoki, 5 = brak stresu) - inaczej niz reszta.
+    // Spokoj ma skale od 0 (0 = skrajny stres, 5 = pelny spokoj) - reszta ocen ma 1-5.
     { pole: 'stres', typ: 'ocena', klasa: 'kol-ocena', min: 0, max: 5 },
     { pole: 'nastroj', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
     { pole: 'intencjonalnosc', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
@@ -101,6 +101,13 @@
     { pole: 'obiad', typ: 'tekst', klasa: 'kol-tekst' },
     { pole: 'kolacja', typ: 'tekst', klasa: 'kol-tekst' },
   ];
+
+  /*
+    Za tym polem wstawiamy kolumne wyliczana "Refleksje" (licznik x/6). Nie jest
+    czescia KOLUMNY, bo KOLUMNY sluzy TAKZE eksportowi CSV, a licznika nie
+    eksportujemy - da sie go odtworzyc z samych pol refleksyjnych.
+  */
+  const POLE_PRZED_REFLEKSJAMI = 'do_przemyslenia';
 
   // ==========================================================================
   // Filtrowanie
@@ -248,8 +255,8 @@
    * opcji; kolumny w bazie zostaja INTEGER-ami, wiec statystyki i sortowanie
    * dzialaja bez zmian. Opisy przychodza z /api/slowniki (config/mapowanie-ocen.js).
    *
-   * Przy stresie opis slowny jest szczegolnie potrzebny - skala jest odwrocona
-   * (0 = bardzo wysoki stres), wiec sama cyfra latwo myli.
+   * Przy Spokoju opis slowny jest szczegolnie potrzebny, bo jako jedyna ocena
+   * zaczyna sie od 0, a nie od 1 - sama cyfra nie mowi, gdzie jest dno skali.
    */
   function komorkaOcena(w, kolumna) {
     const td = document.createElement('td');
@@ -371,8 +378,17 @@
     tr.dataset.id = w.id;
 
     tr.appendChild(komorkaId(w));
-    for (const kolumna of KOLUMNY) tr.appendChild(komorkaDla(w, kolumna));
-    tr.appendChild(komorkaRefleksji(w));
+    for (const kolumna of KOLUMNY) {
+      tr.appendChild(komorkaDla(w, kolumna));
+      /*
+        Licznik refleksji stoi w naglowkach TUZ ZA ostatnim polem refleksyjnym,
+        a nie na koncu wiersza. Wstawiony w zlym miejscu nie psuje liczby komorek
+        (bo nadal jest ich tyle samo), tylko przesuwa o jedno wszystko za soba -
+        dlatego blad byl niewidoczny dla kontroli liczacej kolumny.
+        Zgodnosc kolejnosci z naglowkami pilnuje asercja w test/smoke.js.
+      */
+      if (kolumna.pole === POLE_PRZED_REFLEKSJAMI) tr.appendChild(komorkaRefleksji(w));
+    }
     tr.appendChild(komorkaUsun(w));
 
     return tr;

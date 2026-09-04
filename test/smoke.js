@@ -751,9 +751,24 @@ async function testujSilnikXp() {
     'trywialne zadanie daje 1 XP, nigdy 0',
     zrobione({ trudnosc: 1, czas_trwania_godziny: 0.1 }) === 1
   );
+  /*
+    XP zadania = godziny x przelicznik trudnosci (1 -> 0.5, 2 -> 1, 3 -> 2).
+    Trudnosc nie mnozy sie wprost, tylko wazy godziny - stad 4h przy trudnosci 3
+    to 8 XP, a nie 12.
+  */
   sprawdz(
-    'trudnosc 3 x 4h = 12 XP (bez dat, mnoznik 1)',
-    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 12
+    'trudnosc 3 (x2) x 4h = 8 XP (bez dat, mnoznik terminowosci 1)',
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 8
+  );
+  sprawdzListe(
+    'przeliczniki trudnosci: 1h przy kazdej z trzech trudnosci',
+    [1, 2, 3].map((t) => zrobione({ trudnosc: t, czas_trwania_godziny: 2 })),
+    [1, 2, 4]
+  );
+  sprawdz(
+    'trudnosc spoza slownika: 0 XP i flaga brakujaceDane',
+    nagrody.xpZadania({ stan: 'Zrobione', trudnosc: 7, czas_trwania_godziny: 4 })
+      .brakujaceDane === true
   );
   sprawdz(
     'zadanie nie-Zrobione daje 0 XP',
@@ -772,21 +787,30 @@ async function testujSilnikXp() {
   const zDatami = (termin, koniec) =>
     zrobione({ trudnosc: 3, czas_trwania_godziny: 4, termin, czas_zakonczenia: koniec });
 
-  sprawdz('mnoznik x1.5: zapas 5 dni -> 18 XP', zDatami('2026-03-10', '2026-03-05') === 18);
+  // Premia nalezy sie od JEDNEGO dnia zapasu (dawniej od trzech). Baza: 8 XP.
+  sprawdz('mnoznik x1.5: zapas 5 dni -> 12 XP', zDatami('2026-03-10', '2026-03-05') === 12);
   sprawdz(
-    'mnoznik x1.5: granica DOKLADNIE 3 dni zapasu -> 18 XP',
-    zDatami('2026-03-10', '2026-03-07') === 18
+    'mnoznik x1.5: granica DOKLADNIE 1 dzien zapasu -> 12 XP',
+    zDatami('2026-03-10', '2026-03-09') === 12
   );
-  sprawdz('mnoznik x1: zapas 2 dni -> 12 XP', zDatami('2026-03-10', '2026-03-08') === 12);
-  sprawdz('mnoznik x1: ten sam dzien -> 12 XP', zDatami('2026-03-10', '2026-03-10') === 12);
+  sprawdz('mnoznik x1: ten sam dzien -> 8 XP', zDatami('2026-03-10', '2026-03-10') === 8);
   sprawdz(
     'mnoznik x1: godzina nie psuje - 23:00 w dniu terminu to nadal na czas',
-    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 12
+    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 8
   );
-  sprawdz('mnoznik x0.5: dzien po terminie -> 6 XP', zDatami('2026-03-10', '2026-03-11') === 6);
+  /*
+    REGRESJA: "doba przed terminem" liczy sie w pelnych dniach kalendarzowych.
+    Zakonczenie o 01:00 dzien przed terminem dzieli od niego mniej niz 24 godziny
+    zegarowe, a mimo to ma dostac premie - inaczej wynik zalezalby od pory dnia.
+  */
+  sprawdz(
+    'mnoznik x1.5 liczy DNI, nie godziny: 23:00 -> 01:00 nastepnego dnia to premia',
+    zDatami('2026-03-10T01:00', '2026-03-09T23:00') === 12
+  );
+  sprawdz('mnoznik x0.5: dzien po terminie -> 4 XP', zDatami('2026-03-10', '2026-03-11') === 4);
   sprawdz(
     'mnoznik x1 gdy brakuje ktorejs z dat',
-    zDatami('2026-03-10', null) === 12 && zDatami(null, '2026-03-11') === 12
+    zDatami('2026-03-10', null) === 8 && zDatami(null, '2026-03-11') === 8
   );
   sprawdz(
     'dolny limit dziala takze po zmniejszeniu przez x0.5',
@@ -798,18 +822,36 @@ async function testujSilnikXp() {
     }) === 1
   );
 
-  // --- dziennik ---
-  sprawdz('pusty wpis nie daje XP', nagrody.xpWpisu({ data: '2026-01-01' }) === 0);
-  sprawdz('wpis z jednym polem refleksyjnym: 5 + 10 = 15', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 15);
+  // --- dziennik: 1 XP za wpis + 1 XP za kazde wypelnione pole tresci ---
+  sprawdz('pusty wpis daje 1 XP za samo zalozenie', nagrody.xpWpisu({ data: '2026-01-01' }) === 1);
+  sprawdz('wpis z jednym polem: 1 + 1 = 2 XP', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 2);
   sprawdz(
-    'wpis z kompletem szesciu pol: 5 + 60 = 65',
-    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 65
+    'wpis z kompletem szesciu pol refleksyjnych: 1 + 6 = 7 XP',
+    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 7
   );
   sprawdz(
-    'wpis bez refleksji, ale z trescia (samo sniadanie): 5 XP',
-    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 5
+    'kazde pole wazy tyle samo - samo sniadanie tez 2 XP',
+    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 2
   );
-  sprawdz('trzy nawyki: 3 x 3 = 9 XP', nagrody.xpNawykow({ nawyki: 'A, B, C' }) === 9);
+  /*
+    REGRESJA: nawyki sa JEDNYM polem. Wczesniej liczyly sie po sztuce (3 XP kazdy)
+    i same odpowiadaly za ponad cwierc XP w bazie - dziesiec odhaczonych nawykow
+    wazylo wiecej niz caly komplet refleksji.
+  */
+  sprawdz(
+    'nawyki to jedno pole: trzy odhaczone waza tyle co jeden',
+    nagrody.xpWpisu({ nawyki: 'A, B, C' }) === 2 && nagrody.xpWpisu({ nawyki: 'A' }) === 2
+  );
+  /*
+    Sufit dnia. Liczba bierze sie z dlugosci POLA_TRESCI_WPISU, wiec asercja pilnuje
+    takze tego, ze dopisanie pola do dziennika swiadomie podnosi maksimum.
+  */
+  const kompletWpisu = Object.fromEntries(nagrody.POLA_TRESCI_WPISU.map((k) => [k, 'x']));
+  sprawdz(
+    'maksimum z jednego dnia to 18 XP (1 + 17 pol tresci)',
+    nagrody.maksymalneXpWpisu() === 18 && nagrody.xpWpisu(kompletWpisu) === 18,
+    `max=${nagrody.maksymalneXpWpisu()}, komplet=${nagrody.xpWpisu(kompletWpisu)}`
+  );
   sprawdz(
     'licznik pol refleksyjnych 4/6',
     nagrody.liczbaWypelnionychPol({ wdziecznosc: 'a', bledy: 'b', rozmowa: 'c', jutro_wazne: 'd' }) === 4
@@ -821,15 +863,30 @@ async function testujSilnikXp() {
 
   // --- poziomy i prestiz ---
   const p = nagrody.poziomZXp;
-  sprawdz('0 XP -> poziom 1, prestiz 0, do nastepnego 500', p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 500);
-  sprawdz('499 XP -> nadal poziom 1, brakuje 1 XP', p(499).poziom === 1 && p(499).xpDoNastepnego === 1);
-  sprawdz('DOKLADNIE 500 XP -> poziom 2', p(500).poziom === 2 && p(500).prestiz === 0);
-  sprawdz('49999 XP -> poziom 100, prestiz 0', p(49999).poziom === 100 && p(49999).prestiz === 0);
   sprawdz(
-    'DOKLADNIE 50000 XP -> reset: prestiz 1, poziom 1',
-    p(50000).prestiz === 1 && p(50000).poziom === 1
+    '0 XP -> poziom 1, prestiz 0, do nastepnego 50',
+    p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 50
   );
-  sprawdz('50500 XP -> prestiz 1, poziom 2', p(50500).prestiz === 1 && p(50500).poziom === 2);
+  sprawdz('49 XP -> nadal poziom 1, brakuje 1 XP', p(49).poziom === 1 && p(49).xpDoNastepnego === 1);
+  sprawdz('DOKLADNIE 50 XP -> poziom 2', p(50).poziom === 2 && p(50).prestiz === 0);
+  sprawdz('4999 XP -> poziom 100, prestiz 0', p(4999).poziom === 100 && p(4999).prestiz === 0);
+  sprawdz(
+    'DOKLADNIE 5000 XP -> reset: prestiz 1, poziom 1',
+    p(5000).prestiz === 1 && p(5000).poziom === 1
+  );
+  sprawdz('5050 XP -> prestiz 1, poziom 2', p(5050).prestiz === 1 && p(5050).poziom === 2);
+  /*
+    KALIBRACJA: rok codziennych wpisow wypelnionych w polowie (9 XP) plus zadanie
+    2h o sredniej trudnosci (2 XP) ma dac mniej wiecej jeden prestiz. Asercja pilnuje,
+    zeby zmiana stalych nie rozjechala sie po cichu z zalozeniem, pod ktore powstaly.
+  */
+  const rocznieXp = 365 * (9 + 2);
+  const cyklPrestizu = nagrody.STALE.PROG_POZIOMU * nagrody.STALE.POZIOMOW_DO_RESETU;
+  sprawdz(
+    'rok umiarkowanego uzywania miesci sie w 0.7-1.2 prestizu',
+    rocznieXp / cyklPrestizu >= 0.7 && rocznieXp / cyklPrestizu <= 1.2,
+    `${rocznieXp} XP / ${cyklPrestizu} = ${(rocznieXp / cyklPrestizu).toFixed(2)} prestizu`
+  );
 
   // --- waluta ---
   sprawdz('waluta to polowa XP zaokraglona w dol', nagrody.walutaZarobiona(101) === 50);
@@ -840,13 +897,15 @@ async function testujSilnikXp() {
     3
   );
   sprawdz(
-    'rozbicie zrodel: zadania 12, dziennik 15, nawyki 6',
-    stan.rozbicie.zadania === 12 && stan.rozbicie.dziennik === 15 && stan.rozbicie.nawyki === 6,
+    'rozbicie ma dwa zrodla: zadania 8, dziennik 3 (wpis + wdziecznosc + nawyki)',
+    stan.rozbicie.zadania === 8 &&
+      stan.rozbicie.dziennik === 3 &&
+      stan.rozbicie.nawyki === undefined,
     JSON.stringify(stan.rozbicie)
   );
   sprawdz(
-    'suma 33 XP, waluta 16 - 3 wydane = 13',
-    stan.calkowite_xp === 33 && stan.waluta_dostepna === 13,
+    'suma 11 XP, waluta 5 - 3 wydane = 2',
+    stan.calkowite_xp === 11 && stan.waluta_dostepna === 2,
     JSON.stringify({ xp: stan.calkowite_xp, waluta: stan.waluta_dostepna })
   );
 
@@ -923,10 +982,13 @@ async function testujPostac() {
       .every((k) => postac[k] !== undefined),
     JSON.stringify(Object.keys(postac))
   );
+  /*
+    Suma po WSZYSTKICH pozycjach rozbicia, a nie po wypisanych z nazwy - inaczej
+    dodanie zrodla XP bez dopisania go tutaj przechodziloby niezauwazone.
+  */
   sprawdz(
     'rozbicie sumuje sie do calkowitego XP',
-    postac.rozbicie.zadania + postac.rozbicie.nawyki + postac.rozbicie.dziennik ===
-      postac.calkowite_xp,
+    Object.values(postac.rozbicie).reduce((a, b) => a + b, 0) === postac.calkowite_xp,
     JSON.stringify(postac.rozbicie) + ' vs ' + postac.calkowite_xp
   );
 
@@ -1505,6 +1567,57 @@ async function testujPlakietkiZadan() {
     [rekord.stan, rekord.obszar, rekord.priorytet, rekord.trudnosc]
   );
   await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+}
+
+/*
+  Kolejnosc komorek wiersza kontra kolejnosc naglowkow w dzienniku.
+
+  REGRESJA: licznik "Refleksje" byl doklejany na koniec wiersza, a w naglowkach stoi
+  zaraz za "Do przemyslenia". Liczba komorek sie zgadzala (21 = 21), wiec zadna kontrola
+  liczaca kolumny tego nie widziala - przesuniete bylo tylko UPORZADKOWANIE, przez co
+  wartosc sniadania ladowala pod naglowkiem "Refleksje", a licznik pod "Kolacja".
+
+  Dlatego ta asercja porownuje SEKWENCJE, a nie dlugosci. Zrodlem prawdy jest HTML
+  (naglowki) i public/js/dziennik.js (kolejnosc budowania komorek) - czyli dokladnie
+  te dwie listy, ktore moga sie rozjechac niezaleznie od siebie.
+*/
+async function testujKolejnoscKolumnDziennika() {
+  sekcja('DZIENNIK: KOLEJNOSC KOLUMN KONTRA NAGLOWKI');
+
+  const html = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'dziennik.html'), 'utf8');
+  const thead = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+  // Filtr odsiewa sam znacznik <thead>, ktory tez zaczyna sie od "<th".
+  const naglowki = thead
+    .split('<th')
+    .filter((k) => k.startsWith(' ') || k.startsWith('>'))
+    .map((k) => {
+      const kolumna = /data-kolumna="([^"]+)"/.exec(k);
+      if (kolumna) return kolumna[1];
+      const tekst = />([^<]*)</.exec(k);
+      const opis = tekst ? tekst[1].trim() : '';
+      return opis ? '(' + opis + ')' : '(akcje)';
+    });
+
+  const js = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'dziennik.js'), 'utf8');
+  const poczatek = js.indexOf('const KOLUMNY = [');
+  const blok = js.slice(poczatek, js.indexOf('];', poczatek));
+  const pola = [...blok.matchAll(/pole: '([^']+)'/g)].map((m) => m[1]);
+  const przedRefleksjami = /const POLE_PRZED_REFLEKSJAMI = '([^']+)'/.exec(js);
+
+  sprawdz(
+    'POLE_PRZED_REFLEKSJAMI istnieje i wskazuje pole z KOLUMNY',
+    przedRefleksjami !== null && pola.includes(przedRefleksjami[1]),
+    String(przedRefleksjami && przedRefleksjami[1])
+  );
+
+  const komorki = ['id'];
+  for (const pole of pola) {
+    komorki.push(pole);
+    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Refleksje)');
+  }
+  komorki.push('(akcje)');
+
+  sprawdzListe('kolejnosc komorek wiersza zgadza sie z naglowkami', komorki, naglowki);
 }
 
 async function testujDatyCalodzienne(reguly) {
@@ -2660,6 +2773,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujKolejnoscKolumnDziennika();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();
     await testujDomyslneOgraniczenie(reguly);

@@ -67,6 +67,15 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 - [ ] Otworzyć PR dla gałęzi `feat/zadania-i-dziennik` (brakuje `gh` na maszynie)
 - [ ] Uzupełnić `KOLUMNY_IGNOROWANE` przy następnym eksporcie, jeśli dojdą kolumny
 - [ ] Rozważyć asercję pokrycia `wykryjSeparator` (import TSV nietestowany)
+- [ ] **Widok podstawowy + okno szczegółów** — lista pokazuje tylko pola używane
+      codziennie (pobudka, sen, jakość snu, spokój); kliknięcie w wiersz otwiera okno
+      z kompletem pól rzadszych (refleksje, posiłki, nawyki). To samo dla zadań.
+      Powód: pola wypełniane wieczorem wyszły z użycia, ale dane zostają — chodzi
+      o odciążenie widoku, nie o usuwanie kolumn.
+- [ ] **Kopia zapasowa poza dyskiem** — `backups/` leży na tym samym dysku co baza.
+      Ustalenia: OneDrive obecny, ale nieaktywny i pusty; D: 59 GB, E: 173 GB wolnego.
+      Propozycja: kopiowanie dziennej migawki `.db` na E: jako krok w istniejącym
+      zadaniu harmonogramu, ścieżka ze zmiennej środowiskowej. Odłożone jako duża zmiana.
 
 ## Pomysły i obserwacje
 

@@ -18,7 +18,7 @@
   // Etykiety kolumn ocen - klucz z bazy nie nadaje sie na naglowek.
   const ETYKIETY_OCEN = {
     jakosc_snu: 'Jakość snu',
-    stres: 'Stres',
+    stres: 'Spokój',
     nastroj: 'Nastrój',
     intencjonalnosc: 'Intencjonalność',
   };
@@ -213,24 +213,20 @@
     sekcja.appendChild(el('h3', null, 'Oceny — średnie'));
 
     /*
-      Ostrzezenie o odwroconej skali stresu stoi PRZED tabela srednich,
-      bo bez niego "stres 3,6" czyta sie jako wysoki, a znaczy raczej niski.
-    */
-    sekcja.appendChild(
-      el(
-        'p',
-        'odwrocona-skala',
-        'Uwaga: skala Stresu jest ODWRÓCONA względem pozostałych ocen — 0 = bardzo wysoki stres, 5 = brak stresu. ' +
-          'Wyższa średnia Stresu oznacza więc SPOKOJNIEJSZY okres, a nie gorszy.'
-      )
-    );
+      Nie ma juz ostrzezenia o odwroconej skali. Bylo potrzebne, dopoki pole nazywalo
+      sie "Stres" - wtedy wyzsza srednia znaczyla LEPSZY okres, wbrew nazwie. Po zmianie
+      nazwy na "Spokoj" kierunek zgadza sie z intuicja i z pozostalymi ocenami,
+      wiec tlumaczenie stalo sie zbedne.
 
+      Zostaje sama informacja o zakresie: Spokoj ma 0-5, reszta 1-5. To fakt o skali,
+      nie pulapka - dlatego zwykla kolumna tabeli, a nie baner.
+    */
     sekcja.appendChild(
       tabela(
         ['Ocena', 'Skala', 'Średnia', 'Min', 'Max', 'Wypełnionych'],
         s.oceny.map((o) => [
-          ETYKIETY_OCEN[o.pole] + (o.pole === 'stres' ? '  ⚠' : ''),
-          o.pole === 'stres' ? '0–5 (odwrócona)' : '1–5',
+          ETYKIETY_OCEN[o.pole],
+          o.pole === 'stres' ? '0–5' : '1–5',
           liczba(o.srednia, 2),
           o.min === null ? '—' : String(o.min),
           o.max === null ? '—' : String(o.max),
@@ -244,8 +240,7 @@
     sekcja.appendChild(el('h3', null, 'Oceny — rozkład wartości'));
     for (const o of s.oceny) {
       const naglowek =
-        ETYKIETY_OCEN[o.pole] +
-        (o.pole === 'stres' ? ' — skala odwrócona: 0 = bardzo wysoki stres, 5 = brak stresu' : '');
+        ETYKIETY_OCEN[o.pole] + (o.pole === 'stres' ? ' — skala 0–5 (0 = skrajny stres)' : '');
       sekcja.appendChild(el('h3', null, naglowek));
 
       if (o.rozklad.length === 0) {
