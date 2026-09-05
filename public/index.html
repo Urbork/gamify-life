@@ -5,16 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Zadania</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!--
+      Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
+      wyborze ciemnym mignelaby jasna strona. Stad zwykly <script> w <head>,
+      bez defer i bez async.
+    -->
+    <script src="/js/motyw.js"></script>
   </head>
   <body>
     <header class="pasek">
       <h1>Zadania</h1>
-      <nav class="nawigacja">
-        <a href="/dziennik.html">Dziennik →</a>
-        <a href="/statystyki.html">Statystyki →</a>
-        <a href="/projekty.html">Projekty →</a>
-        <a href="/postac.html">Postać →</a>
+      <!--
+        Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
+        komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
+        brakowalo "Projektow"), wiec z menu nie dalo sie odczytac, co w ogole istnieje.
+
+        Biezaca strone znaczy aria-current="page" - to jedyna roznica miedzy plikami.
+        Atrybut niesie informacje takze dla czytnikow ekranu, a CSS wyroznia go wizualnie.
+
+        Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
+        ktorej miedzy tymi stronami nie ma.
+      -->
+      <nav class="nawigacja" aria-label="Sekcje aplikacji">
+        <a href="/index.html" aria-current="page">📋 Zadania</a>
+        <a href="/dziennik.html">📓 Dziennik</a>
+        <a href="/statystyki.html">📊 Statystyki</a>
+        <a href="/projekty.html">📁 Projekty</a>
+        <a href="/postac.html">🎮 Postać</a>
       </nav>
+      <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
+      <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
       <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
       <!--
@@ -172,17 +192,6 @@
       </div>
     </section>
 
-    <!--
-      Informacja o domyslnym ograniczeniu widoku. Ukryta, gdy nic nie jest ukryte.
-      Istnieje po to, zeby brak zrobionych zadan nie wygladal jak utrata danych -
-      mowi wprost, ile wierszy jest schowanych, i daje jeden przycisk na pokazanie
-      wszystkiego. Samo ograniczenie robi zwykly filtr stanu, widoczny w panelu wyzej.
-    -->
-    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
-      <span id="ograniczenie-tekst"></span>
-      <button type="button" id="przycisk-pokaz-wszystkie"></button>
-    </p>
-
     <table id="tabela-zadan">
       <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
         <tr>
@@ -215,6 +224,15 @@
       </thead>
       <tbody id="wiersze"></tbody>
     </table>
+
+    <!--
+      Doladowanie listy. Tabela rysuje tylko pierwsze N wierszy tego, co przeszlo
+      przez filtry - reszta czeka tutaj. To ograniczenie RYSOWANIA, nie filtr:
+      eksport, kopia zapasowa i XP zawsze widza pelny zbior.
+    -->
+    <p id="doladowanie" class="doladowanie" hidden>
+      <button type="button" id="przycisk-doladuj"></button>
+    </p>
 
     <p id="podsumowanie" class="podsumowanie"></p>
 

@@ -262,6 +262,60 @@ OD i DO — zawsze widać, jaki zakres jest naprawdę użyty, i można go ręczn
 > Zamiana to jedna linijka opisana w komentarzu przy `pasujeZakresDat`
 > w [public/js/zadania.js](public/js/zadania.js).
 
+### Motyw jasny i ciemny
+
+**Cała paleta siedzi w zmiennych CSS** w `:root` — w ciałach reguł nie ma ani jednego
+literału koloru. Dzięki temu motyw ciemny to jeden blok nadpisujący zmienne, a nie
+polowanie po kilkunastu miejscach.
+
+W nagłówku każdej strony jest **przełącznik** o trzech stanach:
+
+| Stan | Ikona | Zachowanie |
+| --- | --- | --- |
+| systemowy (domyślny) | 🖥️ | idzie za `prefers-color-scheme`, reaguje na zmianę w trakcie |
+| jasny | ☀️ | wymuszony, niezależnie od systemu |
+| ciemny | 🌙 | wymuszony, niezależnie od systemu |
+
+Trzy stany, nie dwa: sam przełącznik jasny/ciemny odebrałby możliwość podążania
+za systemem. Wybór inny niż systemowy jest wyróżniony ramką — inaczej nie byłoby
+widać, że motyw jest wymuszony ręcznie.
+
+> **To jedyny stan trzymany po stronie przeglądarki** w całym projekcie (`localStorage`).
+> Reszta aplikacji świadomie go unika — widok domyślny zadań nie zapamiętuje nawet
+> „Pokaż wszystkie". Wyjątek jest tu uzasadniony: bez zapisu wybór gasłby przy każdym
+> przejściu między stronami. Brak dostępu do `localStorage` (tryb prywatny, zablokowane
+> dane witryn) nie jest błędem — oznacza po prostu powrót do ustawienia systemu.
+
+**Ciemna paleta istnieje w JEDNEJ kopii**, w regule `:root[data-motyw='ciemny']`.
+To skrypt zamienia wybór na konkretny motyw i ustawia atrybut; gdyby paleta stała
+dodatkowo w `@media (prefers-color-scheme: dark)`, byłyby dwie kopie tych samych
+kolorów — a rozjazd między kopiami to błąd, który w tym projekcie zdarzył się
+już kilka razy.
+
+`public/js/motyw.js` ładuje się **synchronicznie w `<head>`**, przed pierwszym
+malowaniem — inaczej przy wyborze ciemnym mignęłaby jasna strona.
+
+`color-scheme` przestawia się razem z paletą. Bez tego kontrolki rysowane przez
+przeglądarkę — `<select>`, `<input type="date">` z ikoną kalendarza — zostałyby jasne
+na ciemnym wierszu; to dokładnie odwrotny problem niż ten, który rozwiązywała pierwotna
+deklaracja `color-scheme: light`.
+
+Odcienie są **dobrane, nie odwrócone mechanicznie**: czysta inwersja dałaby jaskrawe tło
+błędu i nieczytelny akcent. Tło jest ciemnoszare (`#1c1c1e`), a nie czarne — czysta czerń
+przy jasnym tekście męczy wzrok kontrastem. Akcent rozjaśniony do `#6ea8fe`, bo `#3b7ddd`
+ma na ciemnym tle za mały kontrast.
+
+Zmierzone kontrasty w motywie ciemnym (próg WCAG AA dla zwykłego tekstu to **4,5**):
+
+| Element | Kontrast |
+| --- | --- |
+| tekst na tle strony | 13,9 |
+| bieżąca pozycja menu | 11,7 |
+| baner ograniczenia | 11,8 |
+| link menu | 7,1 |
+| tekst słaby (podsumowanie) | 6,1 |
+| nagłówek tabeli | 5,1 |
+
 ### Domyślne ograniczenie widoku
 
 Przy większych zbiorach obie tabele startują **ograniczone**, bo pełne przerysowanie
@@ -868,23 +922,86 @@ w sandboksie (`vm`) — tak samo, jak przeglądarka ładuje kolejne `<script>`. 
 sprawdza **ten sam kod, który wykonuje aplikacja**, a nie jego kopię, która przechodziłaby
 też wtedy, gdy aplikacja jest zepsuta.
 
-## Kopia zapasowa CSV
+## Kopia zapasowa
 
 ```bash
 npm run backup
 ```
 
-Zapisuje `backups/zadania-RRRR-MM-DD.csv` i `backups/dziennik-RRRR-MM-DD.csv`, po czym
-kasuje kopie starsze niż **30 dni**. Katalog `backups/` jest w `.gitignore` — zawiera
-te same prywatne dane co baza.
+Zapisuje do `backups/` **sześć plików dziennie** i kasuje starsze niż **30 dni**.
+Katalog jest w `.gitignore` — zawiera te same prywatne dane co baza.
+
+| Plik | Zawartość | Rola |
+| --- | --- | --- |
+| `baza-RRRR-MM-DD.db` | **wszystkie tabele z relacjami** | **odtwarzanie** |
+| `zadania-RRRR-MM-DD.csv` | 526 zadań | odczyt, częściowe odtwarzanie |
+| `dziennik-RRRR-MM-DD.csv` | 823 wpisy | odczyt |
+| `projekty-RRRR-MM-DD.csv` | 32 projekty | odczyt |
+| `zakupy-RRRR-MM-DD.csv` | wydana waluta | odczyt |
+| `nawyki-RRRR-MM-DD.csv` | słownik nawyków | odczyt |
 
 Skrypt czyta bazę **bezpośrednio**, więc działa również przy wyłączonej aplikacji.
-CSV, a nie kopia pliku `.db`, bo arkusz otworzysz za pięć lat niezależnie od tego,
-czy projekt jeszcze działa. (Na kopię 1:1 zostaje `VACUUM INTO` opisane niżej.)
 
 Retencja liczy się z **daty w nazwie pliku**, nie z czasu modyfikacji — skopiowanie
 albo przeniesienie folderu odświeża znaczniki czasu i przy retencji po `mtime`
-kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + data) są pomijane.
+kasowałoby złe pliki. Pliki niepasujące do wzorca są pomijane.
+
+### Dlaczego i CSV, i `.db`
+
+Bo służą do czego innego i żadne z nich nie zastępuje drugiego:
+
+- **CSV jest dla człowieka.** Arkusz otworzysz za pięć lat niezależnie od tego, czy ten
+  projekt jeszcze działa. Nie niesie jednak identyfikatorów, więc relacja
+  zadanie–projekt (333 powiązania) nie da się z niego odtworzyć.
+- **`.db` jest do odtwarzania.** `VACUUM INTO` daje spójną kopię wszystkich tabel
+  z relacjami, jednym poleceniem i bez konwersji.
+
+> **Zmierzone na prawdziwych danych.** Odtworzenie z migawki `.db` daje stan
+> **identyczny co do znaku**: 526 zadań, 823 wpisy, 32 projekty, 15 nawyków,
+> 333 powiązania z projektami, XP 36 773, poziom 74, `user_version` 7.
+> Odtworzenie z samych CSV daje 526 zadań i **nic więcej** — bez dziennika,
+> projektów i powiązań.
+
+### Odtwarzanie z migawki `.db` — droga podstawowa
+
+1. **Zatrzymaj aplikację** (zamknij okno `npm start`). SQLite trzyma pliki
+   `baza.db-wal` i `baza.db-shm` obok bazy; podmiana przy działającym serwerze
+   pomiesza je z nową bazą.
+2. Odłóż obecną bazę zamiast ją kasować — na wypadek, gdyby to ona była tą właściwą:
+   ```bash
+   mv data/baza.db data/baza-przed-odtworzeniem.db
+   rm -f data/baza.db-wal data/baza.db-shm
+   ```
+3. Skopiuj wybraną migawkę na miejsce bazy:
+   ```bash
+   cp backups/baza-2026-08-31.db data/baza.db
+   ```
+4. Uruchom `npm start`. Migracje wykryją aktualny `user_version` i nie zrobią nic.
+5. Sprawdź stronę **Postać** — poziom i XP muszą się zgadzać z tym, co pamiętasz.
+
+### Odtwarzanie z CSV — droga awaryjna
+
+> ### ⚠️ Import jest wyłącznie DOPISUJĄCY
+> Wczytanie kopii do tabeli, w której coś już jest, **zduplikuje wszystko** —
+> nie ma tu żadnego dopasowywania po nazwie ani po id. Tabela **musi być pusta**.
+> (Wyjątek: dziennik deduplikuje po dacie, ale jego kopii CSV i tak nie da się wczytać.)
+
+Używaj tej drogi tylko wtedy, gdy migawka `.db` jest niedostępna albo uszkodzona.
+
+1. Zatrzymaj aplikację i **wyczyść tabelę zadań** — bez tego dostaniesz duplikaty:
+   ```bash
+   node -e "require('better-sqlite3')('data/baza.db').exec('DELETE FROM zadania')"
+   ```
+2. Uruchom `npm start`, wejdź na stronę **Zadania**.
+3. Wybierz źródło **„Zadania — eksport z tej aplikacji"** i wczytaj
+   `backups/zadania-RRRR-MM-DD.csv`.
+4. Sprawdź podgląd: ma pokazać **tyle wierszy, ile jest w pliku, i zero odrzuconych**.
+   Dopiero wtedy zatwierdź.
+
+Czego ta droga **nie odtworzy**: dziennika (jego CSV ma nagłówki kolumn bazy,
+a profil importu dziennika czyta eksport z Notion), projektów, powiązań
+zadanie–projekt oraz zakupów. Kolumny `Projekt` i `Priorytet (opis)` w pliku zadań
+są **informacyjne** — import je pomija.
 
 ### Codzienne uruchamianie — Harmonogram zadań Windows
 
@@ -905,9 +1022,27 @@ kasowałoby złe pliki. Pliki niepasujące do wzorca (`zadania-`/`dziennik-` + d
 9. Zakładka **Warunki**: odznacz **Uruchamiaj tylko wtedy, gdy komputer jest zasilany
    z sieci**, jeśli pracujesz na laptopie — inaczej zadanie nie odpali na baterii.
 
-> **Pole „Rozpocznij w" jest obowiązkowe.** Bez niego zadanie startuje w `C:\Windows\System32`,
-> a skrypt szuka bazy względem katalogu projektu i zakończy się błędem. To najczęstsza
-> przyczyna „zadanie się wykonało, ale kopii nie ma".
+> **Pole „Rozpocznij w" nie jest wymagane.** Skrypt liczy wszystkie ścieżki od `__dirname`,
+> a nie od katalogu roboczego — sprawdzone uruchomieniem z `C:\Windows\System32`, kopie
+> powstały poprawnie. Wypełnienie tego pola i tak nie zaszkodzi.
+
+#### Szybsza droga — jedna komenda
+
+Zamiast klikać w kreatorze, w PowerShell (wystarczą zwykłe uprawnienia):
+
+```powershell
+$akcja = New-ScheduledTaskAction -Execute "C:\Program Files\nodejs\node.exe" -Argument '"C:\Users\Jon\Documents\_gamify-life\scripts\backup.js"'
+$wyzwalacz = New-ScheduledTaskTrigger -Daily -At "21:00"
+$ustawienia = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "gamify-life backup" -Action $akcja -Trigger $wyzwalacz -Settings $ustawienia -Force
+```
+
+`-StartWhenAvailable` dogrywa kopię po włączeniu komputera, jeśli o 21:00 był wyłączony —
+bez tego dzień bez włączonego komputera to dzień bez kopii. Dwa pozostałe przełączniki
+pozwalają zadaniu działać na baterii.
+
+Sprawdzenie: `Start-ScheduledTask -TaskName "gamify-life backup"`, potem
+`(Get-ScheduledTaskInfo "gamify-life backup").LastTaskResult` — ma być `0`.
 
 Sprawdzenie po skonfigurowaniu: kliknij zadanie prawym → **Uruchom**, a potem zajrzyj
 do `backups/`. Kolumna **Wynik ostatniego uruchomienia** powinna pokazać `0x0`.
@@ -1007,7 +1142,7 @@ routes/projekty.js           REST API projektów
 public/index.html            zadania — szkielet strony i nagłówki tabeli
 public/dziennik.html         dziennik — j.w.
 public/js/dziennik.js        render, sortowanie, edycja inline, eksport dziennika
-public/css/style.css         styl (paleta zbudowana pod jasne tło — patrz color-scheme)
+public/css/style.css         styl (paleta w zmiennych CSS, motyw jasny i ciemny)
 public/js/api.js             wspólny wrapper na fetch    — do użycia w każdym module
 public/js/csv.js             generowanie i pobieranie CSV — j.w.
 public/js/filtr-dat.js       arytmetyka dat i presety zakresu — j.w.

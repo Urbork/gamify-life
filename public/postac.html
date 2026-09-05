@@ -5,15 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Postać</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!--
+      Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
+      wyborze ciemnym mignelaby jasna strona. Stad zwykly <script> w <head>,
+      bez defer i bez async.
+    -->
+    <script src="/js/motyw.js"></script>
   </head>
   <body>
     <header class="pasek">
       <h1>Postać</h1>
-      <nav class="nawigacja">
-        <a href="/index.html">← Zadania</a>
-        <a href="/dziennik.html">Dziennik</a>
-        <a href="/statystyki.html">Statystyki</a>
+      <!--
+        Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
+        komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
+        brakowalo "Projektow"), wiec z menu nie dalo sie odczytac, co w ogole istnieje.
+
+        Biezaca strone znaczy aria-current="page" - to jedyna roznica miedzy plikami.
+        Atrybut niesie informacje takze dla czytnikow ekranu, a CSS wyroznia go wizualnie.
+
+        Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
+        ktorej miedzy tymi stronami nie ma.
+      -->
+      <nav class="nawigacja" aria-label="Sekcje aplikacji">
+        <a href="/index.html">📋 Zadania</a>
+        <a href="/dziennik.html">📓 Dziennik</a>
+        <a href="/statystyki.html">📊 Statystyki</a>
+        <a href="/projekty.html">📁 Projekty</a>
+        <a href="/postac.html" aria-current="page">🎮 Postać</a>
       </nav>
+      <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
+      <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
 
@@ -26,10 +47,21 @@
       <p class="brak-danych">Wczytywanie…</p>
     </section>
 
+    <!--
+      Atrybuty. Jedyna sekcja tej strony, ktora COS ZAPISUJE - reszta jest wylacznie
+      odczytem z danych zrodlowych. Zawartosc buduje public/js/postac.js na podstawie
+      listy z /api/slowniki, wiec dodanie atrybutu to wpis w config/atrybuty.js
+      plus migracja, bez ruszania tego pliku.
+    -->
+    <h2>Atrybuty</h2>
+    <section id="atrybuty" class="atrybuty">
+      <p class="brak-danych">Wczytywanie…</p>
+    </section>
+
     <h2>Skąd wzięło się XP</h2>
     <div id="rozbicie"></div>
 
-    <h2>Wydaj walutę</h2>
+    <h2>Wydaj złoto</h2>
     <form id="formularz-zakupu" class="formularz-zakupu">
       <label>
         <span class="filtr-tytul">Na co</span>

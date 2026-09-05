@@ -34,9 +34,16 @@
   const elFiltrOd = document.getElementById('filtr-od');
   const elFiltrDo = document.getElementById('filtr-do');
   const elWyczysc = document.getElementById('przycisk-wyczysc');
-  const elOgraniczenie = document.getElementById('ograniczenie-widoku');
-  const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
-  const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
+  const elDoladowanie = document.getElementById('doladowanie');
+  const elDoladuj = document.getElementById('przycisk-doladuj');
+
+  /*
+    DOLADOWANIE LISTY - to samo rozwiazanie co na stronie zadan i z tego samego
+    powodu: ograniczamy RYSOWANIE, nie zbior danych. Podsumowanie, eksport CSV
+    i kopia zapasowa nadal widza wszystkie wpisy.
+  */
+  const PORCJA_WIDOKU = 20;
+  let limitWidoku = PORCJA_WIDOKU;
 
   /*
     Powyzej tylu wpisow dziennik startuje ograniczony do ostatnich DNI_DOMYSLNEGO_WIDOKU.
@@ -85,7 +92,7 @@
     { pole: 'pobudka', typ: 'godzina', klasa: 'kol-godzina' },
     { pole: 'godziny_snu', typ: 'liczba', klasa: 'kol-ocena', min: 0, max: 24, krok: 0.5 },
     { pole: 'jakosc_snu', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
-    // Stres ma skale od 0 (0 = bardzo wysoki, 5 = brak stresu) - inaczej niz reszta.
+    // Spokoj ma skale od 0 (0 = skrajny stres, 5 = pelny spokoj) - reszta ocen ma 1-5.
     { pole: 'stres', typ: 'ocena', klasa: 'kol-ocena', min: 0, max: 5 },
     { pole: 'nastroj', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
     { pole: 'intencjonalnosc', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
@@ -101,6 +108,13 @@
     { pole: 'obiad', typ: 'tekst', klasa: 'kol-tekst' },
     { pole: 'kolacja', typ: 'tekst', klasa: 'kol-tekst' },
   ];
+
+  /*
+    Za tym polem wstawiamy kolumne wyliczana "Refleksje" (licznik x/6). Nie jest
+    czescia KOLUMNY, bo KOLUMNY sluzy TAKZE eksportowi CSV, a licznika nie
+    eksportujemy - da sie go odtworzyc z samych pol refleksyjnych.
+  */
+  const POLE_PRZED_REFLEKSJAMI = 'do_przemyslenia';
 
   // ==========================================================================
   // Filtrowanie
@@ -165,6 +179,8 @@
       // Daty domyslnie od najnowszej, reszta od najmniejszej.
       sortowanie.kierunek = kolumna === 'data' ? 'malejaco' : 'rosnaco';
     }
+    // Po zmianie porzadku pokazujemy nowy poczatek listy, nie tyle samo wierszy.
+    odLiczOdNowa();
     renderuj();
   }
 
@@ -248,8 +264,8 @@
    * opcji; kolumny w bazie zostaja INTEGER-ami, wiec statystyki i sortowanie
    * dzialaja bez zmian. Opisy przychodza z /api/slowniki (config/mapowanie-ocen.js).
    *
-   * Przy stresie opis slowny jest szczegolnie potrzebny - skala jest odwrocona
-   * (0 = bardzo wysoki stres), wiec sama cyfra latwo myli.
+   * Przy Spokoju opis slowny jest szczegolnie potrzebny, bo jako jedyna ocena
+   * zaczyna sie od 0, a nie od 1 - sama cyfra nie mowi, gdzie jest dno skali.
    */
   function komorkaOcena(w, kolumna) {
     const td = document.createElement('td');
@@ -371,8 +387,17 @@
     tr.dataset.id = w.id;
 
     tr.appendChild(komorkaId(w));
-    for (const kolumna of KOLUMNY) tr.appendChild(komorkaDla(w, kolumna));
-    tr.appendChild(komorkaRefleksji(w));
+    for (const kolumna of KOLUMNY) {
+      tr.appendChild(komorkaDla(w, kolumna));
+      /*
+        Licznik refleksji stoi w naglowkach TUZ ZA ostatnim polem refleksyjnym,
+        a nie na koncu wiersza. Wstawiony w zlym miejscu nie psuje liczby komorek
+        (bo nadal jest ich tyle samo), tylko przesuwa o jedno wszystko za soba -
+        dlatego blad byl niewidoczny dla kontroli liczacej kolumny.
+        Zgodnosc kolejnosci z naglowkami pilnuje asercja w test/smoke.js.
+      */
+      if (kolumna.pole === POLE_PRZED_REFLEKSJAMI) tr.appendChild(komorkaRefleksji(w));
+    }
     tr.appendChild(komorkaUsun(w));
 
     return tr;
@@ -409,34 +434,33 @@
 
   function renderuj() {
     const fokus = zapamietajFokus();
-    elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
+    const wszystkie = doWyswietlenia();
+    elWiersze.replaceChildren(...wszystkie.slice(0, limitWidoku).map(zbudujWiersz));
     odtworzFokus(fokus);
     odswiezNaglowki();
     odswiezDuplikatyDat();
     odswiezPodsumowanie();
-    odswiezOgraniczenie();
+    odswiezDoladowanie(wszystkie.length);
   }
 
-  /*
-    Baner o ograniczonym widoku - odpowiednik tego ze strony zadan.
+  /** Przycisk pod tabela. Znika, gdy widac juz komplet tego, co przepuscily filtry. */
+  function odswiezDoladowanie(ilePasuje) {
+    const pozostalo = ilePasuje - limitWidoku;
+    elDoladowanie.hidden = pozostalo <= 0;
+    if (elDoladowanie.hidden) return;
 
-    Pokazuje sie tylko wtedy, gdy zakres dat naprawde chowa wpisy, wiec po
-    wyczyszczeniu filtrow albo przy krotkiej liscie znika sam. Przycisk wola
-    wyczyscFiltry(), bo etykieta obiecuje "wszystkie" - musi zdjac takze
-    wyszukiwarke i nawyki, inaczej pokazalby mniej, niz zapowiada liczba.
-  */
-  function odswiezOgraniczenie() {
-    const wszystkie = [...wpisy.values()];
-    const widoczne = doWyswietlenia().length;
-    const ukryte = wszystkie.length - widoczne;
+    const porcja = Math.min(PORCJA_WIDOKU, pozostalo);
+    elDoladuj.textContent = `Załaduj kolejne ${porcja} (widoczne ${limitWidoku} z ${ilePasuje})`;
+  }
 
-    // Baner mowi o ZAKRESIE DAT, wiec pokazujemy go tylko, gdy to on odsiewa.
-    elOgraniczenie.hidden = ukryte === 0 || elFiltrOd.value === '';
-    if (elOgraniczenie.hidden) return;
+  function doladuj() {
+    limitWidoku += PORCJA_WIDOKU;
+    renderuj();
+  }
 
-    elOgraniczenieTekst.textContent =
-      `Widok ograniczony od ${elFiltrOd.value} — ukryto ${ukryte} starszych wpisów. `;
-    elPokazWszystkie.textContent = `Pokaż wszystkie (${wszystkie.length})`;
+  /** Powrot do pierwszej porcji - po kazdej zmianie filtrow i porzadku. */
+  function odLiczOdNowa() {
+    limitWidoku = PORCJA_WIDOKU;
   }
 
   /*
@@ -635,7 +659,8 @@
       .sort();
     const zakres = daty.length > 0 ? ` (od ${daty[0]} do ${daty[daty.length - 1]})` : '';
 
-    elPodsumowanie.textContent = `Pokazano ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
+    elPodsumowanie.textContent =
+      `Filtry przepuszczają ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
   }
 
   // ==========================================================================
@@ -896,6 +921,7 @@
     elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
 
     odswiezPresety();
+    odLiczOdNowa();
     renderuj();
   }
 
@@ -975,7 +1001,7 @@
   elDodaj.addEventListener('click', dodajWpis);
   elEksport.addEventListener('click', eksportujCsv);
   elWyczysc.addEventListener('click', wyczyscFiltry);
-  elPokazWszystkie.addEventListener('click', wyczyscFiltry);
+  elDoladuj.addEventListener('click', doladuj);
 
   // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
   elFiltrSzukaj.addEventListener('input', zastosujFiltry);

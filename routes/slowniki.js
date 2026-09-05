@@ -16,6 +16,7 @@ const {
 } = require('../config/slowniki');
 const { OCENY } = require('../config/mapowanie-ocen');
 const plakietkiZadan = require('../config/plakietki-zadan');
+const { ATRYBUTY } = require('../config/atrybuty');
 
 const router = express.Router();
 
@@ -36,6 +37,9 @@ router.get('/', (req, res) => {
       Trudnosc przychodzi tu z KOMPLETEM wartosci, bo jako jedyna nie ma slownika wyzej.
     */
     plakietkiZadan,
+    // Nazwy, emoji i opisy atrybutow postaci - wartosci punktow ida osobno,
+    // przez /api/postac, bo sa danymi, a nie konfiguracja.
+    atrybuty: ATRYBUTY,
   });
 });
 

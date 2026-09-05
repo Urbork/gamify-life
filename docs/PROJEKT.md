@@ -50,14 +50,18 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 - [x] Wybór profilu importu w interfejsie
 
 ### Nagrody
-- [x] XP z zadań (trudność × czas × mnożnik terminowości), wpisów i nawyków
-- [x] Poziomy, prestiż, waluta zarobiona/wydana/dostępna
-- [x] Sklep z nagrodami — zakupy jako jedyny zapisywany stan
-- [x] Wszystko **wyliczane na bieżąco**, nigdy nie zapisywane
+- [x] XP z zadań (godziny × przelicznik trudności × mnożnik terminowości)
+- [x] XP z dziennika: 1 za wpis + 1 za każde wypełnione pole, sufit 18/dzień
+- [x] Poziomy (50 XP), prestiż (co 100 poziomów), złoto zarobione/wydane/dostępne
+- [x] Sklep z nagrodami
+- [x] Atrybuty (Siła, Zręczność, Witalność) — 2 punkty za poziom, z resetem
+- [x] Wszystko **wyliczane na bieżąco** poza dwoma wyjątkami: `zakupy`
+      i `atrybuty`. Obie tabele trzymają **decyzje użytkownika**, których nie da
+      się odtworzyć z danych źródłowych — to jedyne kryterium zapisywania stanu.
 
 ### Infrastruktura
-- [x] Migracje wersjonowane przez `PRAGMA user_version` (7 migracji)
-- [x] Smoke test — 271 asercji, izolowana baza tymczasowa
+- [x] Migracje wersjonowane przez `PRAGMA user_version` (8 migracji)
+- [x] Smoke test — 325 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
 - [x] Statystyki zadań i dziennika z tabelą miesięczną
@@ -67,6 +71,15 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 - [ ] Otworzyć PR dla gałęzi `feat/zadania-i-dziennik` (brakuje `gh` na maszynie)
 - [ ] Uzupełnić `KOLUMNY_IGNOROWANE` przy następnym eksporcie, jeśli dojdą kolumny
 - [ ] Rozważyć asercję pokrycia `wykryjSeparator` (import TSV nietestowany)
+- [ ] **Widok podstawowy + okno szczegółów** — lista pokazuje tylko pola używane
+      codziennie (pobudka, sen, jakość snu, spokój); kliknięcie w wiersz otwiera okno
+      z kompletem pól rzadszych (refleksje, posiłki, nawyki). To samo dla zadań.
+      Powód: pola wypełniane wieczorem wyszły z użycia, ale dane zostają — chodzi
+      o odciążenie widoku, nie o usuwanie kolumn.
+- [ ] **Kopia zapasowa poza dyskiem** — `backups/` leży na tym samym dysku co baza.
+      Ustalenia: OneDrive obecny, ale nieaktywny i pusty; D: 59 GB, E: 173 GB wolnego.
+      Propozycja: kopiowanie dziennej migawki `.db` na E: jako krok w istniejącym
+      zadaniu harmonogramu, ścieżka ze zmiennej środowiskowej. Odłożone jako duża zmiana.
 
 ## Pomysły i obserwacje
 

@@ -5,16 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Dziennik</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!--
+      Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
+      wyborze ciemnym mignelaby jasna strona. Stad zwykly <script> w <head>,
+      bez defer i bez async.
+    -->
+    <script src="/js/motyw.js"></script>
   </head>
   <body>
     <header class="pasek">
       <h1>Dziennik</h1>
-      <nav class="nawigacja">
-        <a href="/index.html">← Zadania</a>
-        <a href="/statystyki.html">Statystyki →</a>
-        <a href="/projekty.html">Projekty →</a>
-        <a href="/postac.html">Postać →</a>
+      <!--
+        Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
+        komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
+        brakowalo "Projektow"), wiec z menu nie dalo sie odczytac, co w ogole istnieje.
+
+        Biezaca strone znaczy aria-current="page" - to jedyna roznica miedzy plikami.
+        Atrybut niesie informacje takze dla czytnikow ekranu, a CSS wyroznia go wizualnie.
+
+        Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
+        ktorej miedzy tymi stronami nie ma.
+      -->
+      <nav class="nawigacja" aria-label="Sekcje aplikacji">
+        <a href="/index.html">📋 Zadania</a>
+        <a href="/dziennik.html" aria-current="page">📓 Dziennik</a>
+        <a href="/statystyki.html">📊 Statystyki</a>
+        <a href="/projekty.html">📁 Projekty</a>
+        <a href="/postac.html">🎮 Postać</a>
       </nav>
+      <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
+      <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
       <button id="przycisk-dodaj" type="button">+ Dodaj wpis</button>
       <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
       <button id="przycisk-import" type="button" data-profil="dziennik">Importuj z CSV</button>
@@ -69,16 +89,6 @@
     </section>
 
     <!--
-      Informacja o domyslnym ograniczeniu widoku (ostatnie 30 dni). Ukryta, gdy nic
-      nie jest ukryte. Istnieje po to, zeby brak starszych wpisow nie wygladal jak
-      utrata danych. Samo ograniczenie robi zwykly filtr zakresu dat, widoczny wyzej.
-    -->
-    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
-      <span id="ograniczenie-tekst"></span>
-      <button type="button" id="przycisk-pokaz-wszystkie"></button>
-    </p>
-
-    <!--
       Naglowki statyczne, wiersze buduje public/js/dziennik.js.
       data-kolumna = klucz sortowania; naglowek bez tego atrybutu jest nieklikalny.
       Domyslne sortowanie: data malejaco (najnowszy wpis u gory).
@@ -91,7 +101,7 @@
           <th class="kol-godzina" data-kolumna="pobudka">Pobudka</th>
           <th class="kol-ocena" data-kolumna="godziny_snu">Sen (h)</th>
           <th class="kol-ocena" data-kolumna="jakosc_snu">Jakość snu</th>
-          <th class="kol-ocena" data-kolumna="stres">Stres</th>
+          <th class="kol-ocena" data-kolumna="stres">Spokój</th>
           <th class="kol-ocena" data-kolumna="nastroj">Nastrój</th>
           <th class="kol-ocena" data-kolumna="intencjonalnosc">Intencjonalność</th>
           <th class="kol-tekst" data-kolumna="trzy_slowa">Trzy słowa</th>
@@ -113,6 +123,15 @@
       </thead>
       <tbody id="wiersze"></tbody>
     </table>
+
+    <!--
+      Doladowanie listy. Tabela rysuje tylko pierwsze N wierszy tego, co przeszlo
+      przez filtry - reszta czeka tutaj. To ograniczenie RYSOWANIA, nie filtr:
+      eksport, kopia zapasowa i XP zawsze widza pelny zbior.
+    -->
+    <p id="doladowanie" class="doladowanie" hidden>
+      <button type="button" id="przycisk-doladuj"></button>
+    </p>
 
     <p id="podsumowanie" class="podsumowanie"></p>
 

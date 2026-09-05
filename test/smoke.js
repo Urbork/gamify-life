@@ -109,10 +109,29 @@ function dzienOGodzinie(n, godzina) {
 
 /** Laduje pliki public/js w jednym sandboksie, tak jak robi to przegladarka. */
 function zaladujReguly() {
-  const sandbox = { console };
+  /*
+    motyw.js dotyka DOM i localStorage juz przy starcie (ustawia motyw przed
+    pierwszym malowaniem), wiec sandbox dostaje minimalne atrapy. Testujemy
+    z niego wylacznie czysta funkcje rozstrzygnij().
+  */
+  const sandbox = {
+    console,
+    document: {
+      documentElement: { dataset: {} },
+      addEventListener() {},
+      getElementById: () => null,
+    },
+    window: { matchMedia: null },
+    localStorage: {
+      getItem: () => null,
+      setItem() {},
+      removeItem() {},
+    },
+  };
   vm.createContext(sandbox);
 
   for (const plik of [
+    'motyw.js',
     'filtr-dat.js',
     'reguly-zadan.js',
     'reguly-dziennika.js',
@@ -129,7 +148,7 @@ function zaladujReguly() {
     wykonanym w tym samym kontekscie.
   */
   return vm.runInContext(
-    '({ filtrDat, regulyZadan, regulyDziennika, regulyStatystyk })',
+    '({ motyw, filtrDat, regulyZadan, regulyDziennika, regulyStatystyk })',
     sandbox
   );
 }
@@ -732,9 +751,24 @@ async function testujSilnikXp() {
     'trywialne zadanie daje 1 XP, nigdy 0',
     zrobione({ trudnosc: 1, czas_trwania_godziny: 0.1 }) === 1
   );
+  /*
+    XP zadania = godziny x przelicznik trudnosci (1 -> 0.5, 2 -> 1, 3 -> 2).
+    Trudnosc nie mnozy sie wprost, tylko wazy godziny - stad 4h przy trudnosci 3
+    to 8 XP, a nie 12.
+  */
   sprawdz(
-    'trudnosc 3 x 4h = 12 XP (bez dat, mnoznik 1)',
-    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 12
+    'trudnosc 3 (x2) x 4h = 8 XP (bez dat, mnoznik terminowosci 1)',
+    zrobione({ trudnosc: 3, czas_trwania_godziny: 4 }) === 8
+  );
+  sprawdzListe(
+    'przeliczniki trudnosci: 1h przy kazdej z trzech trudnosci',
+    [1, 2, 3].map((t) => zrobione({ trudnosc: t, czas_trwania_godziny: 2 })),
+    [1, 2, 4]
+  );
+  sprawdz(
+    'trudnosc spoza slownika: 0 XP i flaga brakujaceDane',
+    nagrody.xpZadania({ stan: 'Zrobione', trudnosc: 7, czas_trwania_godziny: 4 })
+      .brakujaceDane === true
   );
   sprawdz(
     'zadanie nie-Zrobione daje 0 XP',
@@ -753,21 +787,30 @@ async function testujSilnikXp() {
   const zDatami = (termin, koniec) =>
     zrobione({ trudnosc: 3, czas_trwania_godziny: 4, termin, czas_zakonczenia: koniec });
 
-  sprawdz('mnoznik x1.5: zapas 5 dni -> 18 XP', zDatami('2026-03-10', '2026-03-05') === 18);
+  // Premia nalezy sie od JEDNEGO dnia zapasu (dawniej od trzech). Baza: 8 XP.
+  sprawdz('mnoznik x1.5: zapas 5 dni -> 12 XP', zDatami('2026-03-10', '2026-03-05') === 12);
   sprawdz(
-    'mnoznik x1.5: granica DOKLADNIE 3 dni zapasu -> 18 XP',
-    zDatami('2026-03-10', '2026-03-07') === 18
+    'mnoznik x1.5: granica DOKLADNIE 1 dzien zapasu -> 12 XP',
+    zDatami('2026-03-10', '2026-03-09') === 12
   );
-  sprawdz('mnoznik x1: zapas 2 dni -> 12 XP', zDatami('2026-03-10', '2026-03-08') === 12);
-  sprawdz('mnoznik x1: ten sam dzien -> 12 XP', zDatami('2026-03-10', '2026-03-10') === 12);
+  sprawdz('mnoznik x1: ten sam dzien -> 8 XP', zDatami('2026-03-10', '2026-03-10') === 8);
   sprawdz(
     'mnoznik x1: godzina nie psuje - 23:00 w dniu terminu to nadal na czas',
-    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 12
+    zDatami('2026-03-10T09:00', '2026-03-10T23:00') === 8
   );
-  sprawdz('mnoznik x0.5: dzien po terminie -> 6 XP', zDatami('2026-03-10', '2026-03-11') === 6);
+  /*
+    REGRESJA: "doba przed terminem" liczy sie w pelnych dniach kalendarzowych.
+    Zakonczenie o 01:00 dzien przed terminem dzieli od niego mniej niz 24 godziny
+    zegarowe, a mimo to ma dostac premie - inaczej wynik zalezalby od pory dnia.
+  */
+  sprawdz(
+    'mnoznik x1.5 liczy DNI, nie godziny: 23:00 -> 01:00 nastepnego dnia to premia',
+    zDatami('2026-03-10T01:00', '2026-03-09T23:00') === 12
+  );
+  sprawdz('mnoznik x0.5: dzien po terminie -> 4 XP', zDatami('2026-03-10', '2026-03-11') === 4);
   sprawdz(
     'mnoznik x1 gdy brakuje ktorejs z dat',
-    zDatami('2026-03-10', null) === 12 && zDatami(null, '2026-03-11') === 12
+    zDatami('2026-03-10', null) === 8 && zDatami(null, '2026-03-11') === 8
   );
   sprawdz(
     'dolny limit dziala takze po zmniejszeniu przez x0.5',
@@ -779,18 +822,36 @@ async function testujSilnikXp() {
     }) === 1
   );
 
-  // --- dziennik ---
-  sprawdz('pusty wpis nie daje XP', nagrody.xpWpisu({ data: '2026-01-01' }) === 0);
-  sprawdz('wpis z jednym polem refleksyjnym: 5 + 10 = 15', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 15);
+  // --- dziennik: 1 XP za wpis + 1 XP za kazde wypelnione pole tresci ---
+  sprawdz('pusty wpis daje 1 XP za samo zalozenie', nagrody.xpWpisu({ data: '2026-01-01' }) === 1);
+  sprawdz('wpis z jednym polem: 1 + 1 = 2 XP', nagrody.xpWpisu({ wdziecznosc: 'x' }) === 2);
   sprawdz(
-    'wpis z kompletem szesciu pol: 5 + 60 = 65',
-    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 65
+    'wpis z kompletem szesciu pol refleksyjnych: 1 + 6 = 7 XP',
+    nagrody.xpWpisu(Object.fromEntries(nagrody.POLA_REFLEKSYJNE.map((k) => [k, 'x']))) === 7
   );
   sprawdz(
-    'wpis bez refleksji, ale z trescia (samo sniadanie): 5 XP',
-    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 5
+    'kazde pole wazy tyle samo - samo sniadanie tez 2 XP',
+    nagrody.xpWpisu({ sniadanie: 'kawa' }) === 2
   );
-  sprawdz('trzy nawyki: 3 x 3 = 9 XP', nagrody.xpNawykow({ nawyki: 'A, B, C' }) === 9);
+  /*
+    REGRESJA: nawyki sa JEDNYM polem. Wczesniej liczyly sie po sztuce (3 XP kazdy)
+    i same odpowiadaly za ponad cwierc XP w bazie - dziesiec odhaczonych nawykow
+    wazylo wiecej niz caly komplet refleksji.
+  */
+  sprawdz(
+    'nawyki to jedno pole: trzy odhaczone waza tyle co jeden',
+    nagrody.xpWpisu({ nawyki: 'A, B, C' }) === 2 && nagrody.xpWpisu({ nawyki: 'A' }) === 2
+  );
+  /*
+    Sufit dnia. Liczba bierze sie z dlugosci POLA_TRESCI_WPISU, wiec asercja pilnuje
+    takze tego, ze dopisanie pola do dziennika swiadomie podnosi maksimum.
+  */
+  const kompletWpisu = Object.fromEntries(nagrody.POLA_TRESCI_WPISU.map((k) => [k, 'x']));
+  sprawdz(
+    'maksimum z jednego dnia to 18 XP (1 + 17 pol tresci)',
+    nagrody.maksymalneXpWpisu() === 18 && nagrody.xpWpisu(kompletWpisu) === 18,
+    `max=${nagrody.maksymalneXpWpisu()}, komplet=${nagrody.xpWpisu(kompletWpisu)}`
+  );
   sprawdz(
     'licznik pol refleksyjnych 4/6',
     nagrody.liczbaWypelnionychPol({ wdziecznosc: 'a', bledy: 'b', rozmowa: 'c', jutro_wazne: 'd' }) === 4
@@ -802,15 +863,30 @@ async function testujSilnikXp() {
 
   // --- poziomy i prestiz ---
   const p = nagrody.poziomZXp;
-  sprawdz('0 XP -> poziom 1, prestiz 0, do nastepnego 500', p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 500);
-  sprawdz('499 XP -> nadal poziom 1, brakuje 1 XP', p(499).poziom === 1 && p(499).xpDoNastepnego === 1);
-  sprawdz('DOKLADNIE 500 XP -> poziom 2', p(500).poziom === 2 && p(500).prestiz === 0);
-  sprawdz('49999 XP -> poziom 100, prestiz 0', p(49999).poziom === 100 && p(49999).prestiz === 0);
   sprawdz(
-    'DOKLADNIE 50000 XP -> reset: prestiz 1, poziom 1',
-    p(50000).prestiz === 1 && p(50000).poziom === 1
+    '0 XP -> poziom 1, prestiz 0, do nastepnego 50',
+    p(0).poziom === 1 && p(0).prestiz === 0 && p(0).xpDoNastepnego === 50
   );
-  sprawdz('50500 XP -> prestiz 1, poziom 2', p(50500).prestiz === 1 && p(50500).poziom === 2);
+  sprawdz('49 XP -> nadal poziom 1, brakuje 1 XP', p(49).poziom === 1 && p(49).xpDoNastepnego === 1);
+  sprawdz('DOKLADNIE 50 XP -> poziom 2', p(50).poziom === 2 && p(50).prestiz === 0);
+  sprawdz('4999 XP -> poziom 100, prestiz 0', p(4999).poziom === 100 && p(4999).prestiz === 0);
+  sprawdz(
+    'DOKLADNIE 5000 XP -> reset: prestiz 1, poziom 1',
+    p(5000).prestiz === 1 && p(5000).poziom === 1
+  );
+  sprawdz('5050 XP -> prestiz 1, poziom 2', p(5050).prestiz === 1 && p(5050).poziom === 2);
+  /*
+    KALIBRACJA: rok codziennych wpisow wypelnionych w polowie (9 XP) plus zadanie
+    2h o sredniej trudnosci (2 XP) ma dac mniej wiecej jeden prestiz. Asercja pilnuje,
+    zeby zmiana stalych nie rozjechala sie po cichu z zalozeniem, pod ktore powstaly.
+  */
+  const rocznieXp = 365 * (9 + 2);
+  const cyklPrestizu = nagrody.STALE.PROG_POZIOMU * nagrody.STALE.POZIOMOW_DO_RESETU;
+  sprawdz(
+    'rok umiarkowanego uzywania miesci sie w 0.7-1.2 prestizu',
+    rocznieXp / cyklPrestizu >= 0.7 && rocznieXp / cyklPrestizu <= 1.2,
+    `${rocznieXp} XP / ${cyklPrestizu} = ${(rocznieXp / cyklPrestizu).toFixed(2)} prestizu`
+  );
 
   // --- waluta ---
   sprawdz('waluta to polowa XP zaokraglona w dol', nagrody.walutaZarobiona(101) === 50);
@@ -821,13 +897,15 @@ async function testujSilnikXp() {
     3
   );
   sprawdz(
-    'rozbicie zrodel: zadania 12, dziennik 15, nawyki 6',
-    stan.rozbicie.zadania === 12 && stan.rozbicie.dziennik === 15 && stan.rozbicie.nawyki === 6,
+    'rozbicie ma dwa zrodla: zadania 8, dziennik 3 (wpis + wdziecznosc + nawyki)',
+    stan.rozbicie.zadania === 8 &&
+      stan.rozbicie.dziennik === 3 &&
+      stan.rozbicie.nawyki === undefined,
     JSON.stringify(stan.rozbicie)
   );
   sprawdz(
-    'suma 33 XP, waluta 16 - 3 wydane = 13',
-    stan.calkowite_xp === 33 && stan.waluta_dostepna === 13,
+    'suma 11 XP, waluta 5 - 3 wydane = 2',
+    stan.calkowite_xp === 11 && stan.waluta_dostepna === 2,
     JSON.stringify({ xp: stan.calkowite_xp, waluta: stan.waluta_dostepna })
   );
 
@@ -904,10 +982,13 @@ async function testujPostac() {
       .every((k) => postac[k] !== undefined),
     JSON.stringify(Object.keys(postac))
   );
+  /*
+    Suma po WSZYSTKICH pozycjach rozbicia, a nie po wypisanych z nazwy - inaczej
+    dodanie zrodla XP bez dopisania go tutaj przechodziloby niezauwazone.
+  */
   sprawdz(
     'rozbicie sumuje sie do calkowitego XP',
-    postac.rozbicie.zadania + postac.rozbicie.nawyki + postac.rozbicie.dziennik ===
-      postac.calkowite_xp,
+    Object.values(postac.rozbicie).reduce((a, b) => a + b, 0) === postac.calkowite_xp,
     JSON.stringify(postac.rozbicie) + ' vs ' + postac.calkowite_xp
   );
 
@@ -1218,6 +1299,169 @@ async function testujProjekty() {
 
   Sprawdzamy OBA kierunki: wartosc slownika bez plakietki i plakietka bez wartosci.
 */
+/*
+  MOTYW JASNY / CIEMNY.
+
+  Testujemy czysta funkcje rozstrzygajaca - reszta modulu to DOM i localStorage.
+  To ona decyduje, czy wybor uzytkownika bierze gore nad ustawieniem systemu.
+*/
+/*
+  ZASADY NALICZANIA XP wystawiane na stronie Postaci (tylko do odczytu).
+
+  Opisy zyja w public/js/postac.js, a wartosci w lib/nagrody.js - to DWIE listy
+  obok siebie, wiec grozi im rozjazd. Ten sam wzorzec co przy plakietkach:
+  sprawdzamy OBA kierunki, bo dopisanie stalej bez opisu jest rownie ciche
+  jak opis wskazujacy na stala, ktorej juz nie ma.
+*/
+/*
+  KOPIA ZAPASOWA - format musi byc ODCZYTYWALNY Z POWROTEM.
+
+  Kopia zadan miala wczesniej naglowki nazwane jak kolumny bazy ('stan', 'nazwa'),
+  przez co import odrzucal wlasny plik bledem 'brakuje kolumn: Nazwa zadania, Stan'.
+  Kopia, ktorej nie da sie wczytac, nie jest kopia zapasowa - stad te asercje.
+*/
+async function testujFormatKopii() {
+  sekcja('FORMAT KOPII ZAPASOWEJ');
+
+  const backup = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'scripts', 'backup.js'), 'utf8');
+  const mapowanie = require('../config/mapowanie-importu');
+
+  /*
+    Naglowki wyciagamy z KODU skryptu, a nie z pliku w backups/ - katalog jest
+    gitignorowany i moze nie istniec na swiezym klonie.
+  */
+  const blok = backup.slice(backup.indexOf('const naglowki = ['));
+  const naglowkiZadan = [...blok.slice(0, blok.indexOf(']')).matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+  sprawdz(
+    'kopia zadan ma komplet kolumn wymaganych przez import',
+    mapowanie.KOLUMNY_WYMAGANE.every((k) => naglowkiZadan.includes(k)),
+    'naglowki: ' + JSON.stringify(naglowkiZadan)
+  );
+
+  /*
+    Kazdy naglowek kopii musi byc albo mapowany, albo swiadomie ignorowany.
+    Inaczej odtwarzanie po cichu gubiloby kolumne, a podglad zasypywalby
+    ostrzezeniem 'kolumny pominiete'.
+  */
+  const nieobsluzone = naglowkiZadan.filter(
+    (h) => !(h in mapowanie.MAPOWANIE_KOLUMN) && !mapowanie.KOLUMNY_IGNOROWANE.includes(h)
+  );
+  sprawdzListe('kazdy naglowek kopii jest mapowany albo ignorowany', [], nieobsluzone);
+
+  // Pola decydujace o XP musza przetrwac odtworzenie.
+  for (const pole of ['priorytet', 'trudnosc', 'czas_trwania_godziny']) {
+    sprawdz(
+      'kopia niesie pole do XP: ' + pole,
+      Object.values(mapowanie.MAPOWANIE_KOLUMN).includes(pole),
+      JSON.stringify(Object.values(mapowanie.MAPOWANIE_KOLUMN))
+    );
+  }
+
+  /*
+    Skrypt musi obejmowac WSZYSTKIE tabele. Wczesniej zapisywal tylko zadania
+    i dziennik, wiec projekty, zakupy i slownik nawykow nie istnialy w zadnej kopii.
+  */
+  for (const tabela of ['projekty', 'zakupy', 'nawyki_slownik']) {
+    sprawdz('kopia obejmuje tabele ' + tabela, backup.includes(tabela), 'brak w scripts/backup.js');
+  }
+  sprawdz(
+    'kopia zawiera migawke calej bazy (VACUUM INTO)',
+    backup.includes('VACUUM INTO'),
+    'brak migawki - odtworzenie relacji nie byloby mozliwe'
+  );
+}
+
+async function testujZasadyXp() {
+  sekcja('ZASADY NALICZANIA XP');
+
+  const { tresc } = await zapytaj('GET', '/api/postac');
+  const nagrody = require('../lib/nagrody');
+
+  sprawdz(
+    '/api/postac wystawia zasady naliczania',
+    tresc.zasady && typeof tresc.zasady === 'object',
+    JSON.stringify(tresc.zasady)
+  );
+  sprawdzListe(
+    'wystawione zasady to dokladnie STALE z lib/nagrody.js',
+    Object.keys(nagrody.STALE).sort(),
+    Object.keys(tresc.zasady).sort()
+  );
+
+  // Opisy z interfejsu - wyciagamy je z pliku, bo postac.js dotyka DOM przy starcie.
+  const kod = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'postac.js'), 'utf8');
+  const blok = kod.slice(kod.indexOf('const OPISY_ZASAD = {'));
+  // Bez wyrazenia regularnego - wystarczy odczytac nazwy kluczy z linii.
+  const opisy = blok
+    .slice(0, blok.indexOf('};'))
+    .split(String.fromCharCode(10))
+    .map((l) => l.trim())
+    .filter((l) => l.includes(':') && !l.startsWith('const'))
+    .map((l) => l.slice(0, l.indexOf(':')).trim());
+
+  sprawdzListe(
+    'kazda stala ma opis w interfejsie',
+    [],
+    Object.keys(nagrody.STALE).filter((k) => !opisy.includes(k))
+  );
+  sprawdzListe(
+    'zaden opis nie wskazuje na nieistniejaca stala',
+    [],
+    opisy.filter((k) => !(k in nagrody.STALE))
+  );
+
+  /*
+    REGRESJA: zasady sa TYLKO DO ODCZYTU. Gdyby ktos dorobil zapis, ten test
+    przypomni, ze zmiana stalej przelicza cala historie wstecz.
+  */
+  const proba = await zapytaj('PATCH', '/api/postac', { zasady: { PROG_POZIOMU: 1 } });
+  sprawdz(
+    'nie ma endpointu do zmiany zasad (PATCH /api/postac)',
+    proba.status === 404 || proba.status === 405,
+    'status: ' + proba.status
+  );
+}
+
+async function testujMotyw(reguly) {
+  sekcja('MOTYW JASNY / CIEMNY');
+
+  const { rozstrzygnij, WYBORY } = reguly.motyw;
+
+  sprawdzListe('trzy stany wyboru, systemowy jako pierwszy', ['system', 'jasny', 'ciemny'], WYBORY);
+
+  /*
+    Wybor RECZNY ma pierwszenstwo nad systemem - w obie strony. To sedno
+    przelacznika: uzytkownik z jasnym systemem musi moc obejrzec motyw ciemny.
+  */
+  sprawdzListe(
+    'wybor reczny wygrywa z ustawieniem systemu',
+    ['jasny', 'jasny', 'ciemny', 'ciemny'],
+    [
+      rozstrzygnij('jasny', false),
+      rozstrzygnij('jasny', true),
+      rozstrzygnij('ciemny', false),
+      rozstrzygnij('ciemny', true),
+    ]
+  );
+
+  sprawdzListe(
+    'wybor systemowy idzie za systemem',
+    ['jasny', 'ciemny'],
+    [rozstrzygnij('system', false), rozstrzygnij('system', true)]
+  );
+
+  /*
+    Nieznana wartosc (recznie zepsuty localStorage, starsza wersja aplikacji)
+    ma dawac motyw systemowy, a nie pusty atrybut albo wyjatek.
+  */
+  sprawdzListe(
+    'nieznany wybor zachowuje sie jak systemowy',
+    ['jasny', 'ciemny'],
+    [rozstrzygnij('cokolwiek', false), rozstrzygnij(undefined, true)]
+  );
+}
+
 async function testujPlakietkiZadan() {
   sekcja('PLAKIETKI POL ZADAN');
 
@@ -1323,6 +1567,221 @@ async function testujPlakietkiZadan() {
     [rekord.stan, rekord.obszar, rekord.priorytet, rekord.trudnosc]
   );
   await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+}
+
+/*
+  Kolejnosc komorek wiersza kontra kolejnosc naglowkow w dzienniku.
+
+  REGRESJA: licznik "Refleksje" byl doklejany na koniec wiersza, a w naglowkach stoi
+  zaraz za "Do przemyslenia". Liczba komorek sie zgadzala (21 = 21), wiec zadna kontrola
+  liczaca kolumny tego nie widziala - przesuniete bylo tylko UPORZADKOWANIE, przez co
+  wartosc sniadania ladowala pod naglowkiem "Refleksje", a licznik pod "Kolacja".
+
+  Dlatego ta asercja porownuje SEKWENCJE, a nie dlugosci. Zrodlem prawdy jest HTML
+  (naglowki) i public/js/dziennik.js (kolejnosc budowania komorek) - czyli dokladnie
+  te dwie listy, ktore moga sie rozjechac niezaleznie od siebie.
+*/
+async function testujAtrybuty() {
+  sekcja('ATRYBUTY POSTACI');
+
+  const nagrody = require('../lib/nagrody');
+  const { KLUCZE_ATRYBUTOW } = require('../config/atrybuty');
+
+  // --- reguła puli, w izolacji ---
+  sprawdz(
+    'poziom 1 bez prestizu nie daje jeszcze punktow',
+    nagrody.punktyDoRozdania(0, 1) === 0
+  );
+  sprawdz(
+    'kazdy poziom daje PUNKTY_NA_POZIOM punktow',
+    nagrody.punktyDoRozdania(0, 11) === 10 * nagrody.STALE.PUNKTY_NA_POZIOM
+  );
+  /*
+    REGRESJA: prestiz zeruje LICZNIK poziomu, ale nie dorobek. Gdyby pula liczyla
+    sie z samego `poziom`, przekroczenie progu prestizu odebraloby setke poziomow
+    punktow naraz - i to w chwili, ktora ma byc nagroda.
+  */
+  sprawdz(
+    'prestiz nie kasuje puli: prestiz 1 + poziom 1 > prestiz 0 + poziom 100',
+    nagrody.punktyDoRozdania(1, 1) > nagrody.punktyDoRozdania(0, 100),
+    `${nagrody.punktyDoRozdania(1, 1)} vs ${nagrody.punktyDoRozdania(0, 100)}`
+  );
+
+  // --- wystawienie definicji ---
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  sprawdzListe(
+    '/api/slowniki wystawia atrybuty w kolejnosci z konfiguracji',
+    KLUCZE_ATRYBUTOW,
+    (slowniki.atrybuty || []).map((a) => a.klucz)
+  );
+  sprawdz(
+    'kazdy atrybut ma etykiete, emoji i opis',
+    (slowniki.atrybuty || []).every((a) => a.etykieta && a.emoji && a.opis),
+    JSON.stringify(slowniki.atrybuty)
+  );
+
+  // --- stan poczatkowy ---
+  const { tresc: start } = await zapytaj('GET', '/api/postac');
+  sprawdzListe(
+    'GET /api/postac zwraca komplet atrybutow',
+    KLUCZE_ATRYBUTOW,
+    Object.keys(start.atrybuty || {}).sort(
+      (a, b) => KLUCZE_ATRYBUTOW.indexOf(a) - KLUCZE_ATRYBUTOW.indexOf(b)
+    )
+  );
+  sprawdz(
+    'pula zgadza sie z regula policzona w izolacji',
+    start.punkty.lacznie === nagrody.punktyDoRozdania(start.prestiz, start.poziom),
+    JSON.stringify(start.punkty)
+  );
+  sprawdz(
+    'wolne = lacznie - rozdane',
+    start.punkty.wolne === start.punkty.lacznie - start.punkty.rozdane,
+    JSON.stringify(start.punkty)
+  );
+
+  /*
+    Reszta testu potrzebuje puli, z ktorej da sie rozdac kilka punktow. Baza testowa
+    startuje pusta, wiec dokladamy zadan, dopoki postac nie uzbiera dosc poziomow.
+    Zadania sa tanszym zrodlem XP niz wpisy (jedno daje do 20 XP, wpis do 18),
+    a przy okazji nie zaburzaja testow dziennika.
+  */
+  const POTRZEBNE_PUNKTY = 6;
+  const idDoSprzatniecia = [];
+  while ((await zapytaj('GET', '/api/postac')).tresc.punkty.lacznie < POTRZEBNE_PUNKTY) {
+    const { tresc: zadanie } = await zapytaj('POST', '/api/zadania');
+    await zapytaj('PATCH', `/api/zadania/${zadanie.id}`, {
+      stan: 'Zrobione',
+      trudnosc: 3,
+      czas_trwania_godziny: 10,
+    });
+    idDoSprzatniecia.push(zadanie.id);
+    if (idDoSprzatniecia.length > 50) break; // zabezpieczenie przed petla bez konca
+  }
+
+  const { tresc: zPula } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'udalo sie uzbierac pule do rozdania',
+    zPula.punkty.lacznie >= POTRZEBNE_PUNKTY,
+    JSON.stringify(zPula.punkty)
+  );
+
+  // --- zapis ---
+  const zapis = await zapytaj('PATCH', '/api/atrybuty', { sila: 3 });
+  sprawdz('PATCH zapisuje punkty', zapis.status === 200 && zapis.tresc.atrybuty.sila === 3, `status ${zapis.status}`);
+  sprawdz(
+    'PATCH przelicza rozdane i wolne',
+    zapis.tresc.punkty.rozdane === 3 && zapis.tresc.punkty.wolne === zapis.tresc.punkty.lacznie - 3,
+    JSON.stringify(zapis.tresc.punkty)
+  );
+
+  /*
+    PATCH, a nie PUT: klucze pominiete w ciele maja ZOSTAC bez zmian. Gdyby
+    brakujace pole zerowalo atrybut, zapis jednego suwaka kasowalby dwa pozostale.
+  */
+  const czesciowy = await zapytaj('PATCH', '/api/atrybuty', { zrecznosc: 2 });
+  sprawdz(
+    'PATCH nie rusza atrybutow, ktorych nie ma w ciele',
+    czesciowy.tresc.atrybuty.sila === 3 && czesciowy.tresc.atrybuty.zrecznosc === 2,
+    JSON.stringify(czesciowy.tresc.atrybuty)
+  );
+
+  /*
+    Operacja calosciowa jest IDEMPOTENTNA - to jest powod, dla ktorego API przyjmuje
+    docelowa wartosc zamiast "+1". Powtorzone zadanie nie moze dolozyc punktu.
+  */
+  const powtorka = await zapytaj('PATCH', '/api/atrybuty', { sila: 3 });
+  sprawdz(
+    'powtorzony ten sam PATCH niczego nie dokłada',
+    powtorka.tresc.atrybuty.sila === 3 && powtorka.tresc.punkty.rozdane === 5,
+    JSON.stringify(powtorka.tresc.punkty)
+  );
+
+  // --- walidacja ---
+  const ponadPule = await zapytaj('PATCH', '/api/atrybuty', {
+    sila: zPula.punkty.lacznie + 1,
+  });
+  sprawdz(
+    'rozdanie ponad pule odrzucone (400)',
+    ponadPule.status === 400,
+    `status ${ponadPule.status}: ${ponadPule.tresc && ponadPule.tresc.blad}`
+  );
+
+  const ujemny = await zapytaj('PATCH', '/api/atrybuty', { sila: -1 });
+  sprawdz('ujemna wartosc odrzucona (400)', ujemny.status === 400, `status ${ujemny.status}`);
+
+  const ulamek = await zapytaj('PATCH', '/api/atrybuty', { sila: 1.5 });
+  sprawdz('ulamek odrzucony (400)', ulamek.status === 400, `status ${ulamek.status}`);
+
+  const nieznany = await zapytaj('PATCH', '/api/atrybuty', { charyzma: 1 });
+  sprawdz(
+    'nieznany atrybut odrzucony (400), a nie po cichu pominiety',
+    nieznany.status === 400,
+    `status ${nieznany.status}`
+  );
+
+  const poBledach = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'zaden odrzucony zapis nie zmienil stanu',
+    poBledach.tresc.atrybuty.sila === 3 && poBledach.tresc.atrybuty.zrecznosc === 2,
+    JSON.stringify(poBledach.tresc.atrybuty)
+  );
+
+  // --- reset ---
+  const reset = await zapytaj('POST', '/api/atrybuty/reset', {});
+  sprawdz(
+    'reset zeruje wszystkie atrybuty',
+    KLUCZE_ATRYBUTOW.every((k) => reset.tresc.atrybuty[k] === 0) &&
+      reset.tresc.punkty.rozdane === 0,
+    JSON.stringify(reset.tresc.atrybuty)
+  );
+  sprawdz(
+    'po resecie wolne wracaja do pelnej puli',
+    reset.tresc.punkty.wolne === reset.tresc.punkty.lacznie,
+    JSON.stringify(reset.tresc.punkty)
+  );
+
+  // Sprzatamy po sobie - kolejne testy licza zadania i nie moga zastac naszych.
+  for (const id of idDoSprzatniecia) await zapytaj('DELETE', `/api/zadania/${id}`);
+}
+
+async function testujKolejnoscKolumnDziennika() {
+  sekcja('DZIENNIK: KOLEJNOSC KOLUMN KONTRA NAGLOWKI');
+
+  const html = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'dziennik.html'), 'utf8');
+  const thead = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+  // Filtr odsiewa sam znacznik <thead>, ktory tez zaczyna sie od "<th".
+  const naglowki = thead
+    .split('<th')
+    .filter((k) => k.startsWith(' ') || k.startsWith('>'))
+    .map((k) => {
+      const kolumna = /data-kolumna="([^"]+)"/.exec(k);
+      if (kolumna) return kolumna[1];
+      const tekst = />([^<]*)</.exec(k);
+      const opis = tekst ? tekst[1].trim() : '';
+      return opis ? '(' + opis + ')' : '(akcje)';
+    });
+
+  const js = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'dziennik.js'), 'utf8');
+  const poczatek = js.indexOf('const KOLUMNY = [');
+  const blok = js.slice(poczatek, js.indexOf('];', poczatek));
+  const pola = [...blok.matchAll(/pole: '([^']+)'/g)].map((m) => m[1]);
+  const przedRefleksjami = /const POLE_PRZED_REFLEKSJAMI = '([^']+)'/.exec(js);
+
+  sprawdz(
+    'POLE_PRZED_REFLEKSJAMI istnieje i wskazuje pole z KOLUMNY',
+    przedRefleksjami !== null && pola.includes(przedRefleksjami[1]),
+    String(przedRefleksjami && przedRefleksjami[1])
+  );
+
+  const komorki = ['id'];
+  for (const pole of pola) {
+    komorki.push(pole);
+    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Refleksje)');
+  }
+  komorki.push('(akcje)');
+
+  sprawdzListe('kolejnosc komorek wiersza zgadza sie z naglowkami', komorki, naglowki);
 }
 
 async function testujDatyCalodzienne(reguly) {
@@ -2474,7 +2933,12 @@ async function main() {
     await testujSilnikXp();
     await testujPostac();
     await testujProjekty();
+    await testujMotyw(reguly);
+    await testujZasadyXp();
+    await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujAtrybuty();
+    await testujKolejnoscKolumnDziennika();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();
     await testujDomyslneOgraniczenie(reguly);
