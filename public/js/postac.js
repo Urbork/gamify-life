@@ -1,5 +1,5 @@
 /*
-  Widok postaci: poziom, prestiz, rozbicie XP i wydawanie waluty.
+  Widok postaci: poziom, prestiz, rozbicie XP i wydawanie zlota.
 
   Cala arytmetyka siedzi na serwerze (lib/nagrody.js) - tutaj jest wylacznie
   pobranie gotowych liczb i zbudowanie DOM. Dzieki temu regul naliczania XP
@@ -18,6 +18,7 @@
   const elFormularz = document.getElementById('formularz-zakupu');
   const elNazwa = document.getElementById('nazwa-zakupu');
   const elKoszt = document.getElementById('koszt-zakupu');
+  const elAtrybuty = document.getElementById('atrybuty');
   const elStatus = document.getElementById('status');
 
   const liczba = (n) => Number(n).toLocaleString('pl');
@@ -43,7 +44,7 @@
     const naglowek = el('div', 'poziom-naglowek');
     naglowek.append(
       el('span', 'poziom-numer', `Poziom ${p.poziom}`),
-      el('span', 'prestiz', p.prestiz > 0 ? `Prestiż ${p.prestiz}` : 'Prestiż 0')
+      el('span', 'prestiz', etykietaPrestizu(p.prestiz))
     );
 
     // Pasek postepu w obrebie biezacego poziomu.
@@ -65,10 +66,23 @@
     const karty = el('div', 'karty');
     karty.append(
       karta('XP łącznie', liczba(p.calkowite_xp)),
-      karta('Waluta dostępna', liczba(p.waluta_dostepna), `zarobiono ${liczba(p.waluta_zarobiona)}, wydano ${liczba(p.waluta_wydana)}`)
+      karta('🪙 ZŁOTO', liczba(p.waluta_dostepna), `zarobiono ${liczba(p.waluta_zarobiona)}, wydano ${liczba(p.waluta_wydana)}`)
     );
 
     elWskaznik.replaceChildren(naglowek, tlo, opis, karty);
+  }
+
+  /*
+    Korona za kazdy poziom prestizu. Powyzej MAKS_KORON przestajemy je rysowac
+    i piszemy mnoznik - dwadziescia koron obok siebie przestaje sie liczyc wzrokiem
+    i rozpycha naglowek, a liczba nadal jest czytelna.
+  */
+  const MAKS_KORON = 5;
+
+  function etykietaPrestizu(prestiz) {
+    if (prestiz <= 0) return 'Prestiż 0';
+    const korony = prestiz <= MAKS_KORON ? '👑'.repeat(prestiz) : `👑 ×${prestiz}`;
+    return `Prestiż ${prestiz} ${korony}`;
   }
 
   function karta(etykieta, wartosc, podstawa) {
@@ -103,6 +117,7 @@
     XP_ZA_UTWORZENIE_WPISU: 'Za sam wpis w dzienniku, nawet gdy nie ma w nim ani jednego pola.',
     XP_ZA_POLE_WPISU: 'Za każde wypełnione pole wpisu. Nawyki liczą się jako jedno pole.',
     DNI_NA_PREMIE: 'Taki zapas dni przed terminem daje mnożnik premiowy do XP zadania.',
+    PUNKTY_NA_POZIOM: 'Tyle punktów atrybutów dostajesz za każdy zdobyty poziom.',
   };
 
   function zbudujZasady(p) {
@@ -187,6 +202,138 @@
   }
 
   // ==========================================================================
+  // Atrybuty
+  // ==========================================================================
+
+  /*
+    Jedyna sekcja tej strony, ktora ZAPISUJE. Rozdanie punktow to decyzja
+    uzytkownika - nie da sie jej wyliczyc z zadan ani wpisow, wiec musi trafic
+    do bazy (tabela `atrybuty`, migracja 8).
+
+    Kazda zmiana leci od razu na serwer, tak jak edycja komorki w zadaniach -
+    nie ma przycisku "Zapisz", ktory dalby sie zamknac bez klikniecia.
+
+    POLE LICZBOWE, A NIE SAME PLUSY: przy prestizu 2 pula to ponad czterysta
+    punktow, wiec dosypywanie ich po jednym byloby karą, a nie zabawą.
+    Przyciski +/- zostaja dla drobnych korekt.
+  */
+
+  function wierszAtrybutu(def, stan, wolne) {
+    const wiersz = el('div', 'atrybut');
+
+    const nazwa = el('span', 'atrybut-nazwa', `${def.emoji} ${def.etykieta}`);
+    nazwa.title = def.opis;
+
+    const obecne = stan.atrybuty[def.klucz] ?? 0;
+
+    const pole = el('input', 'atrybut-pole');
+    pole.type = 'number';
+    pole.min = '0';
+    pole.step = '1';
+    pole.value = String(obecne);
+    /*
+      Gorna granica to obecna wartosc PLUS to, co zostalo wolne. Przegladarka
+      pilnuje jej tylko miekko (strzalkami), wiec twarda kontrola i tak jest
+      po stronie serwera - to wylacznie podpowiedz dla klikajacego.
+    */
+    pole.max = String(Math.max(0, obecne + wolne));
+    pole.addEventListener('change', () => zapiszAtrybut(def.klucz, pole.value));
+
+    const minus = el('button', 'atrybut-krok', '−');
+    minus.type = 'button';
+    minus.disabled = obecne <= 0;
+    minus.addEventListener('click', () => zapiszAtrybut(def.klucz, obecne - 1));
+
+    const plus = el('button', 'atrybut-krok', '+');
+    plus.type = 'button';
+    plus.disabled = wolne <= 0;
+    plus.addEventListener('click', () => zapiszAtrybut(def.klucz, obecne + 1));
+
+    wiersz.append(nazwa, minus, pole, plus);
+    return wiersz;
+  }
+
+  function zbudujAtrybuty(p, definicje) {
+    if (!p.punkty || !definicje) return;
+
+    const wolne = p.punkty.wolne;
+
+    const naglowek = el('div', 'atrybuty-naglowek');
+    naglowek.append(
+      el('span', 'atrybuty-wolne', `Wolne punkty: ${liczba(wolne)}`),
+      el('span', 'podstawa', `z ${liczba(p.punkty.lacznie)} zdobytych · rozdano ${liczba(p.punkty.rozdane)}`)
+    );
+
+    const wiersze = definicje.map((def) => wierszAtrybutu(def, p, wolne));
+
+    const reset = el('button', null, 'Resetuj punkty');
+    reset.type = 'button';
+    reset.addEventListener('click', resetujAtrybuty);
+
+    const stopka = el('p', 'podstawa');
+    stopka.append(
+      document.createTextNode(
+        `Każdy zdobyty poziom daje ${p.zasady ? p.zasady.PUNKTY_NA_POZIOM : 2} punkty. `
+      ),
+      reset
+    );
+
+    const dzieci = [naglowek, ...wiersze, stopka];
+
+    /*
+      Pula potrafi ZMALEC - poziom liczy sie na zywo, wiec poprawienie starego
+      zadania albo zmiana stalych XP moze cofnac postac o kilka poziomow.
+      Rozdanych punktow wtedy nie kasujemy po cichu; mowimy o tym wprost,
+      bo jedynym wyjsciem jest swiadomy reset.
+    */
+    if (wolne < 0) {
+      const ostrzezenie = el(
+        'p',
+        'uwaga-punkty',
+        `Rozdano ${liczba(p.punkty.rozdane)} punktów, a po przeliczeniu poziomu ` +
+          `dostępnych jest ${liczba(p.punkty.lacznie)}. Punkty zostały nietknięte — ` +
+          'żeby rozdać je od nowa, użyj przycisku poniżej.'
+      );
+      dzieci.unshift(ostrzezenie);
+    }
+
+    elAtrybuty.replaceChildren(...dzieci);
+  }
+
+  async function zapiszAtrybut(klucz, wartosc) {
+    const n = Number(wartosc);
+    if (!Number.isInteger(n) || n < 0) {
+      pokazStatus('punkty muszą być liczbą całkowitą nie mniejszą niż 0', 'blad');
+      await wczytaj();
+      return;
+    }
+
+    try {
+      await api.patch('/api/atrybuty', { [klucz]: n });
+      await wczytaj();
+      pokazStatus('zapisano punkty', 'ok');
+    } catch (err) {
+      // Serwer odrzuca rozdanie ponad pule - jego komunikat niesie konkretne liczby.
+      pokazStatus(err.message, 'blad');
+      // Przywracamy widok do stanu z bazy, zeby pole nie zostalo z wartoscia,
+      // ktorej nikt nie zapisal.
+      await wczytaj();
+    }
+  }
+
+  async function resetujAtrybuty() {
+    if (!confirm('Wyzerować wszystkie punkty atrybutów? Rozdasz je od nowa.')) return;
+
+    try {
+      await api.post('/api/atrybuty/reset', {});
+      await wczytaj();
+      pokazStatus('punkty wyzerowane', 'ok');
+    } catch (err) {
+      pokazStatus(err.message, 'blad');
+    }
+  }
+
+  // ==========================================================================
   // Zakupy
   // ==========================================================================
 
@@ -212,7 +359,7 @@
       const tdAkcje = el('td', 'kol-akcje');
       const btn = el('button', 'usun', '×');
       btn.type = 'button';
-      btn.title = 'Cofnij zakup (waluta wraca)';
+      btn.title = 'Cofnij zakup (złoto wraca)';
       btn.addEventListener('click', () => cofnijZakup(z));
       tdAkcje.appendChild(btn);
       tr.appendChild(tdAkcje);
@@ -245,7 +392,7 @@
   }
 
   async function cofnijZakup(zakup) {
-    if (!confirm(`Cofnąć zakup „${zakup.nazwa}" za ${zakup.koszt}? Waluta wróci na konto.`)) return;
+    if (!confirm(`Cofnąć zakup „${zakup.nazwa}" za ${zakup.koszt}? Złoto wróci na konto.`)) return;
 
     try {
       await api.usun(`/api/zakupy/${zakup.id}`);
@@ -260,9 +407,17 @@
   // Start
   // ==========================================================================
 
+  /*
+    Definicje atrybutow (nazwy, emoji, opisy) pobieramy RAZ - to konfiguracja,
+    ktora nie zmienia sie miedzy zapisami. Wartosci punktow ida z /api/postac
+    przy kazdym odswiezeniu.
+  */
+  let definicjeAtrybutow = null;
+
   async function wczytaj() {
     const [postac, zakupy] = await Promise.all([api.get('/api/postac'), api.get('/api/zakupy')]);
     zbudujWskaznik(postac);
+    zbudujAtrybuty(postac, definicjeAtrybutow);
     zbudujRozbicie(postac);
     zbudujListeZakupow(zakupy);
     return postac;
@@ -270,6 +425,7 @@
 
   async function start() {
     try {
+      definicjeAtrybutow = (await api.get('/api/slowniki')).atrybuty;
       const postac = await wczytaj();
       pokazStatus(`przeliczono ${liczba(postac.calkowite_xp)} XP`, 'ok');
     } catch (e) {

@@ -80,9 +80,23 @@
   const elTrybProjekty = document.getElementById('tryb-projekty');
   const elPodsumowanieObszary = document.getElementById('podsumowanie-obszary');
   const elPodsumowanieProjekty = document.getElementById('podsumowanie-projekty');
-  const elOgraniczenie = document.getElementById('ograniczenie-widoku');
-  const elOgraniczenieTekst = document.getElementById('ograniczenie-tekst');
-  const elPokazWszystkie = document.getElementById('przycisk-pokaz-wszystkie');
+  const elDoladowanie = document.getElementById('doladowanie');
+  const elDoladuj = document.getElementById('przycisk-doladuj');
+
+  /*
+    DOLADOWANIE LISTY - ograniczenie RYSOWANIA, nie filtrowania.
+
+    Tabela rysuje tylko pierwsze `limitWidoku` wierszy tego, co przeszlo przez filtry.
+    Reszta jest w pamieci i czeka na przycisk pod tabela. Podsumowanie, eksport CSV,
+    kopia zapasowa i naliczanie XP dzialaja na PELNYM zbiorze - to zasada projektu
+    i doladowanie jej nie narusza.
+
+    Powod jest mierzalny: caly koszt przerysowania siedzi w budowaniu DOM (przy 500
+    zadaniach ~290 ms, z czego ~87% to elementy <option>), a odsiew i sortowanie
+    zajmuja ponizej 1 ms. Dwadziescia wierszy rysuje sie natychmiast.
+  */
+  const PORCJA_WIDOKU = 20;
+  let limitWidoku = PORCJA_WIDOKU;
 
   /*
     Powyzej tylu zadan widok startuje ograniczony do aktywnych. Ponizej - pokazuje
@@ -242,6 +256,9 @@
       sortowanie.kolumna = kolumna;
       sortowanie.kierunek = 'rosnaco';
     }
+    // Po zmianie porzadku interesuje nas nowy poczatek listy, a nie ta sama liczba
+    // wierszy co przed sortowaniem - stad powrot do pierwszej porcji.
+    odLiczOdNowa();
     renderuj();
   }
 
@@ -603,71 +620,38 @@
 
   function renderuj() {
     const fokus = zapamietajFokus();
-    elWiersze.replaceChildren(...doWyswietlenia().map(zbudujWiersz));
+    const wszystkie = doWyswietlenia();
+    elWiersze.replaceChildren(...wszystkie.slice(0, limitWidoku).map(zbudujWiersz));
     odtworzFokus(fokus);
     odswiezNaglowki();
     odswiezPodsumowanie();
-    odswiezOgraniczenie();
+    odswiezDoladowanie(wszystkie.length);
   }
 
   /*
-    Baner o ograniczonym widoku.
-
-    Pokazuje sie tylko wtedy, gdy filtr stanu naprawde chowa zrobione zadania -
-    czyli w widoku domyslnym. Gdy uzytkownik sam zaznaczy "Zrobione" albo wyczysci
-    filtry, baner znika, bo nie ma juz o czym informowac.
-
-    Przycisk wola wyczyscFiltry(), a nie samo odznaczenie stanow: etykieta obiecuje
-    "wszystkie", wiec musi zdjac rowniez pozostale filtry, inaczej klikniecie
-    pokazaloby mniej, niz zapowiada liczba w nawiasie.
+    Przycisk pod tabela. Znika, gdy nie ma juz czego doladowac - wtedy widac
+    komplet tego, co przepuscily filtry, i przycisk nie ma o czym informowac.
   */
+  function odswiezDoladowanie(ilePasuje) {
+    const pozostalo = ilePasuje - limitWidoku;
+    elDoladowanie.hidden = pozostalo <= 0;
+    if (elDoladowanie.hidden) return;
+
+    const porcja = Math.min(PORCJA_WIDOKU, pozostalo);
+    elDoladuj.textContent = `Załaduj kolejne ${porcja} (widoczne ${limitWidoku} z ${ilePasuje})`;
+  }
+
+  function doladuj() {
+    limitWidoku += PORCJA_WIDOKU;
+    renderuj();
+  }
+
   /*
-    Baner o ograniczonym widoku.
-
-    DWA OGRANICZENIA SA ROZDZIELONE i przycisk zdejmuje TYLKO JEDNO - granice
-    terminu. Ukrycie zadan zrobionych ZOSTAJE, dopoki uzytkownik sam nie zmieni
-    filtra stanu: ukonczone zasmiecaja ekran przy szybkim zerknieciu, a wlaczenie
-    ich z powrotem jednym klikiem, ktory miał tylko poszerzyc zakres dat,
-    bylo zaskoczeniem.
-
-    Baner pokazuje sie WYLACZNIE wtedy, gdy dziala granica terminu - bo tylko
-    ona jest zdejmowana przyciskiem. Po klknieciu znika, a informacje o dalej
-    ukrytych zrobionych niesie panel filtrow (znacznik 'aktywne: N' i zaznaczone
-    stany). Zanim zniknie, mowi wprost, ze zrobione zostana ukryte.
+    Kazda zmiana filtrow, sortowania i kazde odswiezenie listy z serwera zaczyna
+    liczenie od nowa. Inaczej po zawezeniu filtra zostawaloby "widoczne 80 z 12".
   */
-  function odswiezOgraniczenie() {
-    const wszystkie = [...zadania.values()];
-
-    if (!filtry.terminDo) {
-      elOgraniczenie.hidden = true;
-      return;
-    }
-
-    /*
-      Dwa NIEZALEZNE liczniki - kazdy mowi, ile wierszy chowa dane ograniczenie
-      z osobna. Nie sumujemy ich, bo zadanie moze wpadac w oba naraz.
-    */
-    const bezGranicyTerminu = { ...filtry, terminDo: '' };
-    const ukryteTerminem = wszystkie.filter(
-      (z) => regulyZadan.filtrowane([z], bezGranicyTerminu).length === 1 && !pasujeWidokowi(z)
-    ).length;
-
-    const chowaZrobione = filtry.stany.size > 0 && !filtry.stany.has(slowniki.stanZakonczony);
-    const ukryteZrobione = chowaZrobione
-      ? wszystkie.filter((z) => z.stan === slowniki.stanZakonczony).length
-      : 0;
-
-    elOgraniczenie.hidden = ukryteTerminem === 0 && ukryteZrobione === 0;
-    if (elOgraniczenie.hidden) return;
-
-    const czesci = [`Widok ograniczony do terminu ${filtry.terminDo} — ukryto ${ukryteTerminem}.`];
-    if (ukryteZrobione > 0) {
-      czesci.push(`Zrobionych ukrytych: ${ukryteZrobione} (zostaną ukryte także po kliknięciu).`);
-    }
-    czesci.push('Zadania po terminie i bez terminu pozostają widoczne.');
-
-    elOgraniczenieTekst.textContent = czesci.join(' ') + ' ';
-    elPokazWszystkie.textContent = `Pokaż wszystkie terminy (${ukryteTerminem})`;
+  function odLiczOdNowa() {
+    limitWidoku = PORCJA_WIDOKU;
   }
 
   /** Czy zadanie przechodzi przez KOMPLET aktywnych filtrow. */
@@ -1040,7 +1024,7 @@
       .join(', ');
 
     elPodsumowanie.textContent =
-      `Pokazano ${widoczne.length} z ${wszystkie.length} zadań` +
+      `Filtry przepuszczają ${widoczne.length} z ${wszystkie.length} zadań` +
       (licznik ? ` (${licznik})` : '');
   }
 
@@ -1154,6 +1138,7 @@
     odswiezPodsumowaniaZwijanych();
 
     odswiezPresety();
+    odLiczOdNowa();
     renderuj();
   }
 
@@ -1375,7 +1360,7 @@
   elDodaj.addEventListener('click', dodajZadanie);
   elEksport.addEventListener('click', eksportujCsv);
   elWyczysc.addEventListener('click', wyczyscFiltry);
-  elPokazWszystkie.addEventListener('click', pokazWszystkieTerminy);
+  elDoladuj.addEventListener('click', doladuj);
 
   // 'input' zamiast 'change' - lista filtruje sie w trakcie pisania.
   elFiltrNazwa.addEventListener('input', zastosujFiltry);

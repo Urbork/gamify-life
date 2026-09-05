@@ -192,17 +192,6 @@
       </div>
     </section>
 
-    <!--
-      Informacja o domyslnym ograniczeniu widoku. Ukryta, gdy nic nie jest ukryte.
-      Istnieje po to, zeby brak zrobionych zadan nie wygladal jak utrata danych -
-      mowi wprost, ile wierszy jest schowanych, i daje jeden przycisk na pokazanie
-      wszystkiego. Samo ograniczenie robi zwykly filtr stanu, widoczny w panelu wyzej.
-    -->
-    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
-      <span id="ograniczenie-tekst"></span>
-      <button type="button" id="przycisk-pokaz-wszystkie"></button>
-    </p>
-
     <table id="tabela-zadan">
       <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
         <tr>
@@ -235,6 +224,15 @@
       </thead>
       <tbody id="wiersze"></tbody>
     </table>
+
+    <!--
+      Doladowanie listy. Tabela rysuje tylko pierwsze N wierszy tego, co przeszlo
+      przez filtry - reszta czeka tutaj. To ograniczenie RYSOWANIA, nie filtr:
+      eksport, kopia zapasowa i XP zawsze widza pelny zbior.
+    -->
+    <p id="doladowanie" class="doladowanie" hidden>
+      <button type="button" id="przycisk-doladuj"></button>
+    </p>
 
     <p id="podsumowanie" class="podsumowanie"></p>
 

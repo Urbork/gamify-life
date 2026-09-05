@@ -182,19 +182,17 @@ h1 {
 }
 
 /*
-  Baner o ograniczonym widoku. Ma byc widoczny, ale nie alarmujacy - to informacja,
-  a nie blad; stad ten sam zolty odcien co miekkie ostrzezenie o duplikacie daty,
-  a nie czerwien. Stoi tuz nad tabela, zeby czytalo sie go razem z brakujacymi wierszami.
+  Doladowanie listy. Stoi POD tabela, bo tam sie konczy czytanie - przycisk jest
+  naturalnym dalszym ciagiem, a nie ostrzezeniem przed trescia. Stad tez zwykly
+  przycisk zamiast banera: nic zlego sie nie dzieje, po prostu jest wiecej wierszy.
 */
-.ograniczenie {
+.doladowanie {
   margin: 8px 0;
-  padding: 6px 10px;
-  background: var(--info-tlo);
-  border: 1px solid var(--info-ramka);
+  text-align: center;
 }
 
-.ograniczenie button {
-  margin-left: 4px;
+.doladowanie button {
+  padding: 6px 16px;
 }
 
 /*
@@ -1121,4 +1119,58 @@ td.duplikat-daty {
 .podsumowanie {
   font-size: 12px;
   color: var(--tekst-slaby);
+}
+
+/*
+  Atrybuty postaci. Jeden wiersz na atrybut: nazwa, minus, pole liczbowe, plus.
+  Uklad siatkowy zamiast flexa, zeby pola liczbowe stały w jednej kolumnie
+  niezaleznie od dlugosci nazwy - inaczej "Zrecznosc" przesuwalaby swoje pole
+  wzgledem "Sily" i wiersze nie czytalyby sie jako tabela.
+*/
+.atrybuty {
+  margin: 8px 0 16px;
+}
+
+.atrybuty-naglowek {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.atrybuty-wolne {
+  font-weight: bold;
+}
+
+.atrybut {
+  display: grid;
+  /* Stale szerokosci + justify-content: start - inaczej kolumny rozciagaja sie
+     na cala szerokosc strony i przyciski uciekaja od nazwy na drugi koniec ekranu. */
+  grid-template-columns: 150px 28px 70px 28px;
+  justify-content: start;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.atrybut-pole {
+  width: 100%;
+  text-align: center;
+  font: inherit;
+}
+
+.atrybut-krok {
+  width: 28px;
+}
+
+/*
+  Rozdano wiecej punktow, niz wynosi obecna pula. Nie jest to blad zapisu, tylko
+  skutek przeliczenia poziomu wstecz - stad ton ostrzezenia, a nie alarmu.
+*/
+.uwaga-punkty {
+  border-left: 3px solid var(--uwaga);
+  background: var(--uwaga-tlo);
+  padding: 6px 10px;
+  margin: 6px 0;
+  font-size: 12px;
 }

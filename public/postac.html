@@ -47,10 +47,21 @@
       <p class="brak-danych">Wczytywanie…</p>
     </section>
 
+    <!--
+      Atrybuty. Jedyna sekcja tej strony, ktora COS ZAPISUJE - reszta jest wylacznie
+      odczytem z danych zrodlowych. Zawartosc buduje public/js/postac.js na podstawie
+      listy z /api/slowniki, wiec dodanie atrybutu to wpis w config/atrybuty.js
+      plus migracja, bez ruszania tego pliku.
+    -->
+    <h2>Atrybuty</h2>
+    <section id="atrybuty" class="atrybuty">
+      <p class="brak-danych">Wczytywanie…</p>
+    </section>
+
     <h2>Skąd wzięło się XP</h2>
     <div id="rozbicie"></div>
 
-    <h2>Wydaj walutę</h2>
+    <h2>Wydaj złoto</h2>
     <form id="formularz-zakupu" class="formularz-zakupu">
       <label>
         <span class="filtr-tytul">Na co</span>

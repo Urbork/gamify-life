@@ -1581,6 +1581,170 @@ async function testujPlakietkiZadan() {
   (naglowki) i public/js/dziennik.js (kolejnosc budowania komorek) - czyli dokladnie
   te dwie listy, ktore moga sie rozjechac niezaleznie od siebie.
 */
+async function testujAtrybuty() {
+  sekcja('ATRYBUTY POSTACI');
+
+  const nagrody = require('../lib/nagrody');
+  const { KLUCZE_ATRYBUTOW } = require('../config/atrybuty');
+
+  // --- reguła puli, w izolacji ---
+  sprawdz(
+    'poziom 1 bez prestizu nie daje jeszcze punktow',
+    nagrody.punktyDoRozdania(0, 1) === 0
+  );
+  sprawdz(
+    'kazdy poziom daje PUNKTY_NA_POZIOM punktow',
+    nagrody.punktyDoRozdania(0, 11) === 10 * nagrody.STALE.PUNKTY_NA_POZIOM
+  );
+  /*
+    REGRESJA: prestiz zeruje LICZNIK poziomu, ale nie dorobek. Gdyby pula liczyla
+    sie z samego `poziom`, przekroczenie progu prestizu odebraloby setke poziomow
+    punktow naraz - i to w chwili, ktora ma byc nagroda.
+  */
+  sprawdz(
+    'prestiz nie kasuje puli: prestiz 1 + poziom 1 > prestiz 0 + poziom 100',
+    nagrody.punktyDoRozdania(1, 1) > nagrody.punktyDoRozdania(0, 100),
+    `${nagrody.punktyDoRozdania(1, 1)} vs ${nagrody.punktyDoRozdania(0, 100)}`
+  );
+
+  // --- wystawienie definicji ---
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  sprawdzListe(
+    '/api/slowniki wystawia atrybuty w kolejnosci z konfiguracji',
+    KLUCZE_ATRYBUTOW,
+    (slowniki.atrybuty || []).map((a) => a.klucz)
+  );
+  sprawdz(
+    'kazdy atrybut ma etykiete, emoji i opis',
+    (slowniki.atrybuty || []).every((a) => a.etykieta && a.emoji && a.opis),
+    JSON.stringify(slowniki.atrybuty)
+  );
+
+  // --- stan poczatkowy ---
+  const { tresc: start } = await zapytaj('GET', '/api/postac');
+  sprawdzListe(
+    'GET /api/postac zwraca komplet atrybutow',
+    KLUCZE_ATRYBUTOW,
+    Object.keys(start.atrybuty || {}).sort(
+      (a, b) => KLUCZE_ATRYBUTOW.indexOf(a) - KLUCZE_ATRYBUTOW.indexOf(b)
+    )
+  );
+  sprawdz(
+    'pula zgadza sie z regula policzona w izolacji',
+    start.punkty.lacznie === nagrody.punktyDoRozdania(start.prestiz, start.poziom),
+    JSON.stringify(start.punkty)
+  );
+  sprawdz(
+    'wolne = lacznie - rozdane',
+    start.punkty.wolne === start.punkty.lacznie - start.punkty.rozdane,
+    JSON.stringify(start.punkty)
+  );
+
+  /*
+    Reszta testu potrzebuje puli, z ktorej da sie rozdac kilka punktow. Baza testowa
+    startuje pusta, wiec dokladamy zadan, dopoki postac nie uzbiera dosc poziomow.
+    Zadania sa tanszym zrodlem XP niz wpisy (jedno daje do 20 XP, wpis do 18),
+    a przy okazji nie zaburzaja testow dziennika.
+  */
+  const POTRZEBNE_PUNKTY = 6;
+  const idDoSprzatniecia = [];
+  while ((await zapytaj('GET', '/api/postac')).tresc.punkty.lacznie < POTRZEBNE_PUNKTY) {
+    const { tresc: zadanie } = await zapytaj('POST', '/api/zadania');
+    await zapytaj('PATCH', `/api/zadania/${zadanie.id}`, {
+      stan: 'Zrobione',
+      trudnosc: 3,
+      czas_trwania_godziny: 10,
+    });
+    idDoSprzatniecia.push(zadanie.id);
+    if (idDoSprzatniecia.length > 50) break; // zabezpieczenie przed petla bez konca
+  }
+
+  const { tresc: zPula } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'udalo sie uzbierac pule do rozdania',
+    zPula.punkty.lacznie >= POTRZEBNE_PUNKTY,
+    JSON.stringify(zPula.punkty)
+  );
+
+  // --- zapis ---
+  const zapis = await zapytaj('PATCH', '/api/atrybuty', { sila: 3 });
+  sprawdz('PATCH zapisuje punkty', zapis.status === 200 && zapis.tresc.atrybuty.sila === 3, `status ${zapis.status}`);
+  sprawdz(
+    'PATCH przelicza rozdane i wolne',
+    zapis.tresc.punkty.rozdane === 3 && zapis.tresc.punkty.wolne === zapis.tresc.punkty.lacznie - 3,
+    JSON.stringify(zapis.tresc.punkty)
+  );
+
+  /*
+    PATCH, a nie PUT: klucze pominiete w ciele maja ZOSTAC bez zmian. Gdyby
+    brakujace pole zerowalo atrybut, zapis jednego suwaka kasowalby dwa pozostale.
+  */
+  const czesciowy = await zapytaj('PATCH', '/api/atrybuty', { zrecznosc: 2 });
+  sprawdz(
+    'PATCH nie rusza atrybutow, ktorych nie ma w ciele',
+    czesciowy.tresc.atrybuty.sila === 3 && czesciowy.tresc.atrybuty.zrecznosc === 2,
+    JSON.stringify(czesciowy.tresc.atrybuty)
+  );
+
+  /*
+    Operacja calosciowa jest IDEMPOTENTNA - to jest powod, dla ktorego API przyjmuje
+    docelowa wartosc zamiast "+1". Powtorzone zadanie nie moze dolozyc punktu.
+  */
+  const powtorka = await zapytaj('PATCH', '/api/atrybuty', { sila: 3 });
+  sprawdz(
+    'powtorzony ten sam PATCH niczego nie dokłada',
+    powtorka.tresc.atrybuty.sila === 3 && powtorka.tresc.punkty.rozdane === 5,
+    JSON.stringify(powtorka.tresc.punkty)
+  );
+
+  // --- walidacja ---
+  const ponadPule = await zapytaj('PATCH', '/api/atrybuty', {
+    sila: zPula.punkty.lacznie + 1,
+  });
+  sprawdz(
+    'rozdanie ponad pule odrzucone (400)',
+    ponadPule.status === 400,
+    `status ${ponadPule.status}: ${ponadPule.tresc && ponadPule.tresc.blad}`
+  );
+
+  const ujemny = await zapytaj('PATCH', '/api/atrybuty', { sila: -1 });
+  sprawdz('ujemna wartosc odrzucona (400)', ujemny.status === 400, `status ${ujemny.status}`);
+
+  const ulamek = await zapytaj('PATCH', '/api/atrybuty', { sila: 1.5 });
+  sprawdz('ulamek odrzucony (400)', ulamek.status === 400, `status ${ulamek.status}`);
+
+  const nieznany = await zapytaj('PATCH', '/api/atrybuty', { charyzma: 1 });
+  sprawdz(
+    'nieznany atrybut odrzucony (400), a nie po cichu pominiety',
+    nieznany.status === 400,
+    `status ${nieznany.status}`
+  );
+
+  const poBledach = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'zaden odrzucony zapis nie zmienil stanu',
+    poBledach.tresc.atrybuty.sila === 3 && poBledach.tresc.atrybuty.zrecznosc === 2,
+    JSON.stringify(poBledach.tresc.atrybuty)
+  );
+
+  // --- reset ---
+  const reset = await zapytaj('POST', '/api/atrybuty/reset', {});
+  sprawdz(
+    'reset zeruje wszystkie atrybuty',
+    KLUCZE_ATRYBUTOW.every((k) => reset.tresc.atrybuty[k] === 0) &&
+      reset.tresc.punkty.rozdane === 0,
+    JSON.stringify(reset.tresc.atrybuty)
+  );
+  sprawdz(
+    'po resecie wolne wracaja do pelnej puli',
+    reset.tresc.punkty.wolne === reset.tresc.punkty.lacznie,
+    JSON.stringify(reset.tresc.punkty)
+  );
+
+  // Sprzatamy po sobie - kolejne testy licza zadania i nie moga zastac naszych.
+  for (const id of idDoSprzatniecia) await zapytaj('DELETE', `/api/zadania/${id}`);
+}
+
 async function testujKolejnoscKolumnDziennika() {
   sekcja('DZIENNIK: KOLEJNOSC KOLUMN KONTRA NAGLOWKI');
 
@@ -2773,6 +2937,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujAtrybuty();
     await testujKolejnoscKolumnDziennika();
     await testujDatyCalodzienne(reguly);
     await testujDuplikowanie();

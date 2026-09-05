@@ -1,10 +1,16 @@
 /**
- * Postac: XP, poziom, prestiz i waluta.
+ * Postac: XP, poziom, prestiz, zloto i atrybuty.
  *
- *   GET    /api/postac       - pelny stan, liczony NA ZYWO
- *   GET    /api/zakupy       - lista wydatkow
- *   POST   /api/zakupy       - dodaje { nazwa, koszt }, odrzuca gdy brak waluty
- *   DELETE /api/zakupy/:id   - cofa zakup (waluta wraca)
+ *   GET    /api/postac            - pelny stan, liczony NA ZYWO
+ *   PATCH  /api/atrybuty          - zapisuje CALE rozdanie punktow
+ *   POST   /api/atrybuty/reset    - zeruje rozdanie
+ *   GET    /api/zakupy            - lista wydatkow
+ *   POST   /api/zakupy            - dodaje { nazwa, koszt }, odrzuca gdy brak zlota
+ *   DELETE /api/zakupy/:id        - cofa zakup (zloto wraca)
+ *
+ * JEDYNY trwaly stan w tym module to tabela `zakupy` i tabela `atrybuty` - obie
+ * trzymaja DECYZJE uzytkownika, ktorych nie da sie odtworzyc z niczego innego.
+ * Cala reszta liczy sie od zera przy kazdym wywolaniu.
  *
  * GET /api/postac NICZEGO nie zapisuje - przelicza wszystko od zera przy kazdym
  * wywolaniu. Dzieki temu poprawienie starego zadania albo wpisu dziennika od razu
@@ -19,6 +25,7 @@ const express = require('express');
 const db = require('../db');
 const nagrody = require('../lib/nagrody');
 const { STAN_ZAKONCZONY } = require('../config/slowniki');
+const { KLUCZE_ATRYBUTOW } = require('../config/atrybuty');
 
 const router = express.Router();
 
@@ -47,17 +54,112 @@ const sumaKosztow = db.prepare('SELECT COALESCE(SUM(koszt), 0) AS suma FROM zaku
 const wstawZakup = db.prepare('INSERT INTO zakupy (nazwa, koszt) VALUES (?, ?)');
 const usunZakup = db.prepare('DELETE FROM zakupy WHERE id = ?');
 
-/** Przelicza pelny stan postaci od zera. */
+/** Przelicza pelny stan postaci od zera i dokleja zapisane rozdanie atrybutow. */
 function stanPostaci() {
-  return nagrody.policzPostac(
+  const postac = nagrody.policzPostac(
     wszystkieZadania.all(),
     wszystkieWpisy.all(),
     sumaKosztow.get().suma,
     STAN_ZAKONCZONY
   );
+  return { ...postac, ...stanAtrybutow(postac) };
 }
 
 // --- trasy ----------------------------------------------------------------
+
+/*
+  ATRYBUTY
+
+  Punkty przychodza z poziomu (PUNKTY_NA_POZIOM za kazdy zdobyty), a poziom liczy
+  sie na zywo z zadan i wpisow. Pula potrafi wiec ZMALEC - np. po poprawieniu
+  starego zadania albo po zmianie stalych naliczania XP.
+
+  Rozdanych punktow wtedy NIE RUSZAMY. Milczace obcinanie skasowaloby decyzje
+  uzytkownika przy okazji zupelnie innej operacji; zamiast tego `wolne` schodzi
+  ponizej zera, a interfejs pokazuje to wprost i proponuje reset. Zapis nowego
+  rozdania i tak sie nie uda, dopoki suma przekracza pule - blokuje go walidacja
+  w PATCH nizej.
+*/
+const wszystkieAtrybuty = db.prepare('SELECT nazwa, punkty FROM atrybuty');
+const ustawAtrybut = db.prepare('UPDATE atrybuty SET punkty = ? WHERE nazwa = ?');
+
+function stanAtrybutow(postac) {
+  const punkty = Object.fromEntries(wszystkieAtrybuty.all().map((a) => [a.nazwa, a.punkty]));
+  const lacznie = nagrody.punktyDoRozdania(postac.prestiz, postac.poziom);
+  const rozdane = Object.values(punkty).reduce((a, b) => a + b, 0);
+
+  return {
+    atrybuty: punkty,
+    punkty: { lacznie, rozdane, wolne: lacznie - rozdane },
+  };
+}
+
+/*
+  PATCH przyjmuje CALE rozdanie, a nie pojedyncze "+1".
+
+  Powod jest taki sam jak przy imporcie dziennika: operacja calosciowa jest
+  idempotentna. Dwa razy wyslane "+1" doda dwa punkty, dwa razy wyslane
+  "sila: 7" zostawi siedem - a przy klikaniu w interfejsie powtorzenie zadania
+  jest kwestia czasu.
+
+  Klucze spoza slownika sa BLEDEM, a nie cichym pominieciem: literowka w nazwie
+  atrybutu ma sie zglosic od razu, a nie zniknac bez sladu.
+*/
+router.patch('/atrybuty', (req, res) => {
+  const cialo = req.body;
+  if (!cialo || typeof cialo !== 'object' || Array.isArray(cialo)) {
+    throw blad(400, 'Oczekiwano obiektu z punktami atrybutow.');
+  }
+
+  const nieznane = Object.keys(cialo).filter((k) => !KLUCZE_ATRYBUTOW.includes(k));
+  if (nieznane.length > 0) {
+    throw blad(400, `Nieznane atrybuty: ${nieznane.join(', ')}.`);
+  }
+
+  // Brakujace klucze zachowuja obecna wartosc - PATCH, nie PUT.
+  const obecne = Object.fromEntries(wszystkieAtrybuty.all().map((a) => [a.nazwa, a.punkty]));
+  const docelowe = { ...obecne };
+
+  for (const [nazwa, wartosc] of Object.entries(cialo)) {
+    const n = Number(wartosc);
+    if (!Number.isInteger(n) || n < 0) {
+      throw blad(400, `Atrybut "${nazwa}": oczekiwano liczby całkowitej nie mniejszej niż 0.`);
+    }
+    docelowe[nazwa] = n;
+  }
+
+  const postac = stanPostaci();
+  const lacznie = nagrody.punktyDoRozdania(postac.prestiz, postac.poziom);
+  const suma = Object.values(docelowe).reduce((a, b) => a + b, 0);
+
+  if (suma > lacznie) {
+    throw blad(400, `Do rozdania jest ${lacznie} punktów, a rozdzielono ${suma}.`);
+  }
+
+  // Transakcja: albo caly komplet, albo nic - inaczej nieudany zapis zostawilby
+  // rozdanie w stanie posrednim, ktorego uzytkownik nigdy nie wybral.
+  db.transaction(() => {
+    for (const [nazwa, wartosc] of Object.entries(docelowe)) ustawAtrybut.run(wartosc, nazwa);
+  })();
+
+  res.json({ ...stanPostaci(), zasady: nagrody.STALE });
+});
+
+/*
+  Reset to osobna trasa, a nie PATCH z samymi zerami.
+
+  Roznica jest w intencji: reset ma dzialac ZAWSZE, takze wtedy, gdy pula zmalala
+  i obecne rozdanie jest juz nieprawidlowe - a wlasnie wtedy PATCH odmowilby zapisu,
+  bo walidacja patrzy na stan wysylany, nie na docelowy. Reset jest jedynym
+  wyjsciem z tej sytuacji, wiec nie moze podlegac tej samej blokadzie.
+*/
+router.post('/atrybuty/reset', (req, res) => {
+  db.transaction(() => {
+    for (const nazwa of KLUCZE_ATRYBUTOW) ustawAtrybut.run(0, nazwa);
+  })();
+
+  res.json({ ...stanPostaci(), zasady: nagrody.STALE });
+});
 
 router.get('/postac', (req, res) => {
   /*

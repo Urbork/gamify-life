@@ -292,7 +292,35 @@ const MIGRACJE = [
     }
   },
 
-  // --- 8: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 8: atrybuty postaci -----------------------------------------------
+  /*
+    Punkty atrybutow to DRUGI - po tabeli `zakupy` - kawalek trwalego stanu
+    w tym projekcie. Reszta (XP, poziom, prestiz, zloto zarobione) liczy sie na zywo
+    z zadan i wpisow dziennika, wiec da sie ja odtworzyc w kazdej chwili.
+
+    Rozdanych punktow odtworzyc sie NIE DA: wybor "wolimy Sile niz Zrecznosc" nie
+    wynika z zadnych danych zrodlowych, wiec musi byc zapisany. Ta sama zasada
+    co przy zakupach - zapisujemy wylacznie DECYZJE uzytkownika, nigdy wyniki
+    obliczen, ktore umiemy powtorzyc.
+
+    Wiersze zakladamy tutaj, a nie przy pierwszym zapisie, zeby odczyt nigdy nie
+    musial radzic sobie z brakiem rekordu.
+
+    CHECK (punkty >= 0) to ostatnia linia obrony przed ujemnym atrybutem - walidacja
+    jest w routes/postac.js, ale baza nie ma powodu ufac warstwie wyzej.
+  */
+  (db) => {
+    db.exec(
+      'CREATE TABLE atrybuty (' +
+        '  nazwa  TEXT PRIMARY KEY,' +
+        '  punkty INTEGER NOT NULL DEFAULT 0 CHECK (punkty >= 0)' +
+        ')'
+    );
+    const wstaw = db.prepare('INSERT INTO atrybuty (nazwa, punkty) VALUES (?, 0)');
+    for (const nazwa of ['sila', 'zrecznosc', 'witalnosc']) wstaw.run(nazwa);
+  },
+
+  // --- 9: tutaj dopisz kolejna migracje ----------------------------------
 ];
 
 function uruchomMigracje(db) {

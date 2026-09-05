@@ -89,16 +89,6 @@
     </section>
 
     <!--
-      Informacja o domyslnym ograniczeniu widoku (ostatnie 30 dni). Ukryta, gdy nic
-      nie jest ukryte. Istnieje po to, zeby brak starszych wpisow nie wygladal jak
-      utrata danych. Samo ograniczenie robi zwykly filtr zakresu dat, widoczny wyzej.
-    -->
-    <p id="ograniczenie-widoku" class="ograniczenie" hidden>
-      <span id="ograniczenie-tekst"></span>
-      <button type="button" id="przycisk-pokaz-wszystkie"></button>
-    </p>
-
-    <!--
       Naglowki statyczne, wiersze buduje public/js/dziennik.js.
       data-kolumna = klucz sortowania; naglowek bez tego atrybutu jest nieklikalny.
       Domyslne sortowanie: data malejaco (najnowszy wpis u gory).
@@ -133,6 +123,15 @@
       </thead>
       <tbody id="wiersze"></tbody>
     </table>
+
+    <!--
+      Doladowanie listy. Tabela rysuje tylko pierwsze N wierszy tego, co przeszlo
+      przez filtry - reszta czeka tutaj. To ograniczenie RYSOWANIA, nie filtr:
+      eksport, kopia zapasowa i XP zawsze widza pelny zbior.
+    -->
+    <p id="doladowanie" class="doladowanie" hidden>
+      <button type="button" id="przycisk-doladuj"></button>
+    </p>
 
     <p id="podsumowanie" class="podsumowanie"></p>
 
