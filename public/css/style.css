@@ -558,26 +558,30 @@ td select.plakietka {
   min-width: 2750px;
 }
 
-/* --- panel wyboru nawykow --- */
+/* --- panel wyboru wielokrotnego (nawyki i slowa) --- */
 
-/* Komorka nawykow nie jest polem tekstowym - klikniecie otwiera panel. */
-td.komorka-nawykow {
+/*
+  Komorka pola wyboru nie jest polem tekstowym - klikniecie otwiera panel.
+  Te same reguly obsluguja OBA pola tego rodzaju, bo roznia sie wylacznie
+  slownikiem i podpisami, a nie wygladem.
+*/
+td.komorka-wyboru {
   cursor: pointer;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-td.komorka-nawykow:hover {
+td.komorka-wyboru:hover {
   outline: 1px solid var(--akcent);
   outline-offset: -1px;
 }
 
-td.komorka-nawykow:empty::before {
+td.komorka-wyboru:empty::before {
   content: 'kliknij, aby wybrać';
   color: var(--tekst-slaby);
 }
 
-.panel-nawykow {
+.panel-wyboru {
   position: absolute;
   z-index: 10;
   width: 320px;
@@ -599,7 +603,7 @@ td.komorka-nawykow:empty::before {
   border-bottom: 1px solid var(--ramka);
 }
 
-.pozycja-nawyku {
+.pozycja-wyboru {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -607,13 +611,13 @@ td.komorka-nawykow:empty::before {
   padding: 1px 0;
 }
 
-.pozycja-nawyku label {
+.pozycja-wyboru label {
   cursor: pointer;
   flex: 1;
 }
 
 /* Ikony pojawiaja sie dopiero pod kursorem - inaczej lista bylaby zaśmiecona. */
-.akcje-nawyku button {
+.akcje-wyboru button {
   border: none;
   background: none;
   cursor: pointer;
@@ -622,7 +626,7 @@ td.komorka-nawykow:empty::before {
   opacity: 0.25;
 }
 
-.pozycja-nawyku:hover .akcje-nawyku button {
+.pozycja-wyboru:hover .akcje-wyboru button {
   opacity: 1;
 }
 

@@ -320,7 +320,90 @@ const MIGRACJE = [
     for (const nazwa of ['sila', 'zrecznosc', 'witalnosc']) wstaw.run(nazwa);
   },
 
-  // --- 9: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 9: slownik wartosci dla pola "trzy slowa" -------------------------
+  /*
+    Pole  dziala od tej pory tak samo jak : wartosci wybiera sie
+    z listy zamiast wpisywac recznie. Kolumna w dzienniku ZOSTAJE tekstem z nazwami
+    rozdzielonymi przecinkami - format sie nie zmienia, wiec import z Notion, eksport
+    CSV, kopia zapasowa i wyszukiwarka dzialaja bez zadnej poprawki.
+
+    LISTA POCHODZI Z DANYCH, nie z przepisania. Zostala odczytana z 519 wpisow
+    w bazie, bo szesc wartosci ma w nazwie emoji ("🦥 Lazy", "😢 Sad", "Festive✨")
+    i przepisanie ich recznie dalo by nazwy, ktore nie dopasowalyby sie do historii.
+
+    Po zasianiu listy migracja DOCIAGA jeszcze wszystko, co wystepuje w dzienniku,
+    a czego na liscie nie ma. Dzieki temu zadna wartosc z historii nie stanie sie
+    nieklikalna - takze w bazie, ktora ma wpisy nieobecne w tym pliku.
+  */
+  (db) => {
+    db.exec(
+      'CREATE TABLE slowa_slownik (' +
+        '  id    INTEGER PRIMARY KEY AUTOINCREMENT,' +
+        '  nazwa TEXT NOT NULL UNIQUE' +
+        ')'
+    );
+
+    const POCZATKOWE = [
+    "⚖ Balanced",
+    "❔ IDK",
+    "❤ Love",
+    "👍 OK",
+    "🤮 Sick",
+    "🦥 Lazy",
+    "😢 Sad",
+    "🙂 Happy",
+    "🛏 Tired",
+    "Creative",
+    "Difficult",
+    "Diligent",
+    "Disappointed",
+    "Educational",
+    "Excited",
+    "Exploring",
+    "Family",
+    "Festive✨",
+    "Friendship",
+    "Frustrated",
+    "Fulfilled",
+    "Fun",
+    "Helpful",
+    "Inspired",
+    "Introspective",
+    "Investigative",
+    "Leisure",
+    "Low Energy",
+    "Low Impact",
+    "Motivated",
+    "Organized",
+    "Overwhelmed",
+    "Relieved",
+    "Sharing",
+    "Stressed",
+    "Stuck",
+    ];
+
+    const wstaw = db.prepare('INSERT OR IGNORE INTO slowa_slownik (nazwa) VALUES (?)');
+    for (const nazwa of POCZATKOWE) wstaw.run(nazwa);
+
+    // Domknięcie: cokolwiek jest w dzienniku, a nie trafilo na liste wyzej.
+    const wpisy = db
+      .prepare("SELECT trzy_slowa FROM dziennik WHERE trzy_slowa IS NOT NULL AND trim(trzy_slowa) <> ''")
+      .all();
+    let dociagnietych = 0;
+    for (const wpis of wpisy) {
+      for (const slowo of String(wpis.trzy_slowa).split(',').map((s) => s.trim())) {
+        if (!slowo) continue;
+        if (wstaw.run(slowo).changes > 0) dociagnietych++;
+      }
+    }
+
+    const ile = db.prepare('SELECT COUNT(*) AS n FROM slowa_slownik').get().n;
+    console.log(
+      `[db]   migracja 9: slownik slow ma ${ile} pozycji (dociagnietych z dziennika: ${dociagnietych})`
+    );
+  },
+
+  // --- 10: tutaj dopisz kolejna migracje ---------------------------------
 ];
 
 function uruchomMigracje(db) {

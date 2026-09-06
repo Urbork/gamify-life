@@ -40,13 +40,24 @@ const regulyDziennika = (() => {
     'intencjonalnosc',
   ]);
 
-  /** Rozbija pole `nawyki` na pojedyncze nazwy. */
-  function nazwyNawykow(w) {
-    if (!w.nawyki) return [];
-    return w.nawyki
+  /*
+    Pola WIELOKROTNEGO WYBORU - oba trzymaja nazwy rozdzielone przecinkami
+    i oba filtruje sie tak samo. Jedna lista zamiast dwoch bliznianych funkcji.
+  */
+  const POLA_WYBORU = ['nawyki', 'trzy_slowa'];
+
+  /** Rozbija pole wielokrotnego wyboru na pojedyncze nazwy. */
+  function nazwyWartosci(w, pole) {
+    if (!w[pole]) return [];
+    return String(w[pole])
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  /** Zgodnosc wstecz - reszta kodu i testy wolaja to po staremu. */
+  function nazwyNawykow(w) {
+    return nazwyWartosci(w, 'nawyki');
   }
 
   function pasujeSzukaj(w, filtry) {
@@ -65,9 +76,15 @@ const regulyDziennika = (() => {
     byloby mina na przyszlosc - wystarczyloby dopisac nawyk "Water" obok
     istniejacego "Drink Water", zeby filtr zaczal lapac oba naraz.
   */
+  function pasujeWybor(w, filtry, pole) {
+    const wybrane = filtry[pole];
+    if (!wybrane || wybrane.size === 0) return true;
+    return nazwyWartosci(w, pole).some((n) => wybrane.has(n));
+  }
+
+  /** Zgodnosc wstecz dla samych nawykow. */
   function pasujeNawyk(w, filtry) {
-    if (filtry.nawyki.size === 0) return true;
-    return nazwyNawykow(w).some((n) => filtry.nawyki.has(n));
+    return pasujeWybor(w, filtry, 'nawyki');
   }
 
   /*
@@ -90,7 +107,10 @@ const regulyDziennika = (() => {
   /** Wpisy spelniajace WSZYSTKIE aktywne filtry (pola lacza sie przez ORAZ). */
   function filtrowane(lista, filtry) {
     return lista.filter(
-      (w) => pasujeSzukaj(w, filtry) && pasujeNawyk(w, filtry) && pasujeZakresDat(w, filtry)
+      (w) =>
+        pasujeSzukaj(w, filtry) &&
+        POLA_WYBORU.every((pole) => pasujeWybor(w, filtry, pole)) &&
+        pasujeZakresDat(w, filtry)
     );
   }
 
@@ -98,7 +118,7 @@ const regulyDziennika = (() => {
   function ileAktywnych(filtry) {
     return [
       filtry.szukaj !== '',
-      filtry.nawyki.size > 0,
+      ...POLA_WYBORU.map((pole) => Boolean(filtry[pole] && filtry[pole].size > 0)),
       filtry.od !== '' || filtry.do !== '',
     ].filter(Boolean).length;
   }
@@ -138,5 +158,13 @@ const regulyDziennika = (() => {
     });
   }
 
-  return { nazwyNawykow, filtrowane, ileAktywnych, posortowane, POLA_SZUKANIA };
+  return {
+    nazwyNawykow,
+    nazwyWartosci,
+    filtrowane,
+    ileAktywnych,
+    posortowane,
+    POLA_SZUKANIA,
+    POLA_WYBORU,
+  };
 })();

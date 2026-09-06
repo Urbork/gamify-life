@@ -34,9 +34,11 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 
 ### Dziennik
 - [x] Tabela wpisów z 18 kolumnami, edycja w miejscu
-- [x] Oceny 1–5 z plakietkami; **stres w skali odwróconej** (0 = najgorzej)
-- [x] Słownik nawyków w bazie, edytowalny, ze zmianą nazwy kaskadującą po wpisach
-- [x] Filtry: tekst po 8 kolumnach, zakres dat, multi-select nawyków
+- [x] Oceny 1–5 z plakietkami, etykiety wyśrodkowane na „Przeciętny"; **Spokój w skali 0–5**
+- [x] **Dwa pola wielokrotnego wyboru** — Nawyki i Słowa — na jednym mechanizmie
+      (`lib/slownik-wartosci.js`): słownik w bazie, edytowalny, ze zmianą nazwy
+      kaskadującą po wpisach. Bez limitu liczby wartości; do XP liczą się jako jedno pole
+- [x] Filtry: tekst po 8 kolumnach, zakres dat, multi-select nawyków i słów
 - [x] Miękkie ostrzeżenie o duplikacie daty (żółte, nieblokujące)
 - [x] Widok domyślny: ostatnie 30 dni
 
@@ -60,8 +62,8 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
       się odtworzyć z danych źródłowych — to jedyne kryterium zapisywania stanu.
 
 ### Infrastruktura
-- [x] Migracje wersjonowane przez `PRAGMA user_version` (8 migracji)
-- [x] Smoke test — 325 asercji, izolowana baza tymczasowa
+- [x] Migracje wersjonowane przez `PRAGMA user_version` (9 migracji)
+- [x] Smoke test — 360 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
 - [x] Statystyki zadań i dziennika z tabelą miesięczną

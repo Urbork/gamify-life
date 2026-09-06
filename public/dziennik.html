@@ -72,6 +72,15 @@
           <div id="filtr-nawyki" class="checkboxy"></div>
         </fieldset>
 
+        <!--
+          Slowa opisujace dzien. Zwiniete, bo slownik ma 36 pozycji i rozpychal
+          panel - ta sama decyzja co przy Obszarze i Projekcie na stronie zadan.
+        -->
+        <details class="filtr filtr-szeroki filtr-zwijany" id="pole-slowa">
+          <summary id="podsumowanie-slowa">Słowa — wszystkie</summary>
+          <div id="filtr-slowa" class="checkboxy"></div>
+        </details>
+
         <button type="button" id="przycisk-wyczysc">Wyczyść filtry</button>
       </div>
     </details>
@@ -136,19 +145,22 @@
     <p id="podsumowanie" class="podsumowanie"></p>
 
     <!--
-      Panel wyboru nawykow. Jeden na cala strone, pozycjonowany przy klikanej komorce.
+      Panel wyboru wielokrotnego. JEDEN na cala strone, obsluguje OBA pola tego
+      rodzaju - Nawyki i Słowa - bo roznia sie wylacznie slownikiem i podpisami.
+      Ktore pole jest edytowane, mowi data-pole klikanej komorki.
+
       Trzymany poza tabela, zeby nie rozpychal wiersza i nie byl przycinany
       przez poziome przewijanie tabeli.
     -->
-    <div id="panel-nawykow" class="panel-nawykow" hidden>
+    <div id="panel-wyboru" class="panel-wyboru" hidden>
       <div class="panel-naglowek">
-        <strong>Nawyki</strong>
-        <button type="button" id="zamknij-nawyki" class="usun" title="Zamknij">×</button>
+        <strong id="tytul-wyboru"></strong>
+        <button type="button" id="zamknij-wybor" class="usun" title="Zamknij">×</button>
       </div>
-      <div id="lista-nawykow" class="lista-nawykow"></div>
+      <div id="lista-wyboru" class="lista-wyboru"></div>
       <div class="panel-stopka">
-        <input type="text" id="nowy-nawyk" placeholder="nazwa nowego nawyku" />
-        <button type="button" id="dodaj-nawyk">+ Dodaj nawyk</button>
+        <input type="text" id="nowa-wartosc" />
+        <button type="button" id="dodaj-wartosc"></button>
       </div>
     </div>
 

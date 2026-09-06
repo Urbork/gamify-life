@@ -1732,6 +1732,121 @@ async function testujKolumneXp(reguly) {
   );
 }
 
+/*
+  Slownik slow opisujacych dzien (`slowa_slownik`, migracja 9).
+
+  Logike dzieli z nawykami - obie trasy powstaja z tej samej fabryki
+  w lib/slownik-wartosci.js. Testy nawykow sprawdzaja WSPOLNA czesc, wiec tutaj
+  pilnujemy tego, co przy fabryce moze sie rozjechac: czy trasa jest zamontowana,
+  czy siega do WLASCIWEJ tabeli i czy kaskadowa zmiana nazwy rusza WLASCIWA
+  kolumne dziennika. Zle sparametryzowana fabryka przechodzilaby testy nawykow
+  i po cichu psula slowa.
+*/
+async function testujSlownikSlow() {
+  sekcja('SLOWNIK SLOW OPISUJACYCH DZIEN');
+
+  const { status, tresc: slowa } = await zapytaj('GET', '/api/slowa');
+  sprawdz('GET /api/slowa odpowiada', status === 200 && Array.isArray(slowa), `status ${status}`);
+  sprawdz(
+    'migracja 9 zasiala slownik wartosciami z Notion',
+    slowa.length >= 36,
+    `pozycji: ${slowa.length}`
+  );
+  /*
+    Wartosci z emoji sa najbardziej narazone na uszkodzenie: powstaly z odczytu
+    bazy, a nie z przepisania, wlasnie dlatego ze recznie przepisane "Lazy"
+    z emoji nie dopasowaloby sie do 130 istniejacych wpisow.
+  */
+  sprawdz(
+    'wartosci z emoji przetrwaly zasianie',
+    ['\u{1F9A5} Lazy', '\u{1F622} Sad', 'Festive✨', '❔ IDK'].every((s) =>
+      slowa.some((x) => x.nazwa === s)
+    ),
+    slowa.map((x) => x.nazwa).join(' | ')
+  );
+
+  // --- kaskadowa zmiana nazwy rusza WLASCIWA kolumne ---
+  const { tresc: wpis } = await zapytaj('POST', '/api/dziennik', { data: '2026-04-01' });
+  await zapytaj('PATCH', `/api/dziennik/${wpis.id}`, {
+    trzy_slowa: 'ZZTestowe, Balanced',
+    nawyki: 'ZZTestowe',
+  });
+
+  const { tresc: dodane } = await zapytaj('POST', '/api/slowa', { nazwa: 'ZZTestowe' });
+  const zmiana = await zapytaj('PATCH', `/api/slowa/${dodane.id}`, { nazwa: 'ZZPoZmianie' });
+  sprawdz(
+    'zmiana nazwy slowa poprawia wpisy dziennika',
+    zmiana.tresc.zaktualizowanychWpisow === 1,
+    JSON.stringify(zmiana.tresc)
+  );
+
+  // Dziennik nie ma GET /:id - czytamy z listy.
+  const wpisZListy = async () =>
+    (await zapytaj('GET', '/api/dziennik')).tresc.find((x) => x.id === wpis.id);
+  const poZmianie = await wpisZListy();
+  sprawdz(
+    'kolumna trzy_slowa zaktualizowana, kolejnosc zachowana',
+    poZmianie.trzy_slowa === 'ZZPoZmianie, Balanced',
+    poZmianie.trzy_slowa
+  );
+  /*
+    REGRESJA NA PARAMETRYZACJE FABRYKI: ta sama nazwa siedzi tez w `nawyki`,
+    ale slownik slow nie ma prawa jej tam ruszyc. Gdyby kolumnaWpisu wskazywala
+    zla kolumne, ten test jako jedyny by to zlapal.
+  */
+  sprawdz(
+    'kolumna nawyki NIE zostala ruszona przez slownik slow',
+    poZmianie.nawyki === 'ZZTestowe',
+    poZmianie.nawyki
+  );
+
+  // --- usuniecie ze slownika nie rusza historii ---
+  await zapytaj('DELETE', `/api/slowa/${dodane.id}`);
+  const poUsunieciu = await wpisZListy();
+  sprawdz(
+    'usuniecie ze slownika zostawia wpis nietkniety',
+    poUsunieciu.trzy_slowa === 'ZZPoZmianie, Balanced',
+    poUsunieciu.trzy_slowa
+  );
+
+  // --- walidacja wspolna, ale z wlasnym komunikatem ---
+  const zPrzecinkiem = await zapytaj('POST', '/api/slowa', { nazwa: 'zle, bo z przecinkiem' });
+  sprawdz(
+    'nazwa z przecinkiem odrzucona (przecinek rozdziela wartosci)',
+    zPrzecinkiem.status === 400,
+    `status ${zPrzecinkiem.status}`
+  );
+  /*
+    Duplikat sprawdzamy na nazwie WZIETEJ ZE SLOWNIKA, a nie wpisanej z pamieci:
+    wartosci maja emoji w nazwie ("⚖ Balanced"), wiec samo "balanced" nie jest
+    duplikatem niczego i test przechodzilby, nie sprawdzajac nic.
+  */
+  const istniejaca = slowa[0].nazwa;
+  const duplikat = await zapytaj('POST', '/api/slowa', {
+    nazwa: istniejaca.toLocaleUpperCase('pl'),
+  });
+  sprawdz(
+    'duplikat rozniacy sie wielkoscia liter odrzucony (409)',
+    duplikat.status === 409,
+    `"${istniejaca}" -> status ${duplikat.status}`
+  );
+
+  /*
+    HIGIENA: oba slowniki wyboru maja byc zamontowane i miec ten sam ksztalt
+    odpowiedzi. Dopisanie trzeciego takiego pola bez trasy zlapie ta asercja.
+  */
+  for (const sciezka of ['/api/nawyki', '/api/slowa']) {
+    const { status: st, tresc } = await zapytaj('GET', sciezka);
+    sprawdz(
+      `${sciezka} zwraca liste { id, nazwa }`,
+      st === 200 && Array.isArray(tresc) && tresc.every((x) => x.id && typeof x.nazwa === 'string'),
+      `status ${st}`
+    );
+  }
+
+  await zapytaj('DELETE', `/api/dziennik/${wpis.id}`);
+}
+
 async function testujAtrybuty() {
   sekcja('ATRYBUTY POSTACI');
 
@@ -3097,6 +3212,7 @@ async function main() {
     await testujParserDat();
     await testujQuestLog();
     await testujNawyki();
+    await testujSlownikSlow();
     await testujDeduplikacjeDziennika();
     await testujImport();
     await testujLimityCiala();
