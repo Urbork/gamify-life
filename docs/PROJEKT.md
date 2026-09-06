@@ -62,11 +62,13 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
       się odtworzyć z danych źródłowych — to jedyne kryterium zapisywania stanu.
 
 ### Infrastruktura
-- [x] Migracje wersjonowane przez `PRAGMA user_version` (9 migracji)
-- [x] Smoke test — 360 asercji, izolowana baza tymczasowa
+- [x] Migracje wersjonowane przez `PRAGMA user_version` (10 migracji)
+- [x] Smoke test — 387 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
-- [x] Statystyki zadań i dziennika z tabelą miesięczną
+- [x] Statystyki w sześciu grupach z nawigacją kotwicową: konsekwencja (serie,
+      pokrycie), rytm tygodnia, samopoczucie z trendem, współwystępowanie słów
+      i nawyków, zadania (terminowość wg obszaru i priorytetu), postęp XP
 
 ## Do zrobienia
 

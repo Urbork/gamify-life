@@ -12,6 +12,7 @@
 
 const express = require('express');
 const db = require('../db');
+const nagrody = require('../lib/nagrody');
 
 const router = express.Router();
 
@@ -155,15 +156,26 @@ const wstawNowy = db.prepare(
 );
 const usun = db.prepare('DELETE FROM dziennik WHERE id = ?');
 
+/*
+  XP dokladane do kazdego wpisu - dokladnie jak przy zadaniach (routes/zadania.js).
+
+  Liczy je SERWER, bo silnik XP ma miec jedna implementacje (lib/nagrody.js).
+  Bez tego strona statystyk musialaby przeliczac XP w przegladarce, czyli powtorzyc
+  reguly - a to ten sam blad, ktory dal kiedys numerDnia w trzech kopiach.
+*/
+function zXp(wpis) {
+  return { ...wpis, xp: nagrody.xpWpisu(wpis) };
+}
+
 // --- trasy ----------------------------------------------------------------
 
 router.get('/', (req, res) => {
-  res.json(pobierzWszystkie.all());
+  res.json(pobierzWszystkie.all().map(zXp));
 });
 
 router.post('/', (req, res) => {
   const wynik = wstawNowy.run();
-  res.status(201).json(pobierzJeden.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJeden.get(wynik.lastInsertRowid)));
 });
 
 router.patch('/:id', (req, res) => {
@@ -187,7 +199,7 @@ router.patch('/:id', (req, res) => {
   const przypisania = pola.map((p) => `${p} = @${p}`).join(', ');
   db.prepare(`UPDATE dziennik SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
 
-  res.json(pobierzJeden.get(id));
+  res.json(zXp(pobierzJeden.get(id)));
 });
 
 router.delete('/:id', (req, res) => {

@@ -1262,3 +1262,63 @@ td.duplikat-daty {
   --slowo-tlo: #2a2a2e;
   --slowo-tekst: #a8a8ae;
 }
+
+/*
+  Statystyki: nawigacja kotwicowa i sekcje.
+
+  Spis tresci u gory, bo strona ma teraz szesc sekcji i kilkanascie tabel -
+  bez niego dojscie do "Zadan" znaczy przewiniecie przez caly dziennik.
+  Kolejnosc linkow bierze sie z tablicy SEKCJE w statystyki.js; asercja w smoke
+  pilnuje, ze zgadza sie z kolejnoscia renderowania.
+*/
+.nawigacja-statystyk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ramka);
+}
+
+.nawigacja-statystyk a {
+  padding: 3px 10px;
+  border: 1px solid var(--ramka);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--tekst);
+  font-size: 13px;
+}
+
+.nawigacja-statystyk a:hover {
+  background: var(--tlo-naglowka-hover);
+}
+
+/* Odstep miedzy sekcjami - inaczej tabele z sasiednich grup zlewaja sie w jedna. */
+.sekcja-statystyk {
+  margin-bottom: 28px;
+  /* Kotwica nie moze chowac naglowka pod gorna krawedzia okna. */
+  scroll-margin-top: 12px;
+}
+
+.sekcja-statystyk h3.podnaglowek {
+  font-size: 13px;
+  color: var(--tekst-slaby);
+}
+
+/* Weekend w rytmie tygodnia - wyrozniony tlem, bo to on niesie najwieksza roznice. */
+.statystyki tbody tr.weekend {
+  background: var(--tlo-zebry);
+  font-weight: bold;
+}
+
+/*
+  Ostrzezenie o wspolwystepowaniu. Ton informacyjny, nie alarmowy - sekcja nie jest
+  bledna, tylko latwo z niej wyciagnac wniosek, ktorego dane nie niosa.
+*/
+.uwaga-korelacja {
+  border-left: 3px solid var(--uwaga);
+  background: var(--uwaga-tlo);
+  padding: 6px 10px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+}

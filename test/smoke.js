@@ -1631,6 +1631,191 @@ async function testujPlakietkiZadan() {
   dlatego osobno pilnujemy, ze naglowek da sie posortowac (nizej), bo to wlasnie
   ta druga implementacja bylaby pierwsza rzecza, ktora sie rozjedzie.
 */
+/*
+  Nowe grupy statystyk. Wszystkie reguly sa czyste, wiec karmimy je danymi
+  syntetycznymi - bez bazy i bez HTTP.
+*/
+async function testujNoweStatystyki(reguly) {
+  sekcja('STATYSTYKI: NOWE GRUPY');
+
+  const R = reguly.regulyStatystyk;
+
+  // --- serie dni ---
+  const ciag = [
+    '2026-01-01',
+    '2026-01-02',
+    '2026-01-03',
+    // przerwa
+    '2026-01-10',
+    '2026-01-11',
+  ].map((data) => ({ data }));
+
+  const serie = R.serieDni(ciag);
+  sprawdz(
+    'najdluzsza seria liczy dni po kolei, nie rekordy',
+    serie.najdluzsza === 3 && serie.odDnia === '2026-01-01' && serie.doDnia === '2026-01-03',
+    JSON.stringify(serie)
+  );
+  /*
+    "Obecna" seria liczy sie od OSTATNIEGO wpisu wstecz, a nie od dzisiaj -
+    inaczej po kazdej przerwie kasowalaby informacje o tym, ile dni bylo przed nia.
+  */
+  sprawdz(
+    'obecna seria liczy sie od ostatniego wpisu',
+    serie.obecna === 2 && serie.ostatniDzien === '2026-01-11',
+    JSON.stringify(serie)
+  );
+  sprawdz(
+    'duplikaty tej samej daty nie wydluzaja serii',
+    R.serieDni([{ data: '2026-01-01' }, { data: '2026-01-01' }]).najdluzsza === 1
+  );
+  sprawdz('pusty dziennik daje zerowe serie', R.serieDni([]).najdluzsza === 0);
+
+  // --- pokrycie ---
+  const pok = R.pokrycie(ciag);
+  sprawdz(
+    'pokrycie liczy sie wzgledem zakresu, nie calego kalendarza',
+    pok.dniZWpisem === 5 && pok.dniWZakresie === 11,
+    JSON.stringify(pok)
+  );
+
+  // --- dni tygodnia ---
+  // 2026-01-05 to poniedzialek, 2026-01-10 sobota, 2026-01-11 niedziela.
+  const tydzien = R.wedlugDniTygodnia([
+    { data: '2026-01-05', godziny_snu: 6, stres: 1 },
+    { data: '2026-01-10', godziny_snu: 8, stres: 5 },
+    { data: '2026-01-11', godziny_snu: 9, stres: 4 },
+  ]);
+  sprawdzListe(
+    'tydzien zaczyna sie od poniedzialku',
+    ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'],
+    tydzien.map((d) => d.nazwa)
+  );
+  sprawdz(
+    'weekend oznaczony na sobote i niedziele',
+    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',') === 'sobota,niedziela',
+    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',')
+  );
+  /*
+    REGRESJA: dzien tygodnia liczymy z numeru dnia UTC, a nie z new Date(...).getDay()
+    na czasie lokalnym - przy datach calodziennych przegladarka na zachod od UTC
+    przesuwalaby kazdy dzien o jeden wstecz.
+  */
+  const poniedzialek = tydzien.find((d) => d.nazwa === 'poniedziałek');
+  const sobota = tydzien.find((d) => d.nazwa === 'sobota');
+  sprawdz(
+    'wpisy trafiaja we wlasciwe dni tygodnia',
+    poniedzialek.wpisow === 1 && poniedzialek.sen === 6 && sobota.wpisow === 1 && sobota.sen === 8,
+    JSON.stringify({ pn: poniedzialek.wpisow, sb: sobota.wpisow })
+  );
+
+  sprawdz('godzina pobudki usredniana i formatowana', R.naGodzine(R.minutyOdPolnocy('07:30')) === '07:30');
+  sprawdz('niepoprawna godzina daje null', R.minutyOdPolnocy('25:00') === null);
+
+  // --- wplyw wartosci ---
+  const dni = [
+    { trzy_slowa: 'A, B', stres: 5, nastroj: 5 },
+    { trzy_slowa: 'A', stres: 5, nastroj: 5 },
+    { trzy_slowa: 'C', stres: 1, nastroj: 1 },
+    { trzy_slowa: 'C', stres: 1, nastroj: 1 },
+  ];
+  const wplyw = R.wplywWartosci(dni, 'trzy_slowa', ['stres'], 2);
+  sprawdz(
+    'baza to srednia ze WSZYSTKICH dni, nie tylko z tych z wartoscia',
+    wplyw.bazowe.stres === 3,
+    String(wplyw.bazowe.stres)
+  );
+  /*
+    PROG WYSTAPIEN jest obowiazkowy: bez niego na czele listy ladowalyby wartosci
+    uzyte raz, gdzie "srednia" to pojedynczy dzien, a wyglada tak samo jak wynik
+    ze stu dni. "B" wystapilo raz i ma wypasc.
+  */
+  sprawdzListe(
+    'wartosci ponizej progu sa pomijane',
+    ['A', 'C'],
+    wplyw.pozycje.map((p) => p.nazwa).sort()
+  );
+  const a = wplyw.pozycje.find((p) => p.nazwa === 'A');
+  sprawdz(
+    'odchylenie liczy sie wzgledem bazy',
+    a.oceny.stres.srednia === 5 && a.oceny.stres.odchylenie === 2,
+    JSON.stringify(a.oceny.stres)
+  );
+
+  // --- trend i XP ---
+  const trend = R.trendMiesieczny(
+    [
+      { data: '2026-01-05', nastroj: 2 },
+      { data: '2026-01-06', nastroj: 4 },
+      { data: '2026-02-01', nastroj: 5 },
+    ],
+    ['nastroj']
+  );
+  sprawdzListe('trend grupuje po miesiacach i rosnaco', ['2026-01', '2026-02'], trend.map((m) => m.miesiac));
+  sprawdz('trend usrednia w obrebie miesiaca', trend[0].nastroj === 3, String(trend[0].nastroj));
+
+  /*
+    XP kazdego rekordu liczy SERWER i przysyla gotowe - tutaj tylko sumujemy.
+    Zadanie wpada do miesiaca ZAKONCZENIA, bo wtedy XP powstaje.
+  */
+  const xp = R.xpWedlugMiesiecy(
+    [{ data: '2026-01-05', xp: 10 }],
+    [
+      { czas_zakonczenia: '2026-01-20', xp: 5 },
+      { czas_zakonczenia: null, xp: 99 },
+    ]
+  );
+  sprawdz(
+    'XP miesieczne sumuje zrodla i pomija zadania bez zakonczenia',
+    xp.length === 1 && xp[0].dziennik === 10 && xp[0].zadania === 5 && xp[0].razem === 15,
+    JSON.stringify(xp)
+  );
+
+  // --- terminowosc wedlug pola ---
+  const zad = [
+    { obszar: 'X', termin: '2026-01-10', czas_zakonczenia: '2026-01-12' }, // po terminie
+    { obszar: 'X', termin: '2026-01-10', czas_zakonczenia: '2026-01-10' }, // na czas
+    { obszar: 'Y', termin: '2026-01-10', czas_zakonczenia: '2026-01-12' },
+    { obszar: 'X', termin: null, czas_zakonczenia: '2026-01-12' }, // bez terminu - pomijane
+  ];
+  const term = R.terminowoscWedlug(zad, 'obszar', 2);
+  sprawdzListe('grupy ponizej progu odpadaja', ['X'], term.map((g) => g.klucz));
+  sprawdz(
+    'zadania bez kompletu dat nie wchodza do mianownika',
+    term[0].zBadanych === 2 && term[0].poTerminie === 1 && term[0].procent === 50,
+    JSON.stringify(term[0])
+  );
+
+  /*
+    HIGIENA: kazda sekcja ze spisu tresci ma budowniczego i odwrotnie.
+
+    Spis tresci (SEKCJE) i tresc strony pochodza z JEDNEJ listy - start() mapuje
+    SEKCJE na funkcje budujace. Ta asercja pilnuje drugiej strony tej umowy:
+    ze zbior kluczy w obu miejscach jest identyczny. Klucz bez budowniczego dalby
+    link prowadzacy donikad, budowniczy bez klucza - sekcje nieobecna w spisie.
+  */
+  const kod = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'statystyki.js'), 'utf8');
+
+  const blokSekcji = kod.slice(
+    kod.indexOf('const SEKCJE = ['),
+    kod.indexOf('];', kod.indexOf('const SEKCJE = ['))
+  );
+  const zeSpisu = [...blokSekcji.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
+
+  const blokBudowniczych = kod.slice(
+    kod.indexOf('const budowniczowie = {'),
+    kod.indexOf('};', kod.indexOf('const budowniczowie = {'))
+  );
+  const zBudowniczych = [...blokBudowniczych.matchAll(/^\s+([a-z]\w*):/gm)].map((m) => m[1]);
+
+  sprawdz('spis tresci ma wiecej niz jedna sekcje', zeSpisu.length >= 5, zeSpisu.join(', '));
+  sprawdzListe(
+    'kazda sekcja ze spisu ma budowniczego (i w tej samej kolejnosci)',
+    zeSpisu,
+    zBudowniczych
+  );
+}
+
 async function testujKolumneXp(reguly) {
   sekcja('ZADANIA: KOLUMNA XP');
 
@@ -3250,6 +3435,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujNoweStatystyki(reguly);
     await testujKolumneXp(reguly);
     await testujAtrybuty();
     await testujKolejnoscKolumnDziennika();
