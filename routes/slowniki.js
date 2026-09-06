@@ -18,6 +18,7 @@ const { OCENY } = require('../config/mapowanie-ocen');
 const plakietkiZadan = require('../config/plakietki-zadan');
 const { ATRYBUTY } = require('../config/atrybuty');
 const slowaOpis = require('../config/slowa');
+const { EMOJI_NAWYKOW } = require('../config/nawyki');
 
 const router = express.Router();
 
@@ -51,6 +52,8 @@ router.get('/', (req, res) => {
       kategoriaDomyslna: slowaOpis.KATEGORIA_DOMYSLNA,
       opisy: slowaOpis.SLOWA,
     },
+    // Emoji nawykow - bez kategorii, patrz uzasadnienie w config/nawyki.js.
+    nawykiEmoji: EMOJI_NAWYKOW,
   });
 });
 

@@ -102,12 +102,29 @@
     z przodu etykiety i nie psuje ani sortowania, ani porownan (migracja 10).
   */
   function wygladWartosci(pole, nazwa) {
-    if (pole !== 'trzy_slowa') return null;
-    const opis = (slowniki.slowa && slowniki.slowa.opisy && slowniki.slowa.opisy[nazwa]) || null;
-    return {
-      emoji: opis ? opis.emoji : '',
-      kategoria: (opis && opis.kategoria) || (slowniki.slowa && slowniki.slowa.kategoriaDomyslna) || 'neutralne',
-    };
+    if (pole === 'trzy_slowa') {
+      const opis = (slowniki.slowa && slowniki.slowa.opisy && slowniki.slowa.opisy[nazwa]) || null;
+      return {
+        emoji: opis ? opis.emoji : '',
+        kategoria:
+          (opis && opis.kategoria) ||
+          (slowniki.slowa && slowniki.slowa.kategoriaDomyslna) ||
+          'neutralne',
+      };
+    }
+
+    /*
+      Nawyki maja emoji, ale NIE MAJA kategorii - stad wspolna klasa 'slowo-nawyk'
+      zamiast koloru grupy. Uzasadnienie podzialu w config/nawyki.js: slowo mowi,
+      jaki byl dzien, a nawyk to czynnosc - kolorowanie czynnosci byloby podzialem
+      wymyslonym, a nie odczytanym.
+    */
+    if (pole === 'nawyki') {
+      const emoji = (slowniki.nawykiEmoji && slowniki.nawykiEmoji[nazwa]) || '';
+      return { emoji, kategoria: 'nawyk' };
+    }
+
+    return null;
   }
 
   /**
@@ -422,7 +439,7 @@
     td.dataset.wartosc = wartosc;
 
     const nazwy = tokenyNawykow(wartosc);
-    if (nazwy.length === 0 || pole !== 'trzy_slowa') {
+    if (nazwy.length === 0 || !POLA_WYBORU[pole]) {
       td.textContent = wartosc;
       return;
     }

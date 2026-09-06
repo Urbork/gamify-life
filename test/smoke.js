@@ -1997,6 +1997,35 @@ async function testujSlownikSlow() {
     Object.keys(wyglad.opisy).filter((k) => !nazwy.includes(k))
   );
 
+  /*
+    Emoji nawykow - ta sama zasada co przy slowach, tylko bez kategorii.
+    Nawyk moze nie miec ikony (brak wpisu to domyslna, nie blad), ale wpis
+    wskazujacy nieistniejacy nawyk to literowka, ktora nigdy sie nie pokaze.
+  */
+  const nazwyNawykow = (await zapytaj('GET', '/api/nawyki')).tresc.map((x) => x.nazwa);
+  const emojiNawykow = slownikiApi.nawykiEmoji || {};
+  sprawdz(
+    '/api/slowniki wystawia emoji nawykow',
+    Object.keys(emojiNawykow).length > 0,
+    JSON.stringify(Object.keys(emojiNawykow))
+  );
+  sprawdzListe(
+    'konfiguracja nie opisuje nawykow spoza slownika',
+    [],
+    Object.keys(emojiNawykow).filter((k) => !nazwyNawykow.includes(k))
+  );
+  const emojiN = Object.values(emojiNawykow);
+  sprawdz('emoji nawykow sa rozne', new Set(emojiN).size === emojiN.length, emojiN.join(' '));
+  /*
+    REGRESJA: emoji nawykow nie moga trafic do bazy. Nazwy w slowniku maja zostac
+    czyste - tak samo jak przy slowach po migracji 10.
+  */
+  sprawdzListe(
+    'zadna nazwa nawyku nie zawiera emoji',
+    [],
+    nazwyNawykow.filter((n) => /\p{Extended_Pictographic}/u.test(n))
+  );
+
   // --- kaskadowa zmiana nazwy rusza WLASCIWA kolumne ---
   const { tresc: wpis } = await zapytaj('POST', '/api/dziennik', { data: '2026-04-01' });
   await zapytaj('PATCH', `/api/dziennik/${wpis.id}`, {

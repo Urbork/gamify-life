@@ -1322,3 +1322,13 @@ td.duplikat-daty {
   margin: 6px 0 10px;
   font-size: 12px;
 }
+
+/*
+  Plakietka nawyku. Emoji ma, koloru kategorii nie - nawyk to czynnosc, a nie
+  zabarwienie dnia (uzasadnienie w config/nawyki.js). Neutralne tlo odroznia
+  plakietke od tekstu, nie sugerujac oceny.
+*/
+.slowo-nawyk {
+  --slowo-tlo: var(--tlo-kontrolki);
+  --slowo-tekst: var(--tekst);
+}
