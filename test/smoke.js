@@ -1581,6 +1581,116 @@ async function testujPlakietkiZadan() {
   (naglowki) i public/js/dziennik.js (kolejnosc budowania komorek) - czyli dokladnie
   te dwie listy, ktore moga sie rozjechac niezaleznie od siebie.
 */
+/*
+  Kolumna XP w tabeli zadan.
+
+  Liczby przychodza z serwera, wiec test sprawdza DWIE rzeczy naraz: ze API je
+  dokleja i ze zgadzaja sie z silnikiem policzonym w izolacji. Gdyby ktos kiedys
+  przepisal wzor do przegladarki "dla wygody", ta asercja nadal przechodzilaby -
+  dlatego osobno pilnujemy, ze naglowek da sie posortowac (nizej), bo to wlasnie
+  ta druga implementacja bylaby pierwsza rzecza, ktora sie rozjedzie.
+*/
+async function testujKolumneXp(reguly) {
+  sekcja('ZADANIA: KOLUMNA XP');
+
+  const nagrody = require('../lib/nagrody');
+
+  const { tresc: nowe } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${nowe.id}`, {
+    trudnosc: 3,
+    czas_trwania_godziny: 4,
+    termin: '2026-03-10',
+  });
+
+  const otwarte = (await zapytaj('GET', `/api/zadania`)).tresc.find((z) => z.id === nowe.id);
+  sprawdz(
+    'zadanie otwarte: xp = 0, ale xp_bazowe pokazuje ile jest warte',
+    otwarte.xp === 0 && otwarte.xp_bazowe === 8,
+    JSON.stringify({ xp: otwarte.xp, bazowe: otwarte.xp_bazowe })
+  );
+  sprawdz(
+    'otwarte zadanie z kompletem danych nie jest oznaczone jako brakujace',
+    otwarte.xp_brakuje_danych === false
+  );
+
+  // Zamkniete dzien przed terminem - premia x1.5, czyli 8 -> 12.
+  const { tresc: zrobione } = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, {
+    stan: 'Zrobione',
+    czas_zakonczenia: '2026-03-09',
+  });
+  sprawdz(
+    'zadanie zrobione dzien przed terminem: xp = 12 (premia x1.5)',
+    zrobione.xp === 12,
+    JSON.stringify({ xp: zrobione.xp })
+  );
+  /*
+    xp_bazowe NIE zmienia sie po ukonczeniu - to wartosc samego zadania, bez
+    mnoznika za termin. Gdyby zawieralo mnoznik, kolumna dla zadan otwartych
+    zmienialaby sie sama z uplywem dni.
+  */
+  sprawdz(
+    'xp_bazowe zostaje bez mnoznika za termin takze po ukonczeniu',
+    zrobione.xp_bazowe === 8,
+    JSON.stringify({ bazowe: zrobione.xp_bazowe })
+  );
+  sprawdz(
+    'xp z API zgadza sie z silnikiem policzonym w izolacji',
+    zrobione.xp === nagrody.xpZadania(zrobione, 'Zrobione').xp,
+    `${zrobione.xp} vs ${nagrody.xpZadania(zrobione, 'Zrobione').xp}`
+  );
+
+  // Bez trudnosci nie ma z czego liczyc.
+  const { tresc: bezDanych } = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { trudnosc: '' });
+  sprawdz(
+    'brak trudnosci: xp 0, xp_bazowe null, flaga brakujaceDane',
+    bezDanych.xp === 0 && bezDanych.xp_bazowe === null && bezDanych.xp_brakuje_danych === true,
+    JSON.stringify({ xp: bezDanych.xp, bazowe: bezDanych.xp_bazowe, brak: bezDanych.xp_brakuje_danych })
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+
+  /*
+    HIGIENA: kazdy klikalny naglowek musi miec definicje sortowania.
+
+    Naglowek z data-kolumna wyglada na klikalny (kursor, hover, strzalka), a bez
+    wpisu w kolumnySortowania klikniecie nie robi NIC - komparator zwraca wtedy 0
+    i wiersze zostaja na miejscu. To cicha awaria: nie ma bledu w konsoli, nie ma
+    zadnego sygnalu, po prostu sortowanie nie dziala. Wlasnie taka pulapka powstala
+    przy dodawaniu kolumny XP.
+  */
+  const html = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'index.html'), 'utf8');
+  const thead = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+  const klikalne = [...thead.matchAll(/data-kolumna="([^"]+)"/g)].map((m) => m[1]);
+
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  const definicje = Object.keys(
+    reguly.regulyZadan.kolumnySortowania(slowniki, '2026-01-01')
+  );
+
+  /*
+    JEDNO ZRODLO PRAWDY, sprawdzone od strony wyniku: suma kolumny XP musi sie
+    zgadzac z pozycja "Zadania" w rozbiciu na stronie Postaci. Obie liczby ida
+    z tego samego silnika, ale INNA droga - kolumna przez /api/zadania, rozbicie
+    przez /api/postac. Gdyby ktos kiedys policzyl ktorakolwiek z nich osobno,
+    ta asercja to zlapie.
+  */
+  const wszystkieZadania = (await zapytaj('GET', '/api/zadania')).tresc;
+  const sumaKolumny = wszystkieZadania.reduce((a, z) => a + z.xp, 0);
+  const { tresc: postacTeraz } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'suma kolumny XP zgadza sie z rozbiciem na stronie Postaci',
+    sumaKolumny === postacTeraz.rozbicie.zadania,
+    `kolumna ${sumaKolumny} vs rozbicie ${postacTeraz.rozbicie.zadania}`
+  );
+
+  sprawdz('naglowek XP jest na liscie klikalnych', klikalne.includes('xp'), klikalne.join(', '));
+  sprawdzListe(
+    'kazdy klikalny naglowek zadan ma definicje sortowania',
+    [],
+    klikalne.filter((k) => !definicje.includes(k))
+  );
+}
+
 async function testujAtrybuty() {
   sekcja('ATRYBUTY POSTACI');
 
@@ -2937,6 +3047,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujKolumneXp(reguly);
     await testujAtrybuty();
     await testujKolejnoscKolumnDziennika();
     await testujDatyCalodzienne(reguly);

@@ -219,6 +219,15 @@
             Dni do terminu
           </th>
           <th class="kol-data" data-kolumna="czas_zakonczenia">Zakończenie</th>
+          <!--
+            XP liczy SERWER (lib/nagrody.js) i przysyła gotowe z /api/zadania -
+            przegladarka niczego tu nie przelicza, zeby silnik nie mial dwoch
+            implementacji. Kolumna jest tylko do odczytu, wiec nie ma data-kolumna
+            do sortowania po stronie bazy - sortowanie obsluguje reguly-zadan.js.
+          -->
+          <th class="kol-liczba" data-kolumna="xp" title="Ile XP daje to zadanie: godziny × przelicznik trudności, z mnożnikiem za termin">
+            XP
+          </th>
           <th class="kol-akcje"></th>
         </tr>
       </thead>

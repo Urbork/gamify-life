@@ -6,13 +6,18 @@
  *   PATCH  /api/zadania/:id   - aktualizacja wybranych pol (edycja inline w tabeli)
  *   DELETE /api/zadania/:id   - usuniecie
  *
- * Kolumny wyliczane ("Dni do terminu", "Czas trwania") celowo NIE sa tu liczone
- * ani przechowywane - powstaja w przegladarce przy renderowaniu (public/js/zadania.js).
+ * Kolumny wyliczane ("Dni do terminu") powstaja w przegladarce przy renderowaniu
+ * (public/js/zadania.js) i NIE sa tu liczone ani przechowywane.
+ *
+ * WYJATKIEM jest XP: kazde zadanie wyjezdza stad z polami xp, xp_bazowe
+ * i xp_brakuje_danych. Powod przy funkcji zXp() nizej - w skrocie: silnik XP ma
+ * miec jedna implementacje, a jest nia lib/nagrody.js po stronie serwera.
  */
 
 const express = require('express');
 const db = require('../db');
-const { STANY, PRIORYTETY } = require('../config/slowniki');
+const { STANY, PRIORYTETY, STAN_ZAKONCZONY } = require('../config/slowniki');
+const nagrody = require('../lib/nagrody');
 // Normalizacja dat siedzi w lib/daty.js, bo korzysta z niej takze import z pliku.
 const { znormalizujZnacznikCzasu } = require('../lib/daty');
 
@@ -218,8 +223,57 @@ const usun = db.prepare('DELETE FROM zadania WHERE id = ?');
 
 // --- trasy ----------------------------------------------------------------
 
+/*
+  XP DOKLADANE DO KAZDEJ ODPOWIEDZI
+
+  Kolumna "XP" w tabeli zadan pokazuje wynik silnika z lib/nagrody.js. Liczy go
+  SERWER, a nie przegladarka, i to jest decyzja, nie wygoda: reguly naliczania
+  maja miec JEDNA implementacje. Przepisanie ich do public/js dalo by druga kopie,
+  ktora rozjezdza sie po cichu - dokladnie tak, jak rozjechal sie kiedys numerDnia.
+  Granica jest zapisana takze przy maDaneDoXp() w public/js/reguly-zadan.js.
+
+  Doklejamy dwie liczby, bo odpowiadaja na dwa rozne pytania:
+
+    xp        - ile zadanie NAPRAWDE dalo. Zero, dopoki nie jest zrobione.
+    xp_bazowe - ile jest warte samo w sobie: godziny x przelicznik trudnosci,
+                BEZ mnoznika za termin.
+
+  xp_bazowe celowo nie uwzglednia terminowosci. Mnoznik zalezy od daty zakonczenia,
+  ktorej jeszcze nie ma, wiec kazda jego prognoza byla by zgadywaniem - a liczba
+  w tabeli zmienialaby sie sama z uplywem dni, mimo ze nikt nic nie tknal.
+
+  Koszt jest zerowy: to czysta arytmetyka na polach, ktore i tak sa juz w pamieci.
+*/
+function zXp(zadanie) {
+  const { xp, brakujaceDane } = nagrody.xpZadania(zadanie, STAN_ZAKONCZONY);
+
+  /*
+    Wartosc bazowa liczymy przez ten sam silnik - podstawiamy zadanie zrobione
+    i bez dat, zeby dostac sama podstawe. Gdybysmy przepisali tu wzor recznie,
+    powstalaby ta druga implementacja, ktorej caly ten komentarz zabrania.
+  */
+  const bazowe = nagrody.xpZadania(
+    {
+      stan: STAN_ZAKONCZONY,
+      trudnosc: zadanie.trudnosc,
+      czas_trwania_godziny: zadanie.czas_trwania_godziny,
+      termin: null,
+      czas_zakonczenia: null,
+    },
+    STAN_ZAKONCZONY
+  );
+
+  return {
+    ...zadanie,
+    xp,
+    xp_bazowe: bazowe.brakujaceDane ? null : bazowe.xp,
+    xp_brakuje_danych: brakujaceDane,
+  };
+}
+
+
 router.get('/', (req, res) => {
-  res.json(pobierzWszystkie.all());
+  res.json(pobierzWszystkie.all().map(zXp));
 });
 
 router.post('/', (req, res) => {
@@ -227,7 +281,7 @@ router.post('/', (req, res) => {
   // oraz dzisiejszy TERMIN (calodzienny). Reszte uzupelniasz w tabeli.
   // Frontend po dodaniu zaznacza nazwe, wiec pierwsze wpisane znaki ja nadpisuja.
   const wynik = wstawNowe.run(NAZWA_DOMYSLNA);
-  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJedno.get(wynik.lastInsertRowid)));
 });
 
 /*
@@ -244,7 +298,7 @@ router.post('/:id/duplikuj', (req, res) => {
   if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
 
   const wynik = wstawDuplikat.run(id);
-  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJedno.get(wynik.lastInsertRowid)));
 });
 
 router.patch('/:id', (req, res) => {
@@ -278,7 +332,7 @@ router.patch('/:id', (req, res) => {
     throw e;
   }
 
-  res.json(pobierzJedno.get(id));
+  res.json(zXp(pobierzJedno.get(id)));
 });
 
 router.delete('/:id', (req, res) => {

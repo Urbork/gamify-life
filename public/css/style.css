@@ -1174,3 +1174,13 @@ td.duplikat-daty {
   margin: 6px 0;
   font-size: 12px;
 }
+
+/*
+  XP zadania jeszcze nieukonczonego - szacunek, nie wartosc przyznana. Przygaszone
+  z tego samego powodu co zamrozone "dni do terminu": liczba, ktora moze sie jeszcze
+  zmienic, nie powinna wygladac tak samo jak ta juz rozstrzygnieta.
+*/
+.xp-szacunek {
+  color: var(--tekst-slaby);
+  font-style: italic;
+}

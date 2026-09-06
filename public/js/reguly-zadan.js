@@ -309,6 +309,19 @@ const regulyZadan = (() => {
       czas_zakonczenia: { typ: 'znacznik', wartosc: (z) => z.czas_zakonczenia },
       czas_trwania_godziny: { typ: 'liczba', wartosc: (z) => z.czas_trwania_godziny },
       trudnosc: { typ: 'liczba', wartosc: (z) => z.trudnosc },
+      /*
+        XP przychodzi z serwera gotowe (routes/zadania.js) - tutaj tylko wybieramy
+        te sama liczbe, ktora widac w kolumnie: przyznane dla zadan zrobionych,
+        wartosc bazowa dla otwartych. Sortowanie po innej wartosci niz wyswietlana
+        wygladaloby jak usterka, bo wiersze ustawialyby sie wbrew temu, co widac.
+
+        Zadnego wzoru tu NIE ma i byc nie moze - silnik XP zyje wylacznie
+        w lib/nagrody.js po stronie serwera.
+      */
+      xp: {
+        typ: 'liczba',
+        wartosc: (z) => (z.stan === slowniki.stanZakonczony ? z.xp : z.xp_bazowe),
+      },
     };
   }
 

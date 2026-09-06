@@ -569,7 +569,8 @@
       komorkaZnacznikCzasu(z, 'start_zadania'),
       komorkaZnacznikCzasu(z, 'termin'),
       komorkaWyliczona('dni_do_terminu'),
-      komorkaZnacznikCzasu(z, 'czas_zakonczenia')
+      komorkaZnacznikCzasu(z, 'czas_zakonczenia'),
+      komorkaWyliczona('xp')
     );
     tr.appendChild(komorkaAkcji(z));
 
@@ -709,7 +710,42 @@
       tdTermin.removeAttribute('title');
     }
 
+    odswiezKomorkeXp(tr, z);
     odswiezWskazowkeXp(tr, z);
+  }
+
+  /*
+    Kolumna XP. Wartosci przychodza z serwera (routes/zadania.js dokleja je do
+    kazdego zadania) - tutaj jest wylacznie decyzja, KTORA z nich pokazac.
+
+      zadanie zrobione  -> z.xp, czyli ile faktycznie dalo
+      zadanie otwarte   -> z.xp_bazowe, przygaszone: ile jest warte samo w sobie
+      brak trudnosci
+      albo czasu        -> pusto (zolty znacznik na brakujacych polach robi juz
+                           odswiezWskazowkeXp - dwa sygnaly o tym samym byloby szumem)
+
+    Wartosc dla zadania otwartego jest SZACUNKIEM bez mnoznika za termin: mnoznik
+    zalezy od daty zakonczenia, ktorej jeszcze nie ma. Dlatego jest przygaszona
+    i podpisana w title - liczba, ktora moze sie jeszcze zmienic, nie powinna
+    wygladac tak samo jak ta juz przyznana.
+  */
+  function odswiezKomorkeXp(tr, z) {
+    const td = tr.querySelector('[data-wyliczane="xp"]');
+    if (!td) return;
+
+    const zrobione = z.stan === slowniki.stanZakonczony;
+    const wartosc = zrobione ? z.xp : z.xp_bazowe;
+
+    td.textContent = wartosc === null || wartosc === undefined ? '' : wartosc;
+    td.classList.toggle('xp-szacunek', !zrobione && wartosc !== null && wartosc !== undefined);
+
+    if (wartosc === null || wartosc === undefined) {
+      td.removeAttribute('title');
+    } else if (zrobione) {
+      td.title = `Przyznane: ${wartosc} XP`;
+    } else {
+      td.title = `Szacunek: ${wartosc} XP po ukończeniu. Termin może to zmienić (×1,5 przed czasem, ×0,5 po terminie).`;
+    }
   }
 
   /*
