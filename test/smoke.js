@@ -1635,6 +1635,48 @@ async function testujPlakietkiZadan() {
   Nowe grupy statystyk. Wszystkie reguly sa czyste, wiec karmimy je danymi
   syntetycznymi - bez bazy i bez HTTP.
 */
+/*
+  Higiena CSS: komorka tabeli musi zostac komorka tabeli.
+
+  REGRESJA Z PRAWDZIWEGO ZDARZENIA. Regula `td.komorka-wyboru:has(.slowo)
+  { display: flex }` mial dac odstepy miedzy plakietkami slow. Skutek byl inny:
+  <td> z display:flex przestaje byc komorka tabeli, przegladarka przelicza uklad
+  kolumn i CALA RESZTA WIERSZA przesuwa sie o jedno miejsce. Na ekranie wygladalo
+  to jak uszkodzone dane - wdziecznosc stala pod naglowkiem "Nawyki", posilki
+  pod "Refleksje" - choc i baza, i DOM byly poprawne.
+
+  Blad byl widoczny wylacznie na wierszach, ktore mialy wypelnione OBA pola wyboru,
+  czyli na jednym wierszu z ponad osmiuset. Zaden test na danych ani na strukturze
+  DOM nie mial szans go zlapac - dlatego pilnujemy samego arkusza stylow.
+*/
+async function testujHigieneCss() {
+  sekcja('CSS: KOMORKI TABELI');
+
+  const css = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'css', 'style.css'), 'utf8');
+
+  // Komentarze potrafia zawierac slowo "display" w opisie - wycinamy je przed analiza.
+  const bezKomentarzy = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const podejrzane = [];
+  for (const dopasowanie of bezKomentarzy.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selektor = dopasowanie[1].trim();
+    const tresc = dopasowanie[2];
+
+    // Interesuja nas wylacznie reguly celujace w <td> albo <th>.
+    if (!/(^|[\s,>+~])(td|th)([.:#[\s,]|$)/.test(selektor)) continue;
+
+    const display = /(?:^|;)\s*display\s*:\s*([^;]+)/.exec(tresc);
+    if (!display) continue;
+
+    const wartosc = display[1].trim();
+    if (wartosc !== 'table-cell' && wartosc !== 'none') {
+      podejrzane.push(`${selektor} { display: ${wartosc} }`);
+    }
+  }
+
+  sprawdzListe('zadna regula nie zmienia trybu wyswietlania komorki tabeli', [], podejrzane);
+}
+
 async function testujNoweStatystyki(reguly) {
   sekcja('STATYSTYKI: NOWE GRUPY');
 
@@ -3464,6 +3506,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujHigieneCss();
     await testujNoweStatystyki(reguly);
     await testujKolumneXp(reguly);
     await testujAtrybuty();

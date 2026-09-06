@@ -571,12 +571,20 @@ td.komorka-wyboru {
   word-break: break-word;
 }
 
-/* Plakietki slow rozdziela odstep, a nie przecinek - patrz ustawTrescKomorkiWyboru. */
-td.komorka-wyboru:has(.slowo) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  align-content: flex-start;
+/*
+  NIGDY display: flex (ani grid, ani block) NA <td>.
+
+  Komorka z display:flex przestaje byc komorka tabeli - przegladarka przelicza
+  wtedy uklad kolumn i CALA RESZTA WIERSZA przesuwa sie o jedno miejsce w lewo.
+  Widac to bylo dokladnie na jednym wierszu: tym, ktory jako jedyny mial
+  wypelnione i "trzy slowa", i "nawyki". Dane i DOM byly poprawne - psul sam styl.
+
+  Odstepy miedzy plakietkami robi wiec margines na samej plakietce. Efekt ten sam,
+  bez ruszania trybu wyswietlania komorki. Asercja w test/smoke.js pilnuje, ze
+  zadna regula nie ustawia <td> na display inny niz table-cell.
+*/
+.komorka-wyboru .slowo {
+  margin: 0 3px 3px 0;
 }
 
 td.komorka-wyboru:hover {
