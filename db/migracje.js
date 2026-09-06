@@ -403,7 +403,71 @@ const MIGRACJE = [
     );
   },
 
-  // --- 10: tutaj dopisz kolejna migracje ---------------------------------
+  // --- 10: emoji wychodza z nazw slow do warstwy prezentacji --------------
+  /*
+    Nazwy slow mialy emoji WKLEJONE W TRESC ("🦥 Lazy", "Festive✨"). Skutek:
+    lista sortowala sie po emoji, a nie po slowie, wiec "Lazy" ladowalo miedzy
+    "IDK" a "Love" w zupelnie przypadkowym miejscu.
+
+    Po tej migracji w bazie zostaje SAMA NAZWA, a emoji i kolor kategorii przychodza
+    z config/slowa.js po nazwie. To ta sama zasada, ktora rzadzi juz ocenami dziennika
+    i plakietkami zadan: w bazie surowa wartosc, w konfiguracji wyglad. Dzieki temu
+    emoji moze stac z przodu i NIE wplywa na sortowanie ani na porownania.
+
+    DLACZEGO OSOBNA MIGRACJA, A NIE POPRAWKA MIGRACJI 9
+    Migracja 9 juz sie wykonala - jej edycja nie cofnelaby sie w istniejacej bazie,
+    a licznik user_version przestalby sie zgadzac. Zasada z naglowka tego pliku.
+
+    Pary sa WYPISANE WPROST, a nie liczone wyrazeniem regularnym. Migracja ma znaczyc
+    to samo za dwa lata, a regula "obetnij nie-litery z brzegow" zmienialaby wynik
+    razem z kazda nowa nazwa, ktora ktos dopisze.
+  */
+  (db) => {
+    const PARY = [
+      ["⚖ Balanced", "Balanced"],
+      ["Festive✨", "Festive"],
+      ["🙂 Happy", "Happy"],
+      ["❔ IDK", "IDK"],
+      ["🦥 Lazy", "Lazy"],
+      ["❤ Love", "Love"],
+      ["👍 OK", "OK"],
+      ["😢 Sad", "Sad"],
+      ["🤮 Sick", "Sick"],
+      ["🛏 Tired", "Tired"],
+    ];
+
+    const zmienWSlowniku = db.prepare('UPDATE slowa_slownik SET nazwa = ? WHERE nazwa = ?');
+    const wpisy = db
+      .prepare("SELECT id, trzy_slowa FROM dziennik WHERE trzy_slowa IS NOT NULL AND trim(trzy_slowa) <> ''")
+      .all();
+    const zapiszWpis = db.prepare('UPDATE dziennik SET trzy_slowa = ? WHERE id = ?');
+
+    const mapa = new Map(PARY);
+    let wSlowniku = 0;
+    for (const [stara, nowa] of PARY) wSlowniku += zmienWSlowniku.run(nowa, stara).changes;
+
+    /*
+      W dzienniku podmieniamy CALE tokeny, nie podciagi - dokladnie tak jak przy
+      kaskadowej zmianie nazwy w lib/slownik-wartosci.js. REPLACE po podciagu
+      uszkodzilby kazda nazwe bedaca fragmentem innej.
+    */
+    let wDzienniku = 0;
+    for (const wpis of wpisy) {
+      const tokeny = String(wpis.trzy_slowa)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!tokeny.some((t) => mapa.has(t))) continue;
+      zapiszWpis.run(tokeny.map((t) => mapa.get(t) || t).join(', '), wpis.id);
+      wDzienniku++;
+    }
+
+    console.log(
+      `[db]   migracja 10: oczyszczono ${wSlowniku} nazw w slowniku, poprawiono ${wDzienniku} wpisow`
+    );
+  },
+
+  // --- 11: tutaj dopisz kolejna migracje ---------------------------------
 ];
 
 function uruchomMigracje(db) {

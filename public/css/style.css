@@ -571,6 +571,14 @@ td.komorka-wyboru {
   word-break: break-word;
 }
 
+/* Plakietki slow rozdziela odstep, a nie przecinek - patrz ustawTrescKomorkiWyboru. */
+td.komorka-wyboru:has(.slowo) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-content: flex-start;
+}
+
 td.komorka-wyboru:hover {
   outline: 1px solid var(--akcent);
   outline-offset: -1px;
@@ -1187,4 +1195,70 @@ td.duplikat-daty {
 .xp-szacunek {
   color: var(--tekst-slaby);
   font-style: italic;
+}
+
+/*
+  Slowa opisujace dzien - plakietki z emoji i kolorem kategorii.
+
+  Kolor sluzy do POGRUPOWANIA WZROKIEM, nie do oceny: "Difficult" nie jest dniem
+  gorszym, tylko innego rodzaju. Kategorie i emoji przychodza z config/slowa.js -
+  w bazie siedzi sama nazwa, wiec sortowanie i porownania ich nie widza.
+
+  Wszystkie pary tlo/tekst maja kontrast >= 5,3 w obu motywach (zmierzone).
+*/
+.slowo {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--slowo-tlo);
+  color: var(--slowo-tekst);
+}
+
+.slowo-dobre {
+  --slowo-tlo: #e6f4ea;
+  --slowo-tekst: #1e6b34;
+}
+.slowo-produktywnosc {
+  --slowo-tlo: #e8eefc;
+  --slowo-tekst: #1f4fa8;
+}
+.slowo-trudne {
+  --slowo-tlo: #fdeaea;
+  --slowo-tekst: #a12a2a;
+}
+.slowo-zmeczenie {
+  --slowo-tlo: #fdf1e0;
+  --slowo-tekst: #8a5a12;
+}
+.slowo-neutralne {
+  --slowo-tlo: #eeeeef;
+  --slowo-tekst: #5a5a5f;
+}
+
+/*
+  Motyw ciemny: odcienie DOBRANE, nie odwrocone mechanicznie - czysta inwersja
+  dawalaby jaskrawe tla, ktore na ciemnym tle krzycza mocniej niz sama tresc.
+  Ta sama zasada co przy palecie glownej.
+*/
+:root[data-motyw='ciemny'] .slowo-dobre {
+  --slowo-tlo: #1c3325;
+  --slowo-tekst: #86d9a3;
+}
+:root[data-motyw='ciemny'] .slowo-produktywnosc {
+  --slowo-tlo: #1d2b45;
+  --slowo-tekst: #8fb6f5;
+}
+:root[data-motyw='ciemny'] .slowo-trudne {
+  --slowo-tlo: #3a2226;
+  --slowo-tekst: #f09aa4;
+}
+:root[data-motyw='ciemny'] .slowo-zmeczenie {
+  --slowo-tlo: #362b16;
+  --slowo-tekst: #e0b667;
+}
+:root[data-motyw='ciemny'] .slowo-neutralne {
+  --slowo-tlo: #2a2a2e;
+  --slowo-tekst: #a8a8ae;
 }

@@ -1753,16 +1753,63 @@ async function testujSlownikSlow() {
     `pozycji: ${slowa.length}`
   );
   /*
-    Wartosci z emoji sa najbardziej narazone na uszkodzenie: powstaly z odczytu
-    bazy, a nie z przepisania, wlasnie dlatego ze recznie przepisane "Lazy"
-    z emoji nie dopasowaloby sie do 130 istniejacych wpisow.
+    REGRESJA NA MIGRACJE 10: w nazwach NIE MA emoji. Byly tam wklejone i przez to
+    lista sortowala sie po emoji zamiast po slowie - "Lazy" ladowalo miedzy "IDK"
+    a "Love", bo klucz sortowania zaczynal sie od znaku sloth. Emoji wrocilo
+    do config/slowa.js jako warstwa prezentacji.
   */
+  const zEmoji = slowa.filter((x) => /\p{Extended_Pictographic}/u.test(x.nazwa));
+  sprawdzListe('zadna nazwa w slowniku nie zawiera emoji', [], zEmoji.map((x) => x.nazwa));
   sprawdz(
-    'wartosci z emoji przetrwaly zasianie',
-    ['\u{1F9A5} Lazy', '\u{1F622} Sad', 'Festive✨', '❔ IDK'].every((s) =>
-      slowa.some((x) => x.nazwa === s)
-    ),
+    'nazwy oczyszczone przez migracje 10 sa na liscie',
+    ['Lazy', 'Sad', 'Festive', 'IDK', 'Balanced'].every((s) => slowa.some((x) => x.nazwa === s)),
     slowa.map((x) => x.nazwa).join(' | ')
+  );
+
+  const nazwy = slowa.map((x) => x.nazwa);
+  sprawdzListe(
+    'slownik przychodzi posortowany alfabetycznie',
+    [...nazwy].sort((a, b) => a.localeCompare(b, 'pl', { sensitivity: 'base' })),
+    nazwy
+  );
+
+  // --- wyglad slow: emoji i kategorie z konfiguracji ---
+  const { tresc: slownikiApi } = await zapytaj('GET', '/api/slowniki');
+  const wyglad = slownikiApi.slowa;
+  sprawdz(
+    '/api/slowniki wystawia kategorie, domyslna i opisy slow',
+    wyglad && Array.isArray(wyglad.kategorie) && wyglad.kategoriaDomyslna && wyglad.opisy,
+    JSON.stringify(Object.keys(wyglad || {}))
+  );
+
+  const idKategorii = wyglad.kategorie.map((k) => k.id);
+  sprawdz(
+    'kategoria domyslna jest jedna z zadeklarowanych',
+    idKategorii.includes(wyglad.kategoriaDomyslna),
+    `${wyglad.kategoriaDomyslna} vs ${idKategorii.join(', ')}`
+  );
+  sprawdzListe(
+    'kazde slowo wskazuje istniejaca kategorie',
+    [],
+    Object.entries(wyglad.opisy)
+      .filter(([, v]) => !idKategorii.includes(v.kategoria))
+      .map(([k, v]) => `${k}:${v.kategoria}`)
+  );
+  /*
+    Emoji niosa rozpoznanie przy skanowaniu listy - dwa takie same zlepilyby
+    dwa rozne slowa w jedno. Ta sama zasada co przy plakietkach zadan.
+  */
+  const emojiSlow = Object.values(wyglad.opisy).map((v) => v.emoji).filter(Boolean);
+  sprawdz('emoji slow sa rozne', new Set(emojiSlow).size === emojiSlow.length, emojiSlow.join(' '));
+  /*
+    Konfiguracja moze opisywac tylko slowa, ktore istnieja - literowka w kluczu
+    dawalaby wpis, ktory nigdy sie nie pokaze. Odwrotnie jest DOZWOLONE: slowo
+    dopisane przez uzytkownika nie ma opisu i dostaje kategorie domyslna.
+  */
+  sprawdzListe(
+    'konfiguracja nie opisuje slow spoza slownika',
+    [],
+    Object.keys(wyglad.opisy).filter((k) => !nazwy.includes(k))
   );
 
   // --- kaskadowa zmiana nazwy rusza WLASCIWA kolumne ---

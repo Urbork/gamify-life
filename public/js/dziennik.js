@@ -94,6 +94,38 @@
   // Zawartosc slownikow z serwera - [{ id, nazwa }] dla kazdego pola.
   const slownikiWyboru = { nawyki: [], trzy_slowa: [] };
 
+  /*
+    WYGLAD WARTOSCI - emoji i kategoria (kolor). Dotyczy na razie wylacznie slow;
+    nawyki nie maja kategorii i renderuja sie samym tekstem.
+
+    Emoji NIE JEST czescia nazwy - w bazie siedzi samo slowo. Dlatego moze stac
+    z przodu etykiety i nie psuje ani sortowania, ani porownan (migracja 10).
+  */
+  function wygladWartosci(pole, nazwa) {
+    if (pole !== 'trzy_slowa') return null;
+    const opis = (slowniki.slowa && slowniki.slowa.opisy && slowniki.slowa.opisy[nazwa]) || null;
+    return {
+      emoji: opis ? opis.emoji : '',
+      kategoria: (opis && opis.kategoria) || (slowniki.slowa && slowniki.slowa.kategoriaDomyslna) || 'neutralne',
+    };
+  }
+
+  /**
+   * Etykieta wartosci jako element: emoji z przodu, nazwa, kolor kategorii.
+   * Slowo spoza konfiguracji dostaje kategorie domyslna i zadnego emoji -
+   * to normalna sytuacja, bo uzytkownik moze dopisac wlasne z panelu.
+   */
+  function etykietaWartosci(pole, nazwa) {
+    const wygl = wygladWartosci(pole, nazwa);
+    if (!wygl) return document.createTextNode(nazwa);
+
+    const span = document.createElement('span');
+    span.className = 'slowo slowo-' + wygl.kategoria;
+    if (wygl.emoji) span.append(wygl.emoji + ' ');
+    span.append(nazwa);
+    return span;
+  }
+
   // Panel wyboru - JEDEN dla obu pol.
   const elPanelWyboru = document.getElementById('panel-wyboru');
   const elTytulWyboru = document.getElementById('tytul-wyboru');
@@ -352,7 +384,7 @@
     td.dataset.pole = kolumna.pole;
     td.tabIndex = 0; // dostepna z klawiatury
     td.title = opcje.podpowiedzKomorki;
-    td.textContent = w[kolumna.pole] ?? '';
+    ustawTrescKomorkiWyboru(td, w[kolumna.pole] ?? '', kolumna.pole);
 
     const otworz = () => otworzPanelWyboru(td);
     td.addEventListener('click', otworz);
@@ -364,6 +396,45 @@
     });
 
     return td;
+  }
+
+  /*
+    Zawartosc komorki wyboru. Dla slow rysujemy kolorowe plakietki, dla nawykow
+    zwykly tekst.
+
+    UWAGA: reszta kodu czyta biezaca wartosc z td.textContent (patrz zapiszWartosci
+    i zbudujListeWyboru). Plakietki sa elementami, ale ich textContent sklada sie
+    z powrotem w ten sam ciag "A, B, C" - dlatego separator jest czescia tresci,
+    a emoji NIE (siedzi w osobnym wezle tekstowym wewnatrz plakietki).
+
+    To jest kruche i celowo opisane: gdyby emoji trafilo do textContent, zapis
+    wpisalby je do bazy i wrocilibysmy do stanu sprzed migracji 10. Pilnuje tego
+    asercja w test/smoke.js.
+  */
+  function ustawTrescKomorkiWyboru(td, wartosc, pole) {
+    /*
+      SUROWA WARTOSC TRZYMAMY W data-wartosc, nie w textContent.
+
+      Plakietki slow zawieraja emoji, wiec textContent komorki to "🎨 Creative, …" -
+      odczyt stamtad zapisalby emoji z powrotem do bazy i cofnal migracje 10.
+      Dlatego kazdy odczyt biezacej wartosci idzie przez ten atrybut.
+    */
+    td.dataset.wartosc = wartosc;
+
+    const nazwy = tokenyNawykow(wartosc);
+    if (nazwy.length === 0 || pole !== 'trzy_slowa') {
+      td.textContent = wartosc;
+      return;
+    }
+
+    /*
+      Miedzy plakietkami NIE MA przecinka - kolorowe pigulki rozdzielaja sie same,
+      a przecinek dokladal szumu. Odstep robi CSS (gap na .komorka-wyboru).
+
+      Przecinek pozostaje wylacznie w danych: surowa wartosc "A, B, C" siedzi
+      w data-wartosc i to ona idzie do bazy.
+    */
+    td.replaceChildren(...nazwy.map((nazwa) => etykietaWartosci(pole, nazwa)));
   }
 
   function komorkaUsun(w) {
@@ -568,7 +639,9 @@
 
       const wartosc = w[td.dataset.pole] ?? '';
       if (kontrolka) kontrolka.value = wartosc;
-      else td.textContent = wartosc;
+      else if (td.classList.contains('komorka-wyboru')) {
+        ustawTrescKomorkiWyboru(td, wartosc, td.dataset.pole);
+      } else td.textContent = wartosc;
     }
 
     // Licznik refleksji zalezy od tresci pol, wiec musi sie przeliczyc po zapisie.
@@ -583,7 +656,9 @@
 
     const kontrolka = td.querySelector('select, input');
     if (kontrolka) kontrolka.value = w[pole] ?? '';
-    else td.textContent = w[pole] ?? '';
+    else if (td.classList.contains('komorka-wyboru')) {
+      ustawTrescKomorkiWyboru(td, w[pole] ?? '', pole);
+    } else td.textContent = w[pole] ?? '';
   }
 
   // ==========================================================================
@@ -744,7 +819,7 @@
     if (!komorkaPanelu || !poleWyboru) return;
 
     const slownik = slownikiWyboru[poleWyboru];
-    const obecne = tokenyNawykow(komorkaPanelu.textContent);
+    const obecne = tokenyNawykow(komorkaPanelu.dataset.wartosc ?? komorkaPanelu.textContent);
     const wSlowniku = new Set(slownik.map((n) => n.nazwa));
     const spozaListy = obecne.filter((n) => !wSlowniku.has(n));
 
@@ -768,7 +843,7 @@
     checkbox.checked = zaznaczony;
 
     checkbox.addEventListener('change', () => {
-      const obecne = tokenyNawykow(komorkaPanelu.textContent);
+      const obecne = tokenyNawykow(komorkaPanelu.dataset.wartosc ?? komorkaPanelu.textContent);
       /*
         Zachowujemy ISTNIEJACA kolejnosc nazw w wierszu, a nowo zaznaczona
         dopisujemy na koncu. Przebudowa w kolejnosci slownika przestawialaby
@@ -783,7 +858,7 @@
       zapiszWartosci(nowe);
     });
 
-    etykieta.append(checkbox, ' ' + poz.nazwa);
+    etykieta.append(checkbox, ' ', etykietaWartosci(poleWyboru, poz.nazwa));
     if (poz.spoza) {
       const znacznik = document.createElement('span');
       znacznik.className = 'spoza-listy';
@@ -932,7 +1007,7 @@
           zastosujFiltry();
         });
 
-        label.append(input, ' ' + nazwa);
+        label.append(input, ' ', etykietaWartosci(pole, nazwa));
         return label;
       })
     );
