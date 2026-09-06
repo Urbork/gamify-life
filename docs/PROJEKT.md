@@ -115,8 +115,9 @@ Zebrane z kodu i README — wybrane te, które najłatwiej cofnąć przez przypa
 | Wartości zapasowe w `poWierszu`, nie w `wartosciDomyslne` | `config/mapowanie-quest-log.js` | Pusta komórka zapisuje `null` **po** wartości domyślnej i kasowała ją |
 | `Do Date` → `termin`, nie `start_zadania` | `config/mapowanie-quest-log.js` | `Due Date` było wypełnione w 4 rekordach na 582; inaczej mnożnik terminowości byłby martwy dla 468 zadań |
 | Eksport woła `posortowane()` **bez** `filtrowane()` | `public/js/zadania.js` | Eksport, kopia zapasowa i XP zawsze obejmują pełny zbiór, niezależnie od widoku |
-| Skala stresu **odwrócona** (0 = najgorzej) | `config/mapowanie-ocen.js` | Tak jest w źródle danych; „stres 2,68" czyta się odwrotnie, niż znaczy |
+| Skala **Spokoju zostaje 0–5**, gdy reszta ma 1–5 | `config/mapowanie-ocen.js` | Sklejenie 0 z 1 zatarłoby bezpowrotnie 12 dni skrajnego stresu — najrzadszy sygnał w dzienniku. Niespójność zakresu tańsza niż utrata danych |
 | `numerDnia` bierze pierwsze 10 znaków | `lib/nagrody.js`, `public/js/filtr-dat.js` | Wszystkie porównania dat idą na pełnych dniach — dzięki temu daty całodzienne nie wymagały zmian w regułach. Dwie kopie pilnuje asercja |
-| XP nigdy nie zapisywane w bazie | `lib/nagrody.js` | Zmiana wzoru przelicza całą historię bez migracji; zapisywana jest tylko wydana waluta |
+| XP nigdy nie zapisywane w bazie | `lib/nagrody.js` | Zmiana wzoru przelicza całą historię bez migracji. Zapisywane są **wyłącznie decyzje użytkownika**, których nie da się odtworzyć z danych: `zakupy` i `atrybuty` |
 | Duplikat zadania powstaje w SQL (`INSERT ... SELECT`) | `routes/zadania.js` | Reguła „bez stanu i bez daty zakończenia" musi być wymuszona po stronie bazy — inaczej kopia naliczyłaby XP za niewykonaną pracę |
+| **2026-09-05: wyśrodkowanie etykiet ocen** | `config/mapowanie-ocen.js` | Skrajności były martwe (5 w 1,2–3,1% wpisów), a środek stał nie tam, gdzie trzeba (nastrój: mode 4 przez słowo „Neutralny"). Etykiety zmieniono, **liczby nie** — ale zmienia to zachowanie, więc szereg czasowy ma tu próg. Porównania „2024 kontra 2026" muszą to uwzględniać |
 | Migracja 7 była rozstrzygalna **jednorazowo** | `db/migracje.js` | `T00:00` dało się zinterpretować tylko dlatego, że przed przełącznikiem zegara północy nie dało się ustawić celowo. Dziś to samo rozumowanie już nie działa |

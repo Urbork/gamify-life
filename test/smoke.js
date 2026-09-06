@@ -1187,10 +1187,51 @@ async function testujNawyki() {
     )
   );
   sprawdz(
-    'skala stresu ma 6 stopni i zaczyna sie od 5 (odwrocona)',
+    'skala Spokoju ma 6 stopni i zaczyna sie od 5 (najlepsza ocena u gory)',
     slowniki.oceny.stres.length === 6 && slowniki.oceny.stres[0].wartosc === 5,
     JSON.stringify(slowniki.oceny.stres.map((o) => o.wartosc))
   );
+
+  /*
+    HIGIENA ETYKIET. Lista rozwijana pokazuje wylacznie emoji i opis - liczby przy
+    wystawianiu oceny nie widac. Dwie wartosci z tym samym opisem albo tym samym
+    emoji byly by wiec NIEROZROZNIALNE przy klikaniu, mimo ze w bazie znacza
+    co innego. To ta sama zasada, ktora pilnuje plakietek zadan.
+  */
+  for (const [pole, skala] of Object.entries(slowniki.oceny)) {
+    const opisy = skala.map((o) => o.opis);
+    const emoji = skala.map((o) => o.emoji);
+    sprawdz(
+      `skala "${pole}": opisy sa rozne`,
+      new Set(opisy).size === opisy.length,
+      opisy.join(', ')
+    );
+    sprawdz(
+      `skala "${pole}": emoji sa rozne`,
+      new Set(emoji).size === emoji.length,
+      emoji.join(' ')
+    );
+    sprawdz(
+      `skala "${pole}": kazdy stopien ma emoji i opis`,
+      skala.every((o) => o.emoji && o.opis && Number.isInteger(o.wartosc)),
+      JSON.stringify(skala)
+    );
+  }
+
+  /*
+    Srodek skali. Po wysrodkowaniu etykiet trojka znaczy "przecietny dzien"
+    w kazdej skali 1-5 - to jest cala poprawka, wiec asercja pilnuje, zeby nie
+    wrocilo do niej slowo opisujace stan wyjatkowy albo brak (dawne "Neutralny").
+    Spokoj jest wyjatkiem: ma zakres 0-5 i wlasne, dzialajace stopniowanie.
+  */
+  for (const pole of ['jakosc_snu', 'nastroj', 'intencjonalnosc']) {
+    const srodek = slowniki.oceny[pole].find((o) => o.wartosc === 3);
+    sprawdz(
+      `skala "${pole}": stopien 3 to "Przeciętny"`,
+      srodek && srodek.opis === 'Przeciętny',
+      srodek && srodek.opis
+    );
+  }
   sprawdz(
     'lista nawykow NIE jest juz w /api/slowniki (mieszka w bazie)',
     slowniki.nawyki === undefined
