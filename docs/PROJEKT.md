@@ -70,6 +70,17 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
       pokrycie), rytm tygodnia, samopoczucie z trendem, współwystępowanie słów
       i nawyków, zadania (terminowość wg obszaru i priorytetu), postęp XP
 
+## Wersje
+
+Numer w `package.json`. Zmiana WIĘKSZA (2.0.0) znaczy, że stara wersja aplikacji
+nie odczyta tej bazy albo że liczby znaczą co innego niż wcześniej — nie że zmian
+było dużo.
+
+| Wersja | Co ją wyznacza |
+| --- | --- |
+| **2.0.0** | Nowy silnik XP przeliczył **całą historię wstecz** (36 891 XP / prestiż 0 / poziom 74 → 10 952 / prestiż 2 / poziom 20), więc żadna wcześniejsza notatka czy zrzut ekranu nie jest już porównywalny. Do tego interfejs po angielsku i schemat bazy z 7 na 10 migracji — kod 1.0.0 tej bazy nie otworzy |
+| 1.0.0 | Zadania, dziennik, import CSV, smoke test, kopia zapasowa |
+
 ## Do zrobienia
 
 - [ ] Otworzyć PR dla gałęzi `feat/zadania-i-dziennik` (brakuje `gh` na maszynie)

@@ -1,6 +1,6 @@
 {
   "name": "gamify-life",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Lokalna aplikacja do zarzadzania zadaniami (docelowo takze dziennik i statystyki)",
   "main": "server.js",
