@@ -14,21 +14,21 @@
 const ATRYBUTY = [
   {
     klucz: 'sila',
-    etykieta: 'Siła',
+    etykieta: 'Strength',
     emoji: '💪',
-    opis: 'Ile ciężaru udźwigniesz w jednym podejściu.',
+    opis: 'How much you can lift in a single effort.',
   },
   {
     klucz: 'zrecznosc',
-    etykieta: 'Zręczność',
+    etykieta: 'Agility',
     emoji: '🤸',
-    opis: 'Precyzja i szybkość reakcji.',
+    opis: 'Precision and reaction speed.',
   },
   {
     klucz: 'witalnosc',
-    etykieta: 'Witalność',
+    etykieta: 'Vitality',
     emoji: '❤️',
-    opis: 'Zapas energii i tempo regeneracji.',
+    opis: 'Energy reserve and recovery rate.',
   },
 ];
 

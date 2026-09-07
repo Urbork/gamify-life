@@ -39,7 +39,7 @@ function blad(status, wiadomosc) {
 
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id zakupu.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid purchase id.');
   return id;
 }
 
@@ -108,12 +108,12 @@ function stanAtrybutow(postac) {
 router.patch('/atrybuty', (req, res) => {
   const cialo = req.body;
   if (!cialo || typeof cialo !== 'object' || Array.isArray(cialo)) {
-    throw blad(400, 'Oczekiwano obiektu z punktami atrybutow.');
+    throw blad(400, 'Expected an object with attribute points.');
   }
 
   const nieznane = Object.keys(cialo).filter((k) => !KLUCZE_ATRYBUTOW.includes(k));
   if (nieznane.length > 0) {
-    throw blad(400, `Nieznane atrybuty: ${nieznane.join(', ')}.`);
+    throw blad(400, `Unknown attributes: ${nieznane.join(', ')}.`);
   }
 
   // Brakujace klucze zachowuja obecna wartosc - PATCH, nie PUT.
@@ -123,7 +123,7 @@ router.patch('/atrybuty', (req, res) => {
   for (const [nazwa, wartosc] of Object.entries(cialo)) {
     const n = Number(wartosc);
     if (!Number.isInteger(n) || n < 0) {
-      throw blad(400, `Atrybut "${nazwa}": oczekiwano liczby całkowitej nie mniejszej niż 0.`);
+      throw blad(400, `Attribute "${nazwa}": expected an integer no smaller than 0.`);
     }
     docelowe[nazwa] = n;
   }
@@ -133,7 +133,7 @@ router.patch('/atrybuty', (req, res) => {
   const suma = Object.values(docelowe).reduce((a, b) => a + b, 0);
 
   if (suma > lacznie) {
-    throw blad(400, `Do rozdania jest ${lacznie} punktów, a rozdzielono ${suma}.`);
+    throw blad(400, `There are ${lacznie} points to assign, but ${suma} were assigned.`);
   }
 
   // Transakcja: albo caly komplet, albo nic - inaczej nieudany zapis zostawilby
@@ -182,7 +182,7 @@ router.get('/zakupy', (req, res) => {
 router.post('/zakupy', (req, res) => {
   const nazwa = req.body && req.body.nazwa;
   if (typeof nazwa !== 'string' || nazwa.trim() === '') {
-    throw blad(400, 'Nazwa zakupu nie może być pusta.');
+    throw blad(400, 'The purchase name cannot be empty.');
   }
 
   /*
@@ -195,7 +195,7 @@ router.post('/zakupy', (req, res) => {
   const koszt = typPoprawny ? Number(surowy) : NaN;
 
   if (!Number.isInteger(koszt) || koszt <= 0) {
-    throw blad(400, `Koszt musi być dodatnią liczbą całkowitą, otrzymano "${surowy}".`);
+    throw blad(400, `Cost must be a positive integer, got "${surowy}".`);
   }
 
   /*
@@ -219,7 +219,7 @@ router.delete('/zakupy/:id', (req, res) => {
   // Cofniecie zakupu automatycznie zwraca walute - saldo liczy sie z sumy kosztow,
   // wiec usuniecie wiersza wystarczy, nie ma zadnego osobnego "zwrotu".
   const wynik = usunZakup.run(id);
-  if (wynik.changes === 0) throw blad(404, `Nie ma zakupu o id ${id}.`);
+  if (wynik.changes === 0) throw blad(404, `There is no purchase with id ${id}.`);
   res.status(204).end();
 });
 

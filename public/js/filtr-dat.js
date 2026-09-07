@@ -57,11 +57,11 @@ const filtrDat = (() => {
     `dni: null` oznacza brak filtra (czyszczenie obu pol).
   */
   const PRESETY = {
-    WSZYSTKIE: { etykieta: 'Wszystkie', dni: null },
-    DZIS: { etykieta: 'Dziś', dni: 1 },
-    DZIS_JUTRO: { etykieta: 'Dziś + jutro', dni: 2 },
-    TYDZIEN: { etykieta: '7 dni', dni: 7 },
-    MIESIAC: { etykieta: '30 dni', dni: 30 },
+    WSZYSTKIE: { etykieta: 'All', dni: null },
+    DZIS: { etykieta: 'Today', dni: 1 },
+    DZIS_JUTRO: { etykieta: 'Today + tomorrow', dni: 2 },
+    TYDZIEN: { etykieta: '7 days', dni: 7 },
+    MIESIAC: { etykieta: '30 days', dni: 30 },
 
     /*
       WARIANTY WSTECZNE: dzis-(dni-1) .. dzis.
@@ -74,8 +74,8 @@ const filtrDat = (() => {
       Etykiety zostaja te same ('7 dni'), bo w dzienniku nie ma dwuznacznosci:
       wszystkie jego presety patrza wstecz.
     */
-    OSTATNIE_7_DNI: { etykieta: '7 dni', dni: 7, wstecz: true },
-    OSTATNIE_30_DNI: { etykieta: '30 dni', dni: 30, wstecz: true },
+    OSTATNIE_7_DNI: { etykieta: '7 days', dni: 7, wstecz: true },
+    OSTATNIE_30_DNI: { etykieta: '30 days', dni: 30, wstecz: true },
   };
 
   /**

@@ -320,7 +320,154 @@ const MIGRACJE = [
     for (const nazwa of ['sila', 'zrecznosc', 'witalnosc']) wstaw.run(nazwa);
   },
 
-  // --- 9: tutaj dopisz kolejna migracje ----------------------------------
+  // --- 9: slownik wartosci dla pola "trzy slowa" -------------------------
+  /*
+    Pole  dziala od tej pory tak samo jak : wartosci wybiera sie
+    z listy zamiast wpisywac recznie. Kolumna w dzienniku ZOSTAJE tekstem z nazwami
+    rozdzielonymi przecinkami - format sie nie zmienia, wiec import z Notion, eksport
+    CSV, kopia zapasowa i wyszukiwarka dzialaja bez zadnej poprawki.
+
+    LISTA POCHODZI Z DANYCH, nie z przepisania. Zostala odczytana z 519 wpisow
+    w bazie, bo szesc wartosci ma w nazwie emoji ("🦥 Lazy", "😢 Sad", "Festive✨")
+    i przepisanie ich recznie dalo by nazwy, ktore nie dopasowalyby sie do historii.
+
+    Po zasianiu listy migracja DOCIAGA jeszcze wszystko, co wystepuje w dzienniku,
+    a czego na liscie nie ma. Dzieki temu zadna wartosc z historii nie stanie sie
+    nieklikalna - takze w bazie, ktora ma wpisy nieobecne w tym pliku.
+  */
+  (db) => {
+    db.exec(
+      'CREATE TABLE slowa_slownik (' +
+        '  id    INTEGER PRIMARY KEY AUTOINCREMENT,' +
+        '  nazwa TEXT NOT NULL UNIQUE' +
+        ')'
+    );
+
+    const POCZATKOWE = [
+    "⚖ Balanced",
+    "❔ IDK",
+    "❤ Love",
+    "👍 OK",
+    "🤮 Sick",
+    "🦥 Lazy",
+    "😢 Sad",
+    "🙂 Happy",
+    "🛏 Tired",
+    "Creative",
+    "Difficult",
+    "Diligent",
+    "Disappointed",
+    "Educational",
+    "Excited",
+    "Exploring",
+    "Family",
+    "Festive✨",
+    "Friendship",
+    "Frustrated",
+    "Fulfilled",
+    "Fun",
+    "Helpful",
+    "Inspired",
+    "Introspective",
+    "Investigative",
+    "Leisure",
+    "Low Energy",
+    "Low Impact",
+    "Motivated",
+    "Organized",
+    "Overwhelmed",
+    "Relieved",
+    "Sharing",
+    "Stressed",
+    "Stuck",
+    ];
+
+    const wstaw = db.prepare('INSERT OR IGNORE INTO slowa_slownik (nazwa) VALUES (?)');
+    for (const nazwa of POCZATKOWE) wstaw.run(nazwa);
+
+    // Domknięcie: cokolwiek jest w dzienniku, a nie trafilo na liste wyzej.
+    const wpisy = db
+      .prepare("SELECT trzy_slowa FROM dziennik WHERE trzy_slowa IS NOT NULL AND trim(trzy_slowa) <> ''")
+      .all();
+    let dociagnietych = 0;
+    for (const wpis of wpisy) {
+      for (const slowo of String(wpis.trzy_slowa).split(',').map((s) => s.trim())) {
+        if (!slowo) continue;
+        if (wstaw.run(slowo).changes > 0) dociagnietych++;
+      }
+    }
+
+    const ile = db.prepare('SELECT COUNT(*) AS n FROM slowa_slownik').get().n;
+    console.log(
+      `[db]   migracja 9: slownik slow ma ${ile} pozycji (dociagnietych z dziennika: ${dociagnietych})`
+    );
+  },
+
+  // --- 10: emoji wychodza z nazw slow do warstwy prezentacji --------------
+  /*
+    Nazwy slow mialy emoji WKLEJONE W TRESC ("🦥 Lazy", "Festive✨"). Skutek:
+    lista sortowala sie po emoji, a nie po slowie, wiec "Lazy" ladowalo miedzy
+    "IDK" a "Love" w zupelnie przypadkowym miejscu.
+
+    Po tej migracji w bazie zostaje SAMA NAZWA, a emoji i kolor kategorii przychodza
+    z config/slowa.js po nazwie. To ta sama zasada, ktora rzadzi juz ocenami dziennika
+    i plakietkami zadan: w bazie surowa wartosc, w konfiguracji wyglad. Dzieki temu
+    emoji moze stac z przodu i NIE wplywa na sortowanie ani na porownania.
+
+    DLACZEGO OSOBNA MIGRACJA, A NIE POPRAWKA MIGRACJI 9
+    Migracja 9 juz sie wykonala - jej edycja nie cofnelaby sie w istniejacej bazie,
+    a licznik user_version przestalby sie zgadzac. Zasada z naglowka tego pliku.
+
+    Pary sa WYPISANE WPROST, a nie liczone wyrazeniem regularnym. Migracja ma znaczyc
+    to samo za dwa lata, a regula "obetnij nie-litery z brzegow" zmienialaby wynik
+    razem z kazda nowa nazwa, ktora ktos dopisze.
+  */
+  (db) => {
+    const PARY = [
+      ["⚖ Balanced", "Balanced"],
+      ["Festive✨", "Festive"],
+      ["🙂 Happy", "Happy"],
+      ["❔ IDK", "IDK"],
+      ["🦥 Lazy", "Lazy"],
+      ["❤ Love", "Love"],
+      ["👍 OK", "OK"],
+      ["😢 Sad", "Sad"],
+      ["🤮 Sick", "Sick"],
+      ["🛏 Tired", "Tired"],
+    ];
+
+    const zmienWSlowniku = db.prepare('UPDATE slowa_slownik SET nazwa = ? WHERE nazwa = ?');
+    const wpisy = db
+      .prepare("SELECT id, trzy_slowa FROM dziennik WHERE trzy_slowa IS NOT NULL AND trim(trzy_slowa) <> ''")
+      .all();
+    const zapiszWpis = db.prepare('UPDATE dziennik SET trzy_slowa = ? WHERE id = ?');
+
+    const mapa = new Map(PARY);
+    let wSlowniku = 0;
+    for (const [stara, nowa] of PARY) wSlowniku += zmienWSlowniku.run(nowa, stara).changes;
+
+    /*
+      W dzienniku podmieniamy CALE tokeny, nie podciagi - dokladnie tak jak przy
+      kaskadowej zmianie nazwy w lib/slownik-wartosci.js. REPLACE po podciagu
+      uszkodzilby kazda nazwe bedaca fragmentem innej.
+    */
+    let wDzienniku = 0;
+    for (const wpis of wpisy) {
+      const tokeny = String(wpis.trzy_slowa)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!tokeny.some((t) => mapa.has(t))) continue;
+      zapiszWpis.run(tokeny.map((t) => mapa.get(t) || t).join(', '), wpis.id);
+      wDzienniku++;
+    }
+
+    console.log(
+      `[db]   migracja 10: oczyszczono ${wSlowniku} nazw w slowniku, poprawiono ${wDzienniku} wpisow`
+    );
+  },
+
+  // --- 11: tutaj dopisz kolejna migracje ---------------------------------
 ];
 
 function uruchomMigracje(db) {

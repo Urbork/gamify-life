@@ -34,9 +34,11 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 
 ### Dziennik
 - [x] Tabela wpisów z 18 kolumnami, edycja w miejscu
-- [x] Oceny 1–5 z plakietkami; **stres w skali odwróconej** (0 = najgorzej)
-- [x] Słownik nawyków w bazie, edytowalny, ze zmianą nazwy kaskadującą po wpisach
-- [x] Filtry: tekst po 8 kolumnach, zakres dat, multi-select nawyków
+- [x] Oceny 1–5 z plakietkami, etykiety wyśrodkowane na „Przeciętny"; **Spokój w skali 0–5**
+- [x] **Dwa pola wielokrotnego wyboru** — Nawyki i Słowa — na jednym mechanizmie
+      (`lib/slownik-wartosci.js`): słownik w bazie, edytowalny, ze zmianą nazwy
+      kaskadującą po wpisach. Bez limitu liczby wartości; do XP liczą się jako jedno pole
+- [x] Filtry: tekst po 8 kolumnach, zakres dat, multi-select nawyków i słów
 - [x] Miękkie ostrzeżenie o duplikacie daty (żółte, nieblokujące)
 - [x] Widok domyślny: ostatnie 30 dni
 
@@ -60,11 +62,24 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
       się odtworzyć z danych źródłowych — to jedyne kryterium zapisywania stanu.
 
 ### Infrastruktura
-- [x] Migracje wersjonowane przez `PRAGMA user_version` (8 migracji)
-- [x] Smoke test — 325 asercji, izolowana baza tymczasowa
+- [x] Migracje wersjonowane przez `PRAGMA user_version` (10 migracji)
+- [x] Smoke test — 399 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
-- [x] Statystyki zadań i dziennika z tabelą miesięczną
+- [x] Statystyki w sześciu grupach z nawigacją kotwicową: konsekwencja (serie,
+      pokrycie), rytm tygodnia, samopoczucie z trendem, współwystępowanie słów
+      i nawyków, zadania (terminowość wg obszaru i priorytetu), postęp XP
+
+## Wersje
+
+Numer w `package.json`. Zmiana WIĘKSZA (2.0.0) znaczy, że stara wersja aplikacji
+nie odczyta tej bazy albo że liczby znaczą co innego niż wcześniej — nie że zmian
+było dużo.
+
+| Wersja | Co ją wyznacza |
+| --- | --- |
+| **2.0.0** | Nowy silnik XP przeliczył **całą historię wstecz** (36 891 XP / prestiż 0 / poziom 74 → 10 952 / prestiż 2 / poziom 20), więc żadna wcześniejsza notatka czy zrzut ekranu nie jest już porównywalny. Do tego interfejs po angielsku i schemat bazy z 7 na 10 migracji — kod 1.0.0 tej bazy nie otworzy |
+| 1.0.0 | Zadania, dziennik, import CSV, smoke test, kopia zapasowa |
 
 ## Do zrobienia
 
@@ -115,8 +130,12 @@ Zebrane z kodu i README — wybrane te, które najłatwiej cofnąć przez przypa
 | Wartości zapasowe w `poWierszu`, nie w `wartosciDomyslne` | `config/mapowanie-quest-log.js` | Pusta komórka zapisuje `null` **po** wartości domyślnej i kasowała ją |
 | `Do Date` → `termin`, nie `start_zadania` | `config/mapowanie-quest-log.js` | `Due Date` było wypełnione w 4 rekordach na 582; inaczej mnożnik terminowości byłby martwy dla 468 zadań |
 | Eksport woła `posortowane()` **bez** `filtrowane()` | `public/js/zadania.js` | Eksport, kopia zapasowa i XP zawsze obejmują pełny zbiór, niezależnie od widoku |
-| Skala stresu **odwrócona** (0 = najgorzej) | `config/mapowanie-ocen.js` | Tak jest w źródle danych; „stres 2,68" czyta się odwrotnie, niż znaczy |
+| Skala **Spokoju zostaje 0–5**, gdy reszta ma 1–5 | `config/mapowanie-ocen.js` | Sklejenie 0 z 1 zatarłoby bezpowrotnie 12 dni skrajnego stresu — najrzadszy sygnał w dzienniku. Niespójność zakresu tańsza niż utrata danych |
 | `numerDnia` bierze pierwsze 10 znaków | `lib/nagrody.js`, `public/js/filtr-dat.js` | Wszystkie porównania dat idą na pełnych dniach — dzięki temu daty całodzienne nie wymagały zmian w regułach. Dwie kopie pilnuje asercja |
-| XP nigdy nie zapisywane w bazie | `lib/nagrody.js` | Zmiana wzoru przelicza całą historię bez migracji; zapisywana jest tylko wydana waluta |
+| XP nigdy nie zapisywane w bazie | `lib/nagrody.js` | Zmiana wzoru przelicza całą historię bez migracji. Zapisywane są **wyłącznie decyzje użytkownika**, których nie da się odtworzyć z danych: `zakupy` i `atrybuty` |
 | Duplikat zadania powstaje w SQL (`INSERT ... SELECT`) | `routes/zadania.js` | Reguła „bez stanu i bez daty zakończenia" musi być wymuszona po stronie bazy — inaczej kopia naliczyłaby XP za niewykonaną pracę |
+| **2026-09-05: wyśrodkowanie etykiet ocen** | `config/mapowanie-ocen.js` | Skrajności były martwe (5 w 1,2–3,1% wpisów), a środek stał nie tam, gdzie trzeba (nastrój: mode 4 przez słowo „Neutralny"). Etykiety zmieniono, **liczby nie** — ale zmienia to zachowanie, więc szereg czasowy ma tu próg. Porównania „2024 kontra 2026" muszą to uwzględniać |
+| **Interfejs po angielsku, wartości w bazie po polsku** | `config/slowniki.js` | `zadania.stan` trzyma `Plan/Czeka/W trakcie/Zrobione` w 527 rekordach i jest treścią eksportu CSV. Migracja wartości unieważniłaby 41 kopii zapasowych, więc mapujemy etykiety — ta sama zasada co kolumna `stres` przy polu „Calm". Nagłówki CSV zostają polskie |
+| Kontrasty palety **liczone w teście**, nie dobierane na oko | `public/css/style.css` | Kolory to jedyna warstwa, której nie sprawdzi ani test danych, ani test DOM-u, a psują się po cichu. Progi: 4,5:1 tekst, 3:1 obramowania kontrolek — w obu motywach |
+| **Dwa rodzaje obramowań** — `--ramka` (siatka) i `--ramka-kontrolki` | `public/css/style.css` | Mają różne zadania i różne progi. Siatka o kontraście 3:1 dominuje nad treścią przy 21 kolumnach; obramowanie kontrolki musi mówić „to się klika" |
 | Migracja 7 była rozstrzygalna **jednorazowo** | `db/migracje.js` | `T00:00` dało się zinterpretować tylko dlatego, że przed przełącznikiem zegara północy nie dało się ustawić celowo. Dziś to samo rozumowanie już nie działa |

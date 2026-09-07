@@ -6,13 +6,18 @@
  *   PATCH  /api/zadania/:id   - aktualizacja wybranych pol (edycja inline w tabeli)
  *   DELETE /api/zadania/:id   - usuniecie
  *
- * Kolumny wyliczane ("Dni do terminu", "Czas trwania") celowo NIE sa tu liczone
- * ani przechowywane - powstaja w przegladarce przy renderowaniu (public/js/zadania.js).
+ * Kolumny wyliczane ("Dni do terminu") powstaja w przegladarce przy renderowaniu
+ * (public/js/zadania.js) i NIE sa tu liczone ani przechowywane.
+ *
+ * WYJATKIEM jest XP: kazde zadanie wyjezdza stad z polami xp, xp_bazowe
+ * i xp_brakuje_danych. Powod przy funkcji zXp() nizej - w skrocie: silnik XP ma
+ * miec jedna implementacje, a jest nia lib/nagrody.js po stronie serwera.
  */
 
 const express = require('express');
 const db = require('../db');
-const { STANY, PRIORYTETY } = require('../config/slowniki');
+const { STANY, PRIORYTETY, STAN_ZAKONCZONY } = require('../config/slowniki');
+const nagrody = require('../lib/nagrody');
 // Normalizacja dat siedzi w lib/daty.js, bo korzysta z niej takze import z pliku.
 const { znormalizujZnacznikCzasu } = require('../lib/daty');
 
@@ -75,7 +80,7 @@ function znormalizuj(pole, wartosc) {
     if (!Number.isInteger(numer) || !DOZWOLONE_PRIORYTETY.includes(numer)) {
       throw blad(
         400,
-        `Niepoprawny priorytet "${wartosc}". Dozwolone: ${DOZWOLONE_PRIORYTETY.join(', ')}.`
+        `Invalid priority "${wartosc}". Allowed: ${DOZWOLONE_PRIORYTETY.join(', ')}.`
       );
     }
     return numer;
@@ -95,14 +100,14 @@ function znormalizuj(pole, wartosc) {
 
     if (pole === 'trudnosc') {
       if (!Number.isInteger(liczba) || liczba < 1 || liczba > 3) {
-        throw blad(400, `Trudność musi być liczbą całkowitą 1-3, otrzymano "${wartosc}".`);
+        throw blad(400, `Difficulty must be an integer 1-3, got "${wartosc}".`);
       }
       return liczba;
     }
 
     // Czas trwania jest REAL - dopuszczamy ulamki godzin (0.5h itd.).
     if (!Number.isFinite(liczba) || liczba < 0) {
-      throw blad(400, `Czas trwania musi być liczbą nieujemną, otrzymano "${wartosc}".`);
+      throw blad(400, `Duration must be a non-negative number, got "${wartosc}".`);
     }
     return liczba;
   }
@@ -120,7 +125,7 @@ function znormalizuj(pole, wartosc) {
     const numer = typPoprawny ? Number(wartosc) : NaN;
 
     if (!Number.isInteger(numer) || numer <= 0) {
-      throw blad(400, `Niepoprawne id projektu "${wartosc}".`);
+      throw blad(400, `Invalid project id "${wartosc}".`);
     }
     return numer;
   }
@@ -128,12 +133,12 @@ function znormalizuj(pole, wartosc) {
   // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i obszaru).
   if (wartosc === null || wartosc === undefined || wartosc === '') {
     if (pole === 'nazwa') return '';
-    if (pole === 'stan') throw blad(400, 'Pole "stan" nie moze byc puste.');
+    if (pole === 'stan') throw blad(400, 'Field "stan" cannot be empty.');
     return null;
   }
 
   if (typeof wartosc !== 'string') {
-    throw blad(400, `Pole "${pole}" musi byc tekstem.`);
+    throw blad(400, `Field "${pole}" must be text.`);
   }
 
   const tekst = wartosc.trim();
@@ -144,7 +149,7 @@ function znormalizuj(pole, wartosc) {
     if (!znacznik) {
       throw blad(
         400,
-        `Pole "${pole}": oczekiwano znacznika czasu YYYY-MM-DDTHH:MM, otrzymano "${tekst}".`
+        `Field "${pole}": expected a YYYY-MM-DDTHH:MM timestamp, got "${tekst}".`
       );
     }
     return znacznik;
@@ -152,7 +157,7 @@ function znormalizuj(pole, wartosc) {
 
   // `stan` walidujemy twardo - to zamknieta lista, od ktorej zaleza przyszle statystyki.
   if (pole === 'stan' && !STANY.includes(tekst)) {
-    throw blad(400, `Nieznany stan "${tekst}". Dozwolone: ${STANY.join(', ')}.`);
+    throw blad(400, `Unknown status "${tekst}". Allowed: ${STANY.join(', ')}.`);
   }
 
   // `obszar` NIE jest walidowany wobec listy - to lista podpowiedzi,
@@ -164,7 +169,7 @@ function znormalizuj(pole, wartosc) {
 /** Zamienia :id z URL-a na liczbe albo rzuca bledem 400. */
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id zadania.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid task id.');
   return id;
 }
 
@@ -218,8 +223,57 @@ const usun = db.prepare('DELETE FROM zadania WHERE id = ?');
 
 // --- trasy ----------------------------------------------------------------
 
+/*
+  XP DOKLADANE DO KAZDEJ ODPOWIEDZI
+
+  Kolumna "XP" w tabeli zadan pokazuje wynik silnika z lib/nagrody.js. Liczy go
+  SERWER, a nie przegladarka, i to jest decyzja, nie wygoda: reguly naliczania
+  maja miec JEDNA implementacje. Przepisanie ich do public/js dalo by druga kopie,
+  ktora rozjezdza sie po cichu - dokladnie tak, jak rozjechal sie kiedys numerDnia.
+  Granica jest zapisana takze przy maDaneDoXp() w public/js/reguly-zadan.js.
+
+  Doklejamy dwie liczby, bo odpowiadaja na dwa rozne pytania:
+
+    xp        - ile zadanie NAPRAWDE dalo. Zero, dopoki nie jest zrobione.
+    xp_bazowe - ile jest warte samo w sobie: godziny x przelicznik trudnosci,
+                BEZ mnoznika za termin.
+
+  xp_bazowe celowo nie uwzglednia terminowosci. Mnoznik zalezy od daty zakonczenia,
+  ktorej jeszcze nie ma, wiec kazda jego prognoza byla by zgadywaniem - a liczba
+  w tabeli zmienialaby sie sama z uplywem dni, mimo ze nikt nic nie tknal.
+
+  Koszt jest zerowy: to czysta arytmetyka na polach, ktore i tak sa juz w pamieci.
+*/
+function zXp(zadanie) {
+  const { xp, brakujaceDane } = nagrody.xpZadania(zadanie, STAN_ZAKONCZONY);
+
+  /*
+    Wartosc bazowa liczymy przez ten sam silnik - podstawiamy zadanie zrobione
+    i bez dat, zeby dostac sama podstawe. Gdybysmy przepisali tu wzor recznie,
+    powstalaby ta druga implementacja, ktorej caly ten komentarz zabrania.
+  */
+  const bazowe = nagrody.xpZadania(
+    {
+      stan: STAN_ZAKONCZONY,
+      trudnosc: zadanie.trudnosc,
+      czas_trwania_godziny: zadanie.czas_trwania_godziny,
+      termin: null,
+      czas_zakonczenia: null,
+    },
+    STAN_ZAKONCZONY
+  );
+
+  return {
+    ...zadanie,
+    xp,
+    xp_bazowe: bazowe.brakujaceDane ? null : bazowe.xp,
+    xp_brakuje_danych: brakujaceDane,
+  };
+}
+
+
 router.get('/', (req, res) => {
-  res.json(pobierzWszystkie.all());
+  res.json(pobierzWszystkie.all().map(zXp));
 });
 
 router.post('/', (req, res) => {
@@ -227,7 +281,7 @@ router.post('/', (req, res) => {
   // oraz dzisiejszy TERMIN (calodzienny). Reszte uzupelniasz w tabeli.
   // Frontend po dodaniu zaznacza nazwe, wiec pierwsze wpisane znaki ja nadpisuja.
   const wynik = wstawNowe.run(NAZWA_DOMYSLNA);
-  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJedno.get(wynik.lastInsertRowid)));
 });
 
 /*
@@ -241,16 +295,16 @@ router.post('/', (req, res) => {
 router.post('/:id/duplikuj', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (!pobierzJedno.get(id)) throw blad(404, `There is no task with id ${id}.`);
 
   const wynik = wstawDuplikat.run(id);
-  res.status(201).json(pobierzJedno.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJedno.get(wynik.lastInsertRowid)));
 });
 
 router.patch('/:id', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (!pobierzJedno.get(id)) throw blad(404, `There is no task with id ${id}.`);
 
   // Bierzemy z body tylko pola z whitelisty i normalizujemy ich wartosci.
   const doZapisu = {};
@@ -261,7 +315,7 @@ router.patch('/:id', (req, res) => {
   }
 
   const pola = Object.keys(doZapisu);
-  if (pola.length === 0) throw blad(400, 'Brak pol do aktualizacji.');
+  if (pola.length === 0) throw blad(400, 'No fields to update.');
 
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
@@ -273,18 +327,18 @@ router.patch('/:id', (req, res) => {
     // Klucz obcy odrzuca przypisanie do nieistniejacego projektu - zamieniamy
     // surowy blad SQLite na czytelny komunikat dla interfejsu.
     if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-      throw blad(400, `Nie ma projektu o id ${doZapisu.projekt_id}.`);
+      throw blad(400, `There is no project with id ${doZapisu.projekt_id}.`);
     }
     throw e;
   }
 
-  res.json(pobierzJedno.get(id));
+  res.json(zXp(pobierzJedno.get(id)));
 });
 
 router.delete('/:id', (req, res) => {
   const id = idZParametru(req);
   const wynik = usun.run(id);
-  if (wynik.changes === 0) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (wynik.changes === 0) throw blad(404, `There is no task with id ${id}.`);
   res.status(204).end();
 });
 

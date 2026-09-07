@@ -21,7 +21,8 @@
   const elAtrybuty = document.getElementById('atrybuty');
   const elStatus = document.getElementById('status');
 
-  const liczba = (n) => Number(n).toLocaleString('pl');
+  // Formatowanie liczb idzie za jezykiem interfejsu: "10,847", a nie "10 847".
+  const liczba = (n) => Number(n).toLocaleString('en-GB');
 
   function el(tag, klasa, tekst) {
     const e = document.createElement(tag);
@@ -43,7 +44,7 @@
   function zbudujWskaznik(p) {
     const naglowek = el('div', 'poziom-naglowek');
     naglowek.append(
-      el('span', 'poziom-numer', `Poziom ${p.poziom}`),
+      el('span', 'poziom-numer', `Level ${p.poziom}`),
       el('span', 'prestiz', etykietaPrestizu(p.prestiz))
     );
 
@@ -59,14 +60,14 @@
     const opis = el(
       'p',
       'podstawa',
-      `${liczba(zdobyteWPoziomie)} / ${liczba(p.prog_poziomu)} XP w tym poziomie · ` +
-        `do następnego brakuje ${liczba(p.xp_do_nastepnego_poziomu)} XP`
+      `${liczba(zdobyteWPoziomie)} / ${liczba(p.prog_poziomu)} XP in this level · ` +
+        `${liczba(p.xp_do_nastepnego_poziomu)} XP to the next one`
     );
 
     const karty = el('div', 'karty');
     karty.append(
-      karta('XP łącznie', liczba(p.calkowite_xp)),
-      karta('🪙 ZŁOTO', liczba(p.waluta_dostepna), `zarobiono ${liczba(p.waluta_zarobiona)}, wydano ${liczba(p.waluta_wydana)}`)
+      karta('XP in total', liczba(p.calkowite_xp)),
+      karta('🪙 GOLD', liczba(p.waluta_dostepna), `earned ${liczba(p.waluta_zarobiona)}, spent ${liczba(p.waluta_wydana)}`)
     );
 
     elWskaznik.replaceChildren(naglowek, tlo, opis, karty);
@@ -80,9 +81,9 @@
   const MAKS_KORON = 5;
 
   function etykietaPrestizu(prestiz) {
-    if (prestiz <= 0) return 'Prestiż 0';
+    if (prestiz <= 0) return 'Prestige 0';
     const korony = prestiz <= MAKS_KORON ? '👑'.repeat(prestiz) : `👑 ×${prestiz}`;
-    return `Prestiż ${prestiz} ${korony}`;
+    return `Prestige ${prestiz} ${korony}`;
   }
 
   function karta(etykieta, wartosc, podstawa) {
@@ -112,24 +113,24 @@
     bez opisu (albo opisu bez stalej) przeszloby niezauwazone.
   */
   const OPISY_ZASAD = {
-    PROG_POZIOMU: 'Ile XP trzeba zebrać, żeby awansować o jeden poziom.',
-    POZIOMOW_DO_RESETU: 'Po tylu poziomach licznik wraca do 1, a prestiż rośnie o 1.',
-    XP_ZA_UTWORZENIE_WPISU: 'Za sam wpis w dzienniku, nawet gdy nie ma w nim ani jednego pola.',
-    XP_ZA_POLE_WPISU: 'Za każde wypełnione pole wpisu. Nawyki liczą się jako jedno pole.',
-    DNI_NA_PREMIE: 'Taki zapas dni przed terminem daje mnożnik premiowy do XP zadania.',
-    PUNKTY_NA_POZIOM: 'Tyle punktów atrybutów dostajesz za każdy zdobyty poziom.',
+    PROG_POZIOMU: 'How much XP is needed to gain one level.',
+    POZIOMOW_DO_RESETU: 'After this many levels the counter returns to 1 and prestige goes up by 1.',
+    XP_ZA_UTWORZENIE_WPISU: 'For the journal entry itself, even with no field filled in.',
+    XP_ZA_POLE_WPISU: 'For every filled field of an entry. Habits count as one field.',
+    DNI_NA_PREMIE: 'This many days of slack before the due date gives a bonus multiplier to task XP.',
+    PUNKTY_NA_POZIOM: 'This many attribute points you get for every level gained.',
   };
 
   function zbudujZasady(p) {
     if (!p.zasady) return null;
 
     const sekcja = el('section');
-    sekcja.appendChild(el('h2', null, 'Jak liczy się XP'));
+    sekcja.appendChild(el('h2', null, 'How XP is calculated'));
 
     const tabela = el('table');
     const thead = el('thead');
     const trN = el('tr');
-    trN.append(el('th', null, 'Ustawienie'), el('th', 'liczbowa', 'Wartość'), el('th', null, 'Znaczenie'));
+    trN.append(el('th', null, 'Setting'), el('th', 'liczbowa', 'Value'), el('th', null, 'Meaning'));
     thead.appendChild(trN);
 
     const tbody = el('tbody');
@@ -151,9 +152,9 @@
       el(
         'p',
         'podstawa',
-        'Wartości są stałe i zmienia się je w pliku lib/nagrody.js. Nie ma ich tu do ' +
-          'edycji celowo: XP liczy się od zera przy każdym wejściu, więc zmiana ' +
-          'dowolnej z nich przelicza całą dotychczasową historię wstecz.'
+        'The values are fixed and changed in lib/nagrody.js. They are deliberately not ' +
+          'editable here: XP is counted from scratch on every visit, so changing ' +
+          'any of them recalculates the whole history backwards.'
       )
     );
 
@@ -162,14 +163,14 @@
 
   function zbudujRozbicie(p) {
     const zrodla = [
-      ['Zadania', p.rozbicie.zadania, 'ukończone zadania: godziny przeliczone na trudność'],
-      ['Dziennik', p.rozbicie.dziennik, 'wpisy i wypełnione w nich pola'],
+      ['Tasks', p.rozbicie.zadania, 'completed tasks: hours converted by difficulty'],
+      ['Journal', p.rozbicie.dziennik, 'entries and the fields filled in them'],
     ];
 
     const tabela = el('table');
     const thead = el('thead');
     const trN = el('tr');
-    for (const [tekst, liczbowa] of [['Źródło', false], ['XP', true], ['Udział', true], ['', false]]) {
+    for (const [tekst, liczbowa] of [['Source', false], ['XP', true], ['Share', true], ['', false]]) {
       trN.appendChild(el('th', liczbowa ? 'liczbowa' : null, tekst));
     }
     thead.appendChild(trN);
@@ -260,20 +261,20 @@
 
     const naglowek = el('div', 'atrybuty-naglowek');
     naglowek.append(
-      el('span', 'atrybuty-wolne', `Wolne punkty: ${liczba(wolne)}`),
-      el('span', 'podstawa', `z ${liczba(p.punkty.lacznie)} zdobytych · rozdano ${liczba(p.punkty.rozdane)}`)
+      el('span', 'atrybuty-wolne', `Free points: ${liczba(wolne)}`),
+      el('span', 'podstawa', `of ${liczba(p.punkty.lacznie)} earned · assigned ${liczba(p.punkty.rozdane)}`)
     );
 
     const wiersze = definicje.map((def) => wierszAtrybutu(def, p, wolne));
 
-    const reset = el('button', null, 'Resetuj punkty');
+    const reset = el('button', null, 'Reset points');
     reset.type = 'button';
     reset.addEventListener('click', resetujAtrybuty);
 
     const stopka = el('p', 'podstawa');
     stopka.append(
       document.createTextNode(
-        `Każdy zdobyty poziom daje ${p.zasady ? p.zasady.PUNKTY_NA_POZIOM : 2} punkty. `
+        `Every level gained gives ${p.zasady ? p.zasady.PUNKTY_NA_POZIOM : 2} points. `
       ),
       reset
     );
@@ -290,9 +291,9 @@
       const ostrzezenie = el(
         'p',
         'uwaga-punkty',
-        `Rozdano ${liczba(p.punkty.rozdane)} punktów, a po przeliczeniu poziomu ` +
-          `dostępnych jest ${liczba(p.punkty.lacznie)}. Punkty zostały nietknięte — ` +
-          'żeby rozdać je od nowa, użyj przycisku poniżej.'
+        `${liczba(p.punkty.rozdane)} points were assigned, but after recalculating the level ` +
+          `only ${liczba(p.punkty.lacznie)} are available. The points were left untouched — ` +
+          'to assign them again, use the button below.'
       );
       dzieci.unshift(ostrzezenie);
     }
@@ -303,7 +304,7 @@
   async function zapiszAtrybut(klucz, wartosc) {
     const n = Number(wartosc);
     if (!Number.isInteger(n) || n < 0) {
-      pokazStatus('punkty muszą być liczbą całkowitą nie mniejszą niż 0', 'blad');
+      pokazStatus('points must be an integer no smaller than 0', 'blad');
       await wczytaj();
       return;
     }
@@ -311,7 +312,7 @@
     try {
       await api.patch('/api/atrybuty', { [klucz]: n });
       await wczytaj();
-      pokazStatus('zapisano punkty', 'ok');
+      pokazStatus('points saved', 'ok');
     } catch (err) {
       // Serwer odrzuca rozdanie ponad pule - jego komunikat niesie konkretne liczby.
       pokazStatus(err.message, 'blad');
@@ -322,12 +323,12 @@
   }
 
   async function resetujAtrybuty() {
-    if (!confirm('Wyzerować wszystkie punkty atrybutów? Rozdasz je od nowa.')) return;
+    if (!confirm('Reset all attribute points? You will assign them again.')) return;
 
     try {
       await api.post('/api/atrybuty/reset', {});
       await wczytaj();
-      pokazStatus('punkty wyzerowane', 'ok');
+      pokazStatus('points reset', 'ok');
     } catch (err) {
       pokazStatus(err.message, 'blad');
     }
@@ -339,14 +340,14 @@
 
   function zbudujListeZakupow(zakupy) {
     if (zakupy.length === 0) {
-      elListaZakupow.replaceChildren(el('p', 'brak-danych', 'Nic jeszcze nie kupiono.'));
+      elListaZakupow.replaceChildren(el('p', 'brak-danych', 'Nothing bought yet.'));
       return;
     }
 
     const tabela = el('table');
     const thead = el('thead');
     const trN = el('tr');
-    for (const [tekst, liczbowa] of [['Data', false], ['Na co', false], ['Koszt', true], ['', false]]) {
+    for (const [tekst, liczbowa] of [['Date', false], ['On what', false], ['Cost', true], ['', false]]) {
       trN.appendChild(el('th', liczbowa ? 'liczbowa' : null, tekst));
     }
     thead.appendChild(trN);
@@ -359,7 +360,7 @@
       const tdAkcje = el('td', 'kol-akcje');
       const btn = el('button', 'usun', '×');
       btn.type = 'button';
-      btn.title = 'Cofnij zakup (złoto wraca)';
+      btn.title = 'Undo purchase (gold comes back)';
       btn.addEventListener('click', () => cofnijZakup(z));
       tdAkcje.appendChild(btn);
       tr.appendChild(tdAkcje);
@@ -383,7 +384,7 @@
       elNazwa.value = '';
       elKoszt.value = '';
       await wczytaj();
-      pokazStatus('zapisano zakup', 'ok');
+      pokazStatus('purchase saved', 'ok');
     } catch (err) {
       // Serwer odrzuca zakup ponad stan konta - pokazujemy jego komunikat,
       // bo zawiera konkretne liczby (ile brakuje).
@@ -392,12 +393,12 @@
   }
 
   async function cofnijZakup(zakup) {
-    if (!confirm(`Cofnąć zakup „${zakup.nazwa}" za ${zakup.koszt}? Złoto wróci na konto.`)) return;
+    if (!confirm(`Undo purchase „${zakup.nazwa}" for ${zakup.koszt}? The gold returns to your account.`)) return;
 
     try {
       await api.usun(`/api/zakupy/${zakup.id}`);
       await wczytaj();
-      pokazStatus('cofnięto zakup', 'ok');
+      pokazStatus('purchase undone', 'ok');
     } catch (err) {
       pokazStatus(err.message, 'blad');
     }
@@ -427,9 +428,9 @@
     try {
       definicjeAtrybutow = (await api.get('/api/slowniki')).atrybuty;
       const postac = await wczytaj();
-      pokazStatus(`przeliczono ${liczba(postac.calkowite_xp)} XP`, 'ok');
+      pokazStatus(`recalculated ${liczba(postac.calkowite_xp)} XP`, 'ok');
     } catch (e) {
-      elWskaznik.replaceChildren(el('p', 'brak-danych', 'Nie udało się wczytać danych.'));
+      elWskaznik.replaceChildren(el('p', 'brak-danych', 'Could not load data.'));
       pokazStatus(e.message, 'blad');
     }
   }

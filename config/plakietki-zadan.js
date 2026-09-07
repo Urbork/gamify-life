@@ -27,9 +27,9 @@
   Kolejnosc w tablicy to kolejnosc na liscie rozwijanej.
 */
 const TRUDNOSCI = [
-  { wartosc: 1, emoji: '🟢', opis: 'Łatwe' },
-  { wartosc: 2, emoji: '🟡', opis: 'Średnie' },
-  { wartosc: 3, emoji: '🔴', opis: 'Trudne' },
+  { wartosc: 1, emoji: '🟢', opis: 'Easy' },
+  { wartosc: 2, emoji: '🟡', opis: 'Medium' },
+  { wartosc: 3, emoji: '🔴', opis: 'Hard' },
 ];
 
 /*

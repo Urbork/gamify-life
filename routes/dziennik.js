@@ -12,6 +12,7 @@
 
 const express = require('express');
 const db = require('../db');
+const nagrody = require('../lib/nagrody');
 
 const router = express.Router();
 
@@ -112,26 +113,26 @@ function znormalizuj(pole, wartosc) {
 
   // Puste pole = brak wartosci = NULL w bazie.
   if (wartosc === null || wartosc === undefined || wartosc === '') {
-    if (pole === 'data') throw blad(400, 'Pole "data" nie może być puste.');
+    if (pole === 'data') throw blad(400, 'Field "data" cannot be empty.');
     return null;
   }
 
   if (typeof wartosc !== 'string') {
-    throw blad(400, `Pole "${pole}" musi być tekstem.`);
+    throw blad(400, `Field "${pole}" must be text.`);
   }
 
   const tekst = wartosc.trim();
   if (tekst === '') {
-    if (pole === 'data') throw blad(400, 'Pole "data" nie może być puste.');
+    if (pole === 'data') throw blad(400, 'Field "data" cannot be empty.');
     return null;
   }
 
   if (pole === 'data' && !poprawnaData(tekst)) {
-    throw blad(400, `Pole "data": oczekiwano daty w formacie YYYY-MM-DD, otrzymano "${tekst}".`);
+    throw blad(400, `Field "data": expected a YYYY-MM-DD date, got "${tekst}".`);
   }
 
   if (pole === 'pobudka' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(tekst)) {
-    throw blad(400, `Pole "pobudka": oczekiwano godziny w formacie HH:MM, otrzymano "${tekst}".`);
+    throw blad(400, `Field "pobudka": expected an HH:MM time, got "${tekst}".`);
   }
 
   return tekst;
@@ -140,7 +141,7 @@ function znormalizuj(pole, wartosc) {
 /** Zamienia :id z URL-a na liczbe albo rzuca bledem 400. */
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id wpisu.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid entry id.');
   return id;
 }
 
@@ -155,21 +156,32 @@ const wstawNowy = db.prepare(
 );
 const usun = db.prepare('DELETE FROM dziennik WHERE id = ?');
 
+/*
+  XP dokladane do kazdego wpisu - dokladnie jak przy zadaniach (routes/zadania.js).
+
+  Liczy je SERWER, bo silnik XP ma miec jedna implementacje (lib/nagrody.js).
+  Bez tego strona statystyk musialaby przeliczac XP w przegladarce, czyli powtorzyc
+  reguly - a to ten sam blad, ktory dal kiedys numerDnia w trzech kopiach.
+*/
+function zXp(wpis) {
+  return { ...wpis, xp: nagrody.xpWpisu(wpis) };
+}
+
 // --- trasy ----------------------------------------------------------------
 
 router.get('/', (req, res) => {
-  res.json(pobierzWszystkie.all());
+  res.json(pobierzWszystkie.all().map(zXp));
 });
 
 router.post('/', (req, res) => {
   const wynik = wstawNowy.run();
-  res.status(201).json(pobierzJeden.get(wynik.lastInsertRowid));
+  res.status(201).json(zXp(pobierzJeden.get(wynik.lastInsertRowid)));
 });
 
 router.patch('/:id', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJeden.get(id)) throw blad(404, `Nie ma wpisu o id ${id}.`);
+  if (!pobierzJeden.get(id)) throw blad(404, `There is no entry with id ${id}.`);
 
   // Bierzemy z body tylko pola z whitelisty i normalizujemy ich wartosci.
   const doZapisu = {};
@@ -180,20 +192,20 @@ router.patch('/:id', (req, res) => {
   }
 
   const pola = Object.keys(doZapisu);
-  if (pola.length === 0) throw blad(400, 'Brak pól do aktualizacji.');
+  if (pola.length === 0) throw blad(400, 'No fields to update.');
 
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
   const przypisania = pola.map((p) => `${p} = @${p}`).join(', ');
   db.prepare(`UPDATE dziennik SET ${przypisania} WHERE id = @id`).run({ ...doZapisu, id });
 
-  res.json(pobierzJeden.get(id));
+  res.json(zXp(pobierzJeden.get(id)));
 });
 
 router.delete('/:id', (req, res) => {
   const id = idZParametru(req);
   const wynik = usun.run(id);
-  if (wynik.changes === 0) throw blad(404, `Nie ma wpisu o id ${id}.`);
+  if (wynik.changes === 0) throw blad(404, `There is no entry with id ${id}.`);
   res.status(204).end();
 });
 

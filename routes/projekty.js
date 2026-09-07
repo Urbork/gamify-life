@@ -34,18 +34,18 @@ function blad(status, wiadomosc) {
 
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id projektu.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid project id.');
   return id;
 }
 
 function znormalizuj(pole, wartosc) {
   if (wartosc === null || wartosc === undefined || wartosc === '') {
     if (pole === 'nazwa') return '';
-    if (pole === 'status') throw blad(400, 'Pole "status" nie może być puste.');
+    if (pole === 'status') throw blad(400, 'Field "status" cannot be empty.');
     return null;
   }
 
-  if (typeof wartosc !== 'string') throw blad(400, `Pole "${pole}" musi być tekstem.`);
+  if (typeof wartosc !== 'string') throw blad(400, `Field "${pole}" must be text.`);
 
   const tekst = wartosc.trim();
   if (tekst === '') return pole === 'nazwa' ? '' : null;
@@ -53,7 +53,7 @@ function znormalizuj(pole, wartosc) {
   // Status projektu korzysta z TEJ SAMEJ zamknietej listy co stan zadania -
   // jedna skala na obu poziomach, wiec walidacja tez jest twarda.
   if (pole === 'status' && !STANY.includes(tekst)) {
-    throw blad(400, `Nieznany status "${tekst}". Dozwolone: ${STANY.join(', ')}.`);
+    throw blad(400, `Unknown status "${tekst}". Allowed: ${STANY.join(', ')}.`);
   }
 
   return tekst;
@@ -98,7 +98,7 @@ router.post('/', (req, res) => {
 
 router.patch('/:id', (req, res) => {
   const id = idZParametru(req);
-  if (!pobierzJeden.get(id)) throw blad(404, `Nie ma projektu o id ${id}.`);
+  if (!pobierzJeden.get(id)) throw blad(404, `There is no project with id ${id}.`);
 
   const doZapisu = {};
   for (const pole of POLA_EDYTOWALNE) {
@@ -108,7 +108,7 @@ router.patch('/:id', (req, res) => {
   }
 
   const pola = Object.keys(doZapisu);
-  if (pola.length === 0) throw blad(400, 'Brak pól do aktualizacji.');
+  if (pola.length === 0) throw blad(400, 'No fields to update.');
 
   // Nazwy kolumn z whitelisty, wartosci wylacznie przez parametry.
   const przypisania = pola.map((p) => `${p} = @${p}`).join(', ');
@@ -120,7 +120,7 @@ router.patch('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const id = idZParametru(req);
   const projekt = pobierzJeden.get(id);
-  if (!projekt) throw blad(404, `Nie ma projektu o id ${id}.`);
+  if (!projekt) throw blad(404, `There is no project with id ${id}.`);
 
   /*
     Zadania NIE sa kasowane. Klucz obcy ma ON DELETE SET NULL (migracja 6),

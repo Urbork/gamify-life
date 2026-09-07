@@ -1187,10 +1187,51 @@ async function testujNawyki() {
     )
   );
   sprawdz(
-    'skala stresu ma 6 stopni i zaczyna sie od 5 (odwrocona)',
+    'skala Spokoju ma 6 stopni i zaczyna sie od 5 (najlepsza ocena u gory)',
     slowniki.oceny.stres.length === 6 && slowniki.oceny.stres[0].wartosc === 5,
     JSON.stringify(slowniki.oceny.stres.map((o) => o.wartosc))
   );
+
+  /*
+    HIGIENA ETYKIET. Lista rozwijana pokazuje wylacznie emoji i opis - liczby przy
+    wystawianiu oceny nie widac. Dwie wartosci z tym samym opisem albo tym samym
+    emoji byly by wiec NIEROZROZNIALNE przy klikaniu, mimo ze w bazie znacza
+    co innego. To ta sama zasada, ktora pilnuje plakietek zadan.
+  */
+  for (const [pole, skala] of Object.entries(slowniki.oceny)) {
+    const opisy = skala.map((o) => o.opis);
+    const emoji = skala.map((o) => o.emoji);
+    sprawdz(
+      `skala "${pole}": opisy sa rozne`,
+      new Set(opisy).size === opisy.length,
+      opisy.join(', ')
+    );
+    sprawdz(
+      `skala "${pole}": emoji sa rozne`,
+      new Set(emoji).size === emoji.length,
+      emoji.join(' ')
+    );
+    sprawdz(
+      `skala "${pole}": kazdy stopien ma emoji i opis`,
+      skala.every((o) => o.emoji && o.opis && Number.isInteger(o.wartosc)),
+      JSON.stringify(skala)
+    );
+  }
+
+  /*
+    Srodek skali. Po wysrodkowaniu etykiet trojka znaczy "przecietny dzien"
+    w kazdej skali 1-5 - to jest cala poprawka, wiec asercja pilnuje, zeby nie
+    wrocilo do niej slowo opisujace stan wyjatkowy albo brak (dawne "Neutralny").
+    Spokoj jest wyjatkiem: ma zakres 0-5 i wlasne, dzialajace stopniowanie.
+  */
+  for (const pole of ['jakosc_snu', 'nastroj', 'intencjonalnosc']) {
+    const srodek = slowniki.oceny[pole].find((o) => o.wartosc === 3);
+    sprawdz(
+      `skala "${pole}": stopien 3 to "Average"`,
+      srodek && srodek.opis === 'Average',
+      srodek && srodek.opis
+    );
+  }
   sprawdz(
     'lista nawykow NIE jest juz w /api/slowniki (mieszka w bazie)',
     slowniki.nawyki === undefined
@@ -1581,6 +1622,675 @@ async function testujPlakietkiZadan() {
   (naglowki) i public/js/dziennik.js (kolejnosc budowania komorek) - czyli dokladnie
   te dwie listy, ktore moga sie rozjechac niezaleznie od siebie.
 */
+/*
+  Kolumna XP w tabeli zadan.
+
+  Liczby przychodza z serwera, wiec test sprawdza DWIE rzeczy naraz: ze API je
+  dokleja i ze zgadzaja sie z silnikiem policzonym w izolacji. Gdyby ktos kiedys
+  przepisal wzor do przegladarki "dla wygody", ta asercja nadal przechodzilaby -
+  dlatego osobno pilnujemy, ze naglowek da sie posortowac (nizej), bo to wlasnie
+  ta druga implementacja bylaby pierwsza rzecza, ktora sie rozjedzie.
+*/
+/*
+  Nowe grupy statystyk. Wszystkie reguly sa czyste, wiec karmimy je danymi
+  syntetycznymi - bez bazy i bez HTTP.
+*/
+/*
+  Higiena CSS: komorka tabeli musi zostac komorka tabeli.
+
+  REGRESJA Z PRAWDZIWEGO ZDARZENIA. Regula `td.komorka-wyboru:has(.slowo)
+  { display: flex }` mial dac odstepy miedzy plakietkami slow. Skutek byl inny:
+  <td> z display:flex przestaje byc komorka tabeli, przegladarka przelicza uklad
+  kolumn i CALA RESZTA WIERSZA przesuwa sie o jedno miejsce. Na ekranie wygladalo
+  to jak uszkodzone dane - wdziecznosc stala pod naglowkiem "Nawyki", posilki
+  pod "Refleksje" - choc i baza, i DOM byly poprawne.
+
+  Blad byl widoczny wylacznie na wierszach, ktore mialy wypelnione OBA pola wyboru,
+  czyli na jednym wierszu z ponad osmiuset. Zaden test na danych ani na strukturze
+  DOM nie mial szans go zlapac - dlatego pilnujemy samego arkusza stylow.
+*/
+/*
+  Kontrasty palety liczone WPROST Z ARKUSZA STYLOW.
+
+  Kolory to jedyna czesc interfejsu, ktorej nie da sie sprawdzic ani na danych,
+  ani na strukturze DOM - a psuja sie po cichu: nikt nie zauwaza, ze tekst zszedl
+  z 4,6 na 4,2, dopoki nie zacznie meczyc oczu. Przed ta asercja piec par bylo
+  ponizej progu, w tym --ramka o kontrascie 1,61, czyli siatka tabeli praktycznie
+  niewidoczna.
+
+  PROGI Z WCAG 2.1:
+    4,5:1 - tekst (1.4.3),
+    3,0:1 - obramowania elementow interaktywnych (1.4.11).
+
+  Sprawdzamy OBA MOTYWY. Ciemny nie jest wariantem jasnego - ma wlasny komplet
+  wartosci, wiec poprawka w jednym nie mowi nic o drugim.
+*/
+async function testujKontrastyPalety() {
+  sekcja('PALETA: KONTRASTY');
+
+  const css = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'css', 'style.css'), 'utf8');
+
+  function zmienne(selektor) {
+    const i = css.indexOf(selektor);
+    if (i < 0) return null;
+    const blok = css.slice(i, css.indexOf('}', i));
+    const mapa = {};
+    for (const x of blok.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)) mapa[x[1]] = x[2].trim();
+    return mapa;
+  }
+
+  /** '#abc' i '#aabbcc' -> '#aabbcc'. Inne zapisy (var(), rgba) zwracaja null. */
+  function hex(wartosc) {
+    if (!wartosc) return null;
+    const v = wartosc.trim();
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+    return /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+  }
+
+  // Luminancja wzgledna wg definicji WCAG.
+  function luminancja(h) {
+    const kanaly = [1, 3, 5]
+      .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    return 0.2126 * kanaly[0] + 0.7152 * kanaly[1] + 0.0722 * kanaly[2];
+  }
+
+  function kontrast(a, b) {
+    const x = luminancja(a);
+    const y = luminancja(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+
+  const jasny = zmienne(':root {');
+  const ciemny = zmienne(":root[data-motyw='ciemny']");
+  sprawdz('oba motywy deklaruja zmienne palety', Boolean(jasny && ciemny));
+
+  /*
+    Pary: co jest RYSOWANE NA CZYM. Lista jest recznie utrzymywana, bo z samego
+    CSS nie da sie wyczytac, ktore tlo faktycznie stoi pod ktorym tekstem.
+    Tekst slaby sprawdzamy takze na zebrze - to ciemniejsze tlo jest trudniejsze,
+    a wiersze zebry to polowa tabeli.
+  */
+  const PARY = [
+    ['--tekst', '--tlo', 4.5],
+    ['--tekst', '--tlo-naglowka', 4.5],
+    ['--tekst', '--tlo-kontrolki', 4.5],
+    ['--tekst', '--tlo-hover', 4.5],
+    ['--tekst', '--tlo-wybrane', 4.5],
+    ['--tekst', '--edycja-tlo', 4.5],
+    ['--tekst', '--info-tlo', 4.5],
+    ['--tekst-slaby', '--tlo', 4.5],
+    ['--tekst-slaby', '--tlo-zebry', 4.5],
+    ['--akcent', '--tlo', 4.5],
+    ['--alarm', '--tlo', 4.5],
+    ['--alarm', '--blad-tlo', 4.5],
+    ['--ok', '--tlo', 4.5],
+    ['--ok', '--zapis-tlo', 4.5],
+    ['--uwaga', '--uwaga-tlo', 4.5],
+    // Obramowanie elementu interaktywnego - prog 3:1 (WCAG 1.4.11).
+    ['--ramka-kontrolki', '--tlo', 3.0],
+  ];
+
+  for (const [nazwaMotywu, paleta] of [
+    ['jasny', jasny],
+    // Ciemny nadpisuje tylko czesc zmiennych - reszta dziedziczy z :root.
+    ['ciemny', { ...jasny, ...ciemny }],
+  ]) {
+    const zaSlabe = [];
+    const nieczytelne = [];
+
+    for (const [przod, tyl, prog] of PARY) {
+      const a = hex(paleta[przod]);
+      const b = hex(paleta[tyl]);
+      if (!a || !b) {
+        nieczytelne.push(`${przod}/${tyl}`);
+        continue;
+      }
+      const wynik = kontrast(a, b);
+      if (wynik < prog) {
+        zaSlabe.push(`${przod} na ${tyl}: ${wynik.toFixed(2)} < ${prog}`);
+      }
+    }
+
+    /*
+      Kolor zapisany inaczej niz szesnastkowo (np. przez var()) wypadlby z kontroli
+      po cichu - dlatego brak odczytu jest bledem, a nie pominieciem.
+    */
+    sprawdzListe(`motyw ${nazwaMotywu}: kazda para palety da sie odczytac`, [], nieczytelne);
+    sprawdzListe(`motyw ${nazwaMotywu}: kontrasty spelniaja progi WCAG`, [], zaSlabe);
+  }
+
+  /*
+    Plakietki slow maja wlasne pary tlo/tekst, poza glowna paleta. Wyciagamy je
+    z regul .slowo-* i sprawdzamy tak samo - inaczej piec kategorii zostaloby
+    poza kontrola.
+  */
+  const plakietki = [];
+  for (const dopasowanie of css.matchAll(
+    /(:root\[data-motyw='ciemny'\]\s*)?\.slowo-([a-z]+)\s*\{([^}]*)\}/g
+  )) {
+    const tresc = dopasowanie[3];
+    const tlo = /--slowo-tlo:\s*([^;]+);/.exec(tresc);
+    const tekst = /--slowo-tekst:\s*([^;]+);/.exec(tresc);
+    if (!tlo || !tekst) continue;
+    const a = hex(tekst[1]);
+    const b = hex(tlo[1]);
+    if (!a || !b) continue;
+    plakietki.push({
+      nazwa: (dopasowanie[1] ? 'ciemny ' : 'jasny ') + dopasowanie[2],
+      wynik: kontrast(a, b),
+    });
+  }
+
+  sprawdz('plakietki slow maja zmierzone kontrasty w obu motywach', plakietki.length >= 8, String(plakietki.length));
+  sprawdzListe(
+    'kazda plakietka slowa spelnia prog 4,5:1',
+    [],
+    plakietki.filter((p) => p.wynik < 4.5).map((p) => `${p.nazwa}: ${p.wynik.toFixed(2)}`)
+  );
+}
+
+async function testujHigieneCss() {
+  sekcja('CSS: KOMORKI TABELI');
+
+  const css = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'css', 'style.css'), 'utf8');
+
+  // Komentarze potrafia zawierac slowo "display" w opisie - wycinamy je przed analiza.
+  const bezKomentarzy = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const podejrzane = [];
+  for (const dopasowanie of bezKomentarzy.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selektor = dopasowanie[1].trim();
+    const tresc = dopasowanie[2];
+
+    // Interesuja nas wylacznie reguly celujace w <td> albo <th>.
+    if (!/(^|[\s,>+~])(td|th)([.:#[\s,]|$)/.test(selektor)) continue;
+
+    const display = /(?:^|;)\s*display\s*:\s*([^;]+)/.exec(tresc);
+    if (!display) continue;
+
+    const wartosc = display[1].trim();
+    if (wartosc !== 'table-cell' && wartosc !== 'none') {
+      podejrzane.push(`${selektor} { display: ${wartosc} }`);
+    }
+  }
+
+  sprawdzListe('zadna regula nie zmienia trybu wyswietlania komorki tabeli', [], podejrzane);
+}
+
+async function testujNoweStatystyki(reguly) {
+  sekcja('STATYSTYKI: NOWE GRUPY');
+
+  const R = reguly.regulyStatystyk;
+
+  // --- serie dni ---
+  const ciag = [
+    '2026-01-01',
+    '2026-01-02',
+    '2026-01-03',
+    // przerwa
+    '2026-01-10',
+    '2026-01-11',
+  ].map((data) => ({ data }));
+
+  const serie = R.serieDni(ciag);
+  sprawdz(
+    'najdluzsza seria liczy dni po kolei, nie rekordy',
+    serie.najdluzsza === 3 && serie.odDnia === '2026-01-01' && serie.doDnia === '2026-01-03',
+    JSON.stringify(serie)
+  );
+  /*
+    "Obecna" seria liczy sie od OSTATNIEGO wpisu wstecz, a nie od dzisiaj -
+    inaczej po kazdej przerwie kasowalaby informacje o tym, ile dni bylo przed nia.
+  */
+  sprawdz(
+    'obecna seria liczy sie od ostatniego wpisu',
+    serie.obecna === 2 && serie.ostatniDzien === '2026-01-11',
+    JSON.stringify(serie)
+  );
+  sprawdz(
+    'duplikaty tej samej daty nie wydluzaja serii',
+    R.serieDni([{ data: '2026-01-01' }, { data: '2026-01-01' }]).najdluzsza === 1
+  );
+  sprawdz('pusty dziennik daje zerowe serie', R.serieDni([]).najdluzsza === 0);
+
+  // --- pokrycie ---
+  const pok = R.pokrycie(ciag);
+  sprawdz(
+    'pokrycie liczy sie wzgledem zakresu, nie calego kalendarza',
+    pok.dniZWpisem === 5 && pok.dniWZakresie === 11,
+    JSON.stringify(pok)
+  );
+
+  // --- dni tygodnia ---
+  // 2026-01-05 to poniedzialek, 2026-01-10 sobota, 2026-01-11 niedziela.
+  const tydzien = R.wedlugDniTygodnia([
+    { data: '2026-01-05', godziny_snu: 6, stres: 1 },
+    { data: '2026-01-10', godziny_snu: 8, stres: 5 },
+    { data: '2026-01-11', godziny_snu: 9, stres: 4 },
+  ]);
+  sprawdzListe(
+    'tydzien zaczyna sie od poniedzialku',
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    tydzien.map((d) => d.nazwa)
+  );
+  sprawdz(
+    'weekend oznaczony na sobote i niedziele',
+    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',') === 'Saturday,Sunday',
+    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',')
+  );
+  /*
+    REGRESJA: dzien tygodnia liczymy z numeru dnia UTC, a nie z new Date(...).getDay()
+    na czasie lokalnym - przy datach calodziennych przegladarka na zachod od UTC
+    przesuwalaby kazdy dzien o jeden wstecz.
+  */
+  const poniedzialek = tydzien.find((d) => d.nazwa === 'Monday');
+  const sobota = tydzien.find((d) => d.nazwa === 'Saturday');
+  sprawdz(
+    'wpisy trafiaja we wlasciwe dni tygodnia',
+    poniedzialek.wpisow === 1 && poniedzialek.sen === 6 && sobota.wpisow === 1 && sobota.sen === 8,
+    JSON.stringify({ pn: poniedzialek.wpisow, sb: sobota.wpisow })
+  );
+
+  sprawdz('godzina pobudki usredniana i formatowana', R.naGodzine(R.minutyOdPolnocy('07:30')) === '07:30');
+  sprawdz('niepoprawna godzina daje null', R.minutyOdPolnocy('25:00') === null);
+
+  // --- wplyw wartosci ---
+  const dni = [
+    { trzy_slowa: 'A, B', stres: 5, nastroj: 5 },
+    { trzy_slowa: 'A', stres: 5, nastroj: 5 },
+    { trzy_slowa: 'C', stres: 1, nastroj: 1 },
+    { trzy_slowa: 'C', stres: 1, nastroj: 1 },
+  ];
+  const wplyw = R.wplywWartosci(dni, 'trzy_slowa', ['stres'], 2);
+  sprawdz(
+    'baza to srednia ze WSZYSTKICH dni, nie tylko z tych z wartoscia',
+    wplyw.bazowe.stres === 3,
+    String(wplyw.bazowe.stres)
+  );
+  /*
+    PROG WYSTAPIEN jest obowiazkowy: bez niego na czele listy ladowalyby wartosci
+    uzyte raz, gdzie "srednia" to pojedynczy dzien, a wyglada tak samo jak wynik
+    ze stu dni. "B" wystapilo raz i ma wypasc.
+  */
+  sprawdzListe(
+    'wartosci ponizej progu sa pomijane',
+    ['A', 'C'],
+    wplyw.pozycje.map((p) => p.nazwa).sort()
+  );
+  const a = wplyw.pozycje.find((p) => p.nazwa === 'A');
+  sprawdz(
+    'odchylenie liczy sie wzgledem bazy',
+    a.oceny.stres.srednia === 5 && a.oceny.stres.odchylenie === 2,
+    JSON.stringify(a.oceny.stres)
+  );
+
+  // --- trend i XP ---
+  const trend = R.trendMiesieczny(
+    [
+      { data: '2026-01-05', nastroj: 2 },
+      { data: '2026-01-06', nastroj: 4 },
+      { data: '2026-02-01', nastroj: 5 },
+    ],
+    ['nastroj']
+  );
+  sprawdzListe('trend grupuje po miesiacach i rosnaco', ['2026-01', '2026-02'], trend.map((m) => m.miesiac));
+  sprawdz('trend usrednia w obrebie miesiaca', trend[0].nastroj === 3, String(trend[0].nastroj));
+
+  /*
+    XP kazdego rekordu liczy SERWER i przysyla gotowe - tutaj tylko sumujemy.
+    Zadanie wpada do miesiaca ZAKONCZENIA, bo wtedy XP powstaje.
+  */
+  const xp = R.xpWedlugMiesiecy(
+    [{ data: '2026-01-05', xp: 10 }],
+    [
+      { czas_zakonczenia: '2026-01-20', xp: 5 },
+      { czas_zakonczenia: null, xp: 99 },
+    ]
+  );
+  sprawdz(
+    'XP miesieczne sumuje zrodla i pomija zadania bez zakonczenia',
+    xp.length === 1 && xp[0].dziennik === 10 && xp[0].zadania === 5 && xp[0].razem === 15,
+    JSON.stringify(xp)
+  );
+
+  // --- terminowosc wedlug pola ---
+  const zad = [
+    { obszar: 'X', termin: '2026-01-10', czas_zakonczenia: '2026-01-12' }, // po terminie
+    { obszar: 'X', termin: '2026-01-10', czas_zakonczenia: '2026-01-10' }, // na czas
+    { obszar: 'Y', termin: '2026-01-10', czas_zakonczenia: '2026-01-12' },
+    { obszar: 'X', termin: null, czas_zakonczenia: '2026-01-12' }, // bez terminu - pomijane
+  ];
+  const term = R.terminowoscWedlug(zad, 'obszar', 2);
+  sprawdzListe('grupy ponizej progu odpadaja', ['X'], term.map((g) => g.klucz));
+  sprawdz(
+    'zadania bez kompletu dat nie wchodza do mianownika',
+    term[0].zBadanych === 2 && term[0].poTerminie === 1 && term[0].procent === 50,
+    JSON.stringify(term[0])
+  );
+
+  /*
+    HIGIENA: kazda sekcja ze spisu tresci ma budowniczego i odwrotnie.
+
+    Spis tresci (SEKCJE) i tresc strony pochodza z JEDNEJ listy - start() mapuje
+    SEKCJE na funkcje budujace. Ta asercja pilnuje drugiej strony tej umowy:
+    ze zbior kluczy w obu miejscach jest identyczny. Klucz bez budowniczego dalby
+    link prowadzacy donikad, budowniczy bez klucza - sekcje nieobecna w spisie.
+  */
+  const kod = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'js', 'statystyki.js'), 'utf8');
+
+  const blokSekcji = kod.slice(
+    kod.indexOf('const SEKCJE = ['),
+    kod.indexOf('];', kod.indexOf('const SEKCJE = ['))
+  );
+  const zeSpisu = [...blokSekcji.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
+
+  const blokBudowniczych = kod.slice(
+    kod.indexOf('const budowniczowie = {'),
+    kod.indexOf('};', kod.indexOf('const budowniczowie = {'))
+  );
+  const zBudowniczych = [...blokBudowniczych.matchAll(/^\s+([a-z]\w*):/gm)].map((m) => m[1]);
+
+  sprawdz('spis tresci ma wiecej niz jedna sekcje', zeSpisu.length >= 5, zeSpisu.join(', '));
+  sprawdzListe(
+    'kazda sekcja ze spisu ma budowniczego (i w tej samej kolejnosci)',
+    zeSpisu,
+    zBudowniczych
+  );
+}
+
+async function testujKolumneXp(reguly) {
+  sekcja('ZADANIA: KOLUMNA XP');
+
+  const nagrody = require('../lib/nagrody');
+
+  const { tresc: nowe } = await zapytaj('POST', '/api/zadania');
+  await zapytaj('PATCH', `/api/zadania/${nowe.id}`, {
+    trudnosc: 3,
+    czas_trwania_godziny: 4,
+    termin: '2026-03-10',
+  });
+
+  const otwarte = (await zapytaj('GET', `/api/zadania`)).tresc.find((z) => z.id === nowe.id);
+  sprawdz(
+    'zadanie otwarte: xp = 0, ale xp_bazowe pokazuje ile jest warte',
+    otwarte.xp === 0 && otwarte.xp_bazowe === 8,
+    JSON.stringify({ xp: otwarte.xp, bazowe: otwarte.xp_bazowe })
+  );
+  sprawdz(
+    'otwarte zadanie z kompletem danych nie jest oznaczone jako brakujace',
+    otwarte.xp_brakuje_danych === false
+  );
+
+  // Zamkniete dzien przed terminem - premia x1.5, czyli 8 -> 12.
+  const { tresc: zrobione } = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, {
+    stan: 'Zrobione',
+    czas_zakonczenia: '2026-03-09',
+  });
+  sprawdz(
+    'zadanie zrobione dzien przed terminem: xp = 12 (premia x1.5)',
+    zrobione.xp === 12,
+    JSON.stringify({ xp: zrobione.xp })
+  );
+  /*
+    xp_bazowe NIE zmienia sie po ukonczeniu - to wartosc samego zadania, bez
+    mnoznika za termin. Gdyby zawieralo mnoznik, kolumna dla zadan otwartych
+    zmienialaby sie sama z uplywem dni.
+  */
+  sprawdz(
+    'xp_bazowe zostaje bez mnoznika za termin takze po ukonczeniu',
+    zrobione.xp_bazowe === 8,
+    JSON.stringify({ bazowe: zrobione.xp_bazowe })
+  );
+  sprawdz(
+    'xp z API zgadza sie z silnikiem policzonym w izolacji',
+    zrobione.xp === nagrody.xpZadania(zrobione, 'Zrobione').xp,
+    `${zrobione.xp} vs ${nagrody.xpZadania(zrobione, 'Zrobione').xp}`
+  );
+
+  // Bez trudnosci nie ma z czego liczyc.
+  const { tresc: bezDanych } = await zapytaj('PATCH', `/api/zadania/${nowe.id}`, { trudnosc: '' });
+  sprawdz(
+    'brak trudnosci: xp 0, xp_bazowe null, flaga brakujaceDane',
+    bezDanych.xp === 0 && bezDanych.xp_bazowe === null && bezDanych.xp_brakuje_danych === true,
+    JSON.stringify({ xp: bezDanych.xp, bazowe: bezDanych.xp_bazowe, brak: bezDanych.xp_brakuje_danych })
+  );
+
+  await zapytaj('DELETE', `/api/zadania/${nowe.id}`);
+
+  /*
+    HIGIENA: kazdy klikalny naglowek musi miec definicje sortowania.
+
+    Naglowek z data-kolumna wyglada na klikalny (kursor, hover, strzalka), a bez
+    wpisu w kolumnySortowania klikniecie nie robi NIC - komparator zwraca wtedy 0
+    i wiersze zostaja na miejscu. To cicha awaria: nie ma bledu w konsoli, nie ma
+    zadnego sygnalu, po prostu sortowanie nie dziala. Wlasnie taka pulapka powstala
+    przy dodawaniu kolumny XP.
+  */
+  const html = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'index.html'), 'utf8');
+  const thead = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+  const klikalne = [...thead.matchAll(/data-kolumna="([^"]+)"/g)].map((m) => m[1]);
+
+  const { tresc: slowniki } = await zapytaj('GET', '/api/slowniki');
+  const definicje = Object.keys(
+    reguly.regulyZadan.kolumnySortowania(slowniki, '2026-01-01')
+  );
+
+  /*
+    JEDNO ZRODLO PRAWDY, sprawdzone od strony wyniku: suma kolumny XP musi sie
+    zgadzac z pozycja "Zadania" w rozbiciu na stronie Postaci. Obie liczby ida
+    z tego samego silnika, ale INNA droga - kolumna przez /api/zadania, rozbicie
+    przez /api/postac. Gdyby ktos kiedys policzyl ktorakolwiek z nich osobno,
+    ta asercja to zlapie.
+  */
+  const wszystkieZadania = (await zapytaj('GET', '/api/zadania')).tresc;
+  const sumaKolumny = wszystkieZadania.reduce((a, z) => a + z.xp, 0);
+  const { tresc: postacTeraz } = await zapytaj('GET', '/api/postac');
+  sprawdz(
+    'suma kolumny XP zgadza sie z rozbiciem na stronie Postaci',
+    sumaKolumny === postacTeraz.rozbicie.zadania,
+    `kolumna ${sumaKolumny} vs rozbicie ${postacTeraz.rozbicie.zadania}`
+  );
+
+  sprawdz('naglowek XP jest na liscie klikalnych', klikalne.includes('xp'), klikalne.join(', '));
+  sprawdzListe(
+    'kazdy klikalny naglowek zadan ma definicje sortowania',
+    [],
+    klikalne.filter((k) => !definicje.includes(k))
+  );
+}
+
+/*
+  Slownik slow opisujacych dzien (`slowa_slownik`, migracja 9).
+
+  Logike dzieli z nawykami - obie trasy powstaja z tej samej fabryki
+  w lib/slownik-wartosci.js. Testy nawykow sprawdzaja WSPOLNA czesc, wiec tutaj
+  pilnujemy tego, co przy fabryce moze sie rozjechac: czy trasa jest zamontowana,
+  czy siega do WLASCIWEJ tabeli i czy kaskadowa zmiana nazwy rusza WLASCIWA
+  kolumne dziennika. Zle sparametryzowana fabryka przechodzilaby testy nawykow
+  i po cichu psula slowa.
+*/
+async function testujSlownikSlow() {
+  sekcja('SLOWNIK SLOW OPISUJACYCH DZIEN');
+
+  const { status, tresc: slowa } = await zapytaj('GET', '/api/slowa');
+  sprawdz('GET /api/slowa odpowiada', status === 200 && Array.isArray(slowa), `status ${status}`);
+  sprawdz(
+    'migracja 9 zasiala slownik wartosciami z Notion',
+    slowa.length >= 36,
+    `pozycji: ${slowa.length}`
+  );
+  /*
+    REGRESJA NA MIGRACJE 10: w nazwach NIE MA emoji. Byly tam wklejone i przez to
+    lista sortowala sie po emoji zamiast po slowie - "Lazy" ladowalo miedzy "IDK"
+    a "Love", bo klucz sortowania zaczynal sie od znaku sloth. Emoji wrocilo
+    do config/slowa.js jako warstwa prezentacji.
+  */
+  const zEmoji = slowa.filter((x) => /\p{Extended_Pictographic}/u.test(x.nazwa));
+  sprawdzListe('zadna nazwa w slowniku nie zawiera emoji', [], zEmoji.map((x) => x.nazwa));
+  sprawdz(
+    'nazwy oczyszczone przez migracje 10 sa na liscie',
+    ['Lazy', 'Sad', 'Festive', 'IDK', 'Balanced'].every((s) => slowa.some((x) => x.nazwa === s)),
+    slowa.map((x) => x.nazwa).join(' | ')
+  );
+
+  const nazwy = slowa.map((x) => x.nazwa);
+  sprawdzListe(
+    'slownik przychodzi posortowany alfabetycznie',
+    [...nazwy].sort((a, b) => a.localeCompare(b, 'pl', { sensitivity: 'base' })),
+    nazwy
+  );
+
+  // --- wyglad slow: emoji i kategorie z konfiguracji ---
+  const { tresc: slownikiApi } = await zapytaj('GET', '/api/slowniki');
+  const wyglad = slownikiApi.slowa;
+  sprawdz(
+    '/api/slowniki wystawia kategorie, domyslna i opisy slow',
+    wyglad && Array.isArray(wyglad.kategorie) && wyglad.kategoriaDomyslna && wyglad.opisy,
+    JSON.stringify(Object.keys(wyglad || {}))
+  );
+
+  const idKategorii = wyglad.kategorie.map((k) => k.id);
+  sprawdz(
+    'kategoria domyslna jest jedna z zadeklarowanych',
+    idKategorii.includes(wyglad.kategoriaDomyslna),
+    `${wyglad.kategoriaDomyslna} vs ${idKategorii.join(', ')}`
+  );
+  sprawdzListe(
+    'kazde slowo wskazuje istniejaca kategorie',
+    [],
+    Object.entries(wyglad.opisy)
+      .filter(([, v]) => !idKategorii.includes(v.kategoria))
+      .map(([k, v]) => `${k}:${v.kategoria}`)
+  );
+  /*
+    Emoji niosa rozpoznanie przy skanowaniu listy - dwa takie same zlepilyby
+    dwa rozne slowa w jedno. Ta sama zasada co przy plakietkach zadan.
+  */
+  const emojiSlow = Object.values(wyglad.opisy).map((v) => v.emoji).filter(Boolean);
+  sprawdz('emoji slow sa rozne', new Set(emojiSlow).size === emojiSlow.length, emojiSlow.join(' '));
+  /*
+    Konfiguracja moze opisywac tylko slowa, ktore istnieja - literowka w kluczu
+    dawalaby wpis, ktory nigdy sie nie pokaze. Odwrotnie jest DOZWOLONE: slowo
+    dopisane przez uzytkownika nie ma opisu i dostaje kategorie domyslna.
+  */
+  sprawdzListe(
+    'konfiguracja nie opisuje slow spoza slownika',
+    [],
+    Object.keys(wyglad.opisy).filter((k) => !nazwy.includes(k))
+  );
+
+  /*
+    Emoji nawykow - ta sama zasada co przy slowach, tylko bez kategorii.
+    Nawyk moze nie miec ikony (brak wpisu to domyslna, nie blad), ale wpis
+    wskazujacy nieistniejacy nawyk to literowka, ktora nigdy sie nie pokaze.
+  */
+  const nazwyNawykow = (await zapytaj('GET', '/api/nawyki')).tresc.map((x) => x.nazwa);
+  const emojiNawykow = slownikiApi.nawykiEmoji || {};
+  sprawdz(
+    '/api/slowniki wystawia emoji nawykow',
+    Object.keys(emojiNawykow).length > 0,
+    JSON.stringify(Object.keys(emojiNawykow))
+  );
+  sprawdzListe(
+    'konfiguracja nie opisuje nawykow spoza slownika',
+    [],
+    Object.keys(emojiNawykow).filter((k) => !nazwyNawykow.includes(k))
+  );
+  const emojiN = Object.values(emojiNawykow);
+  sprawdz('emoji nawykow sa rozne', new Set(emojiN).size === emojiN.length, emojiN.join(' '));
+  /*
+    REGRESJA: emoji nawykow nie moga trafic do bazy. Nazwy w slowniku maja zostac
+    czyste - tak samo jak przy slowach po migracji 10.
+  */
+  sprawdzListe(
+    'zadna nazwa nawyku nie zawiera emoji',
+    [],
+    nazwyNawykow.filter((n) => /\p{Extended_Pictographic}/u.test(n))
+  );
+
+  // --- kaskadowa zmiana nazwy rusza WLASCIWA kolumne ---
+  const { tresc: wpis } = await zapytaj('POST', '/api/dziennik', { data: '2026-04-01' });
+  await zapytaj('PATCH', `/api/dziennik/${wpis.id}`, {
+    trzy_slowa: 'ZZTestowe, Balanced',
+    nawyki: 'ZZTestowe',
+  });
+
+  const { tresc: dodane } = await zapytaj('POST', '/api/slowa', { nazwa: 'ZZTestowe' });
+  const zmiana = await zapytaj('PATCH', `/api/slowa/${dodane.id}`, { nazwa: 'ZZPoZmianie' });
+  sprawdz(
+    'zmiana nazwy slowa poprawia wpisy dziennika',
+    zmiana.tresc.zaktualizowanychWpisow === 1,
+    JSON.stringify(zmiana.tresc)
+  );
+
+  // Dziennik nie ma GET /:id - czytamy z listy.
+  const wpisZListy = async () =>
+    (await zapytaj('GET', '/api/dziennik')).tresc.find((x) => x.id === wpis.id);
+  const poZmianie = await wpisZListy();
+  sprawdz(
+    'kolumna trzy_slowa zaktualizowana, kolejnosc zachowana',
+    poZmianie.trzy_slowa === 'ZZPoZmianie, Balanced',
+    poZmianie.trzy_slowa
+  );
+  /*
+    REGRESJA NA PARAMETRYZACJE FABRYKI: ta sama nazwa siedzi tez w `nawyki`,
+    ale slownik slow nie ma prawa jej tam ruszyc. Gdyby kolumnaWpisu wskazywala
+    zla kolumne, ten test jako jedyny by to zlapal.
+  */
+  sprawdz(
+    'kolumna nawyki NIE zostala ruszona przez slownik slow',
+    poZmianie.nawyki === 'ZZTestowe',
+    poZmianie.nawyki
+  );
+
+  // --- usuniecie ze slownika nie rusza historii ---
+  await zapytaj('DELETE', `/api/slowa/${dodane.id}`);
+  const poUsunieciu = await wpisZListy();
+  sprawdz(
+    'usuniecie ze slownika zostawia wpis nietkniety',
+    poUsunieciu.trzy_slowa === 'ZZPoZmianie, Balanced',
+    poUsunieciu.trzy_slowa
+  );
+
+  // --- walidacja wspolna, ale z wlasnym komunikatem ---
+  const zPrzecinkiem = await zapytaj('POST', '/api/slowa', { nazwa: 'zle, bo z przecinkiem' });
+  sprawdz(
+    'nazwa z przecinkiem odrzucona (przecinek rozdziela wartosci)',
+    zPrzecinkiem.status === 400,
+    `status ${zPrzecinkiem.status}`
+  );
+  /*
+    Duplikat sprawdzamy na nazwie WZIETEJ ZE SLOWNIKA, a nie wpisanej z pamieci:
+    wartosci maja emoji w nazwie ("⚖ Balanced"), wiec samo "balanced" nie jest
+    duplikatem niczego i test przechodzilby, nie sprawdzajac nic.
+  */
+  const istniejaca = slowa[0].nazwa;
+  const duplikat = await zapytaj('POST', '/api/slowa', {
+    nazwa: istniejaca.toLocaleUpperCase('pl'),
+  });
+  sprawdz(
+    'duplikat rozniacy sie wielkoscia liter odrzucony (409)',
+    duplikat.status === 409,
+    `"${istniejaca}" -> status ${duplikat.status}`
+  );
+
+  /*
+    HIGIENA: oba slowniki wyboru maja byc zamontowane i miec ten sam ksztalt
+    odpowiedzi. Dopisanie trzeciego takiego pola bez trasy zlapie ta asercja.
+  */
+  for (const sciezka of ['/api/nawyki', '/api/slowa']) {
+    const { status: st, tresc } = await zapytaj('GET', sciezka);
+    sprawdz(
+      `${sciezka} zwraca liste { id, nazwa }`,
+      st === 200 && Array.isArray(tresc) && tresc.every((x) => x.id && typeof x.nazwa === 'string'),
+      `status ${st}`
+    );
+  }
+
+  await zapytaj('DELETE', `/api/dziennik/${wpis.id}`);
+}
+
 async function testujAtrybuty() {
   sekcja('ATRYBUTY POSTACI');
 
@@ -1777,7 +2487,7 @@ async function testujKolejnoscKolumnDziennika() {
   const komorki = ['id'];
   for (const pole of pola) {
     komorki.push(pole);
-    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Refleksje)');
+    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Reflections)');
   }
   komorki.push('(akcje)');
 
@@ -2937,6 +3647,10 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujKontrastyPalety();
+    await testujHigieneCss();
+    await testujNoweStatystyki(reguly);
+    await testujKolumneXp(reguly);
     await testujAtrybuty();
     await testujKolejnoscKolumnDziennika();
     await testujDatyCalodzienne(reguly);
@@ -2945,6 +3659,7 @@ async function main() {
     await testujParserDat();
     await testujQuestLog();
     await testujNawyki();
+    await testujSlownikSlow();
     await testujDeduplikacjeDziennika();
     await testujImport();
     await testujLimityCiala();

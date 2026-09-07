@@ -57,21 +57,104 @@
   let slowniki = { oceny: {} };
 
   /*
-    Slownik nawykow z GET /api/nawyki - [{ id, nazwa }].
-    Od migracji 4 mieszka w bazie i jest edytowalny z panelu, wiec po kazdej
-    zmianie trzeba go przeladowac I przebudowac zarowno panel, jak i filtr.
-  */
-  let nawykiSlownik = [];
+    Slowniki pol WIELOKROTNEGO WYBORU. Oba dzialaja identycznie: kolumna dziennika
+    trzyma nazwy rozdzielone przecinkami, a slownik sluzy do zbudowania listy.
 
-  // Panel nawykow
-  const elPanelNawykow = document.getElementById('panel-nawykow');
-  const elListaNawykow = document.getElementById('lista-nawykow');
-  const elNowyNawyk = document.getElementById('nowy-nawyk');
-  const elDodajNawyk = document.getElementById('dodaj-nawyk');
-  const elZamknijNawyki = document.getElementById('zamknij-nawyki');
+    Jeden opis zamiast dwoch bliznianych - inaczej dopisanie trzeciego takiego pola
+    znaczyloby trzecia kopie panelu, filtra i obslugi zapisu.
+  */
+  const POLA_WYBORU = {
+    nawyki: {
+      endpoint: '/api/nawyki',
+      tytul: 'Habits',
+      podpowiedzKomorki: 'Click to pick habits',
+      placeholderDodaj: 'new habit name',
+      etykietaDodaj: '+ Add habit',
+      elementFiltra: 'filtr-nawyki',
+      elementPodsumowania: null, // filtr nawykow nie jest zwiniety
+      nazwaFiltra: 'Habit',
+    },
+    trzy_slowa: {
+      endpoint: '/api/slowa',
+      tytul: 'Words describing the day',
+      /*
+        "Trzy slowa" to SUGESTIA, nie limit - stad brak licznika i brak gornej
+        granicy. Do XP pole liczy sie jako jedno, tak samo jak nawyki, wiec
+        zaznaczenie dziesieciu slow nie daje wiecej punktow niz jednego.
+      */
+      podpowiedzKomorki: 'Click to pick words describing the day',
+      placeholderDodaj: 'new word',
+      etykietaDodaj: '+ Add word',
+      elementFiltra: 'filtr-slowa',
+      elementPodsumowania: 'podsumowanie-slowa',
+      nazwaFiltra: 'Words',
+    },
+  };
+
+  // Zawartosc slownikow z serwera - [{ id, nazwa }] dla kazdego pola.
+  const slownikiWyboru = { nawyki: [], trzy_slowa: [] };
+
+  /*
+    WYGLAD WARTOSCI - emoji i kategoria (kolor). Dotyczy na razie wylacznie slow;
+    nawyki nie maja kategorii i renderuja sie samym tekstem.
+
+    Emoji NIE JEST czescia nazwy - w bazie siedzi samo slowo. Dlatego moze stac
+    z przodu etykiety i nie psuje ani sortowania, ani porownan (migracja 10).
+  */
+  function wygladWartosci(pole, nazwa) {
+    if (pole === 'trzy_slowa') {
+      const opis = (slowniki.slowa && slowniki.slowa.opisy && slowniki.slowa.opisy[nazwa]) || null;
+      return {
+        emoji: opis ? opis.emoji : '',
+        kategoria:
+          (opis && opis.kategoria) ||
+          (slowniki.slowa && slowniki.slowa.kategoriaDomyslna) ||
+          'neutralne',
+      };
+    }
+
+    /*
+      Nawyki maja emoji, ale NIE MAJA kategorii - stad wspolna klasa 'slowo-nawyk'
+      zamiast koloru grupy. Uzasadnienie podzialu w config/nawyki.js: slowo mowi,
+      jaki byl dzien, a nawyk to czynnosc - kolorowanie czynnosci byloby podzialem
+      wymyslonym, a nie odczytanym.
+    */
+    if (pole === 'nawyki') {
+      const emoji = (slowniki.nawykiEmoji && slowniki.nawykiEmoji[nazwa]) || '';
+      return { emoji, kategoria: 'nawyk' };
+    }
+
+    return null;
+  }
+
+  /**
+   * Etykieta wartosci jako element: emoji z przodu, nazwa, kolor kategorii.
+   * Slowo spoza konfiguracji dostaje kategorie domyslna i zadnego emoji -
+   * to normalna sytuacja, bo uzytkownik moze dopisac wlasne z panelu.
+   */
+  function etykietaWartosci(pole, nazwa) {
+    const wygl = wygladWartosci(pole, nazwa);
+    if (!wygl) return document.createTextNode(nazwa);
+
+    const span = document.createElement('span');
+    span.className = 'slowo slowo-' + wygl.kategoria;
+    if (wygl.emoji) span.append(wygl.emoji + ' ');
+    span.append(nazwa);
+    return span;
+  }
+
+  // Panel wyboru - JEDEN dla obu pol.
+  const elPanelWyboru = document.getElementById('panel-wyboru');
+  const elTytulWyboru = document.getElementById('tytul-wyboru');
+  const elListaWyboru = document.getElementById('lista-wyboru');
+  const elNowaWartosc = document.getElementById('nowa-wartosc');
+  const elDodajWartosc = document.getElementById('dodaj-wartosc');
+  const elZamknijWybor = document.getElementById('zamknij-wybor');
 
   // Komorka, dla ktorej panel jest aktualnie otwarty (null = panel zamkniety).
   let komorkaPanelu = null;
+  // Ktore pole edytuje otwarty panel ('nawyki' albo 'trzy_slowa').
+  let poleWyboru = null;
 
   // Dzisiejsza data wedlug SERWERA (GET /api/czas) - od niej licza sie presety.
   let dzisiajSerwera = null;
@@ -96,8 +179,8 @@
     { pole: 'stres', typ: 'ocena', klasa: 'kol-ocena', min: 0, max: 5 },
     { pole: 'nastroj', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
     { pole: 'intencjonalnosc', typ: 'ocena', klasa: 'kol-ocena', min: 1, max: 5 },
-    { pole: 'trzy_slowa', typ: 'tekst', klasa: 'kol-tekst' },
-    { pole: 'nawyki', typ: 'nawyki', klasa: 'kol-tekst-szeroki' },
+    { pole: 'trzy_slowa', typ: 'wybor', klasa: 'kol-tekst' },
+    { pole: 'nawyki', typ: 'wybor', klasa: 'kol-tekst-szeroki' },
     { pole: 'wdziecznosc', typ: 'tekst', klasa: 'kol-tekst' },
     { pole: 'bledy', typ: 'tekst', klasa: 'kol-tekst' },
     { pole: 'rozmowa', typ: 'tekst', klasa: 'kol-tekst' },
@@ -128,6 +211,7 @@
   const filtry = {
     szukaj: '',
     nawyki: new Set(),
+    trzy_slowa: new Set(),
     od: '', // 'YYYY-MM-DD' albo '' = brak dolnej granicy
     do: '',
   };
@@ -303,20 +387,23 @@
   }
 
   /**
-   * Komorka z nawykami - klikniecie otwiera panel wyboru wielokrotnego.
+   * Komorka pola WIELOKROTNEGO WYBORU - klikniecie otwiera panel.
    *
-   * Celowo NIE jest to pole tekstowe: lista jest zamknieta i edytowalna ze slownika,
-   * a reczne wpisywanie nazw rozjezdzaloby sie z nim przy pierwszej literowce.
+   * Celowo NIE jest to pole tekstowe: lista jest edytowalna ze slownika, a reczne
+   * wpisywanie nazw rozjezdzaloby sie z nim przy pierwszej literowce. Dokladnie
+   * to sie dzialo z polem "trzy slowa", zanim dostalo slownik.
    */
-  function komorkaNawykow(w, kolumna) {
+  function komorkaWyboru(w, kolumna) {
+    const opcje = POLA_WYBORU[kolumna.pole];
+
     const td = document.createElement('td');
-    td.className = kolumna.klasa + ' komorka-nawykow';
+    td.className = kolumna.klasa + ' komorka-wyboru';
     td.dataset.pole = kolumna.pole;
     td.tabIndex = 0; // dostepna z klawiatury
-    td.title = 'Kliknij, aby wybrać nawyki';
-    td.textContent = w[kolumna.pole] ?? '';
+    td.title = opcje.podpowiedzKomorki;
+    ustawTrescKomorkiWyboru(td, w[kolumna.pole] ?? '', kolumna.pole);
 
-    const otworz = () => otworzPanelNawykow(td);
+    const otworz = () => otworzPanelWyboru(td);
     td.addEventListener('click', otworz);
     td.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -328,6 +415,45 @@
     return td;
   }
 
+  /*
+    Zawartosc komorki wyboru. Dla slow rysujemy kolorowe plakietki, dla nawykow
+    zwykly tekst.
+
+    UWAGA: reszta kodu czyta biezaca wartosc z td.textContent (patrz zapiszWartosci
+    i zbudujListeWyboru). Plakietki sa elementami, ale ich textContent sklada sie
+    z powrotem w ten sam ciag "A, B, C" - dlatego separator jest czescia tresci,
+    a emoji NIE (siedzi w osobnym wezle tekstowym wewnatrz plakietki).
+
+    To jest kruche i celowo opisane: gdyby emoji trafilo do textContent, zapis
+    wpisalby je do bazy i wrocilibysmy do stanu sprzed migracji 10. Pilnuje tego
+    asercja w test/smoke.js.
+  */
+  function ustawTrescKomorkiWyboru(td, wartosc, pole) {
+    /*
+      SUROWA WARTOSC TRZYMAMY W data-wartosc, nie w textContent.
+
+      Plakietki slow zawieraja emoji, wiec textContent komorki to "🎨 Creative, …" -
+      odczyt stamtad zapisalby emoji z powrotem do bazy i cofnal migracje 10.
+      Dlatego kazdy odczyt biezacej wartosci idzie przez ten atrybut.
+    */
+    td.dataset.wartosc = wartosc;
+
+    const nazwy = tokenyNawykow(wartosc);
+    if (nazwy.length === 0 || !POLA_WYBORU[pole]) {
+      td.textContent = wartosc;
+      return;
+    }
+
+    /*
+      Miedzy plakietkami NIE MA przecinka - kolorowe pigulki rozdzielaja sie same,
+      a przecinek dokladal szumu. Odstep robi CSS (gap na .komorka-wyboru).
+
+      Przecinek pozostaje wylacznie w danych: surowa wartosc "A, B, C" siedzi
+      w data-wartosc i to ona idzie do bazy.
+    */
+    td.replaceChildren(...nazwy.map((nazwa) => etykietaWartosci(pole, nazwa)));
+  }
+
   function komorkaUsun(w) {
     const td = document.createElement('td');
     td.className = 'kol-akcje';
@@ -336,7 +462,7 @@
     btn.type = 'button';
     btn.className = 'usun';
     btn.textContent = '×';
-    btn.title = 'Usuń wpis';
+    btn.title = 'Delete entry';
     btn.addEventListener('click', () => usunWpis(w.id));
 
     td.appendChild(btn);
@@ -353,8 +479,8 @@
         return komorkaInput(w, kolumna, 'number');
       case 'ocena':
         return komorkaOcena(w, kolumna);
-      case 'nawyki':
-        return komorkaNawykow(w, kolumna);
+      case 'wybor':
+        return komorkaWyboru(w, kolumna);
       default:
         return komorkaTekst(w, kolumna);
     }
@@ -378,7 +504,7 @@
     const ile = pola.filter((p) => regulyStatystyk.wypelnione(w[p])).length;
 
     td.textContent = `${ile}/${pola.length}`;
-    td.title = `Wypełnione pola refleksyjne: ${ile} z ${pola.length}`;
+    td.title = `Reflective fields filled: ${ile} of ${pola.length}`;
     return td;
   }
 
@@ -450,7 +576,7 @@
     if (elDoladowanie.hidden) return;
 
     const porcja = Math.min(PORCJA_WIDOKU, pozostalo);
-    elDoladuj.textContent = `Załaduj kolejne ${porcja} (widoczne ${limitWidoku} z ${ilePasuje})`;
+    elDoladuj.textContent = `Load ${porcja} more (showing ${limitWidoku} of ${ilePasuje})`;
   }
 
   function doladuj() {
@@ -499,7 +625,7 @@
 
       if (inne.length > 0) {
         const ktore = inne.length === 1 ? `id ${inne[0]}` : `id: ${inne.join(', ')}`;
-        td.title = `Uwaga: inny wpis już ma tę datę (${ktore}). To dozwolone — zapis się udał.`;
+        td.title = `Note: another entry already has this date (${ktore}). That is allowed — the save succeeded.`;
       } else {
         td.removeAttribute('title');
       }
@@ -530,7 +656,9 @@
 
       const wartosc = w[td.dataset.pole] ?? '';
       if (kontrolka) kontrolka.value = wartosc;
-      else td.textContent = wartosc;
+      else if (td.classList.contains('komorka-wyboru')) {
+        ustawTrescKomorkiWyboru(td, wartosc, td.dataset.pole);
+      } else td.textContent = wartosc;
     }
 
     // Licznik refleksji zalezy od tresci pol, wiec musi sie przeliczyc po zapisie.
@@ -545,7 +673,9 @@
 
     const kontrolka = td.querySelector('select, input');
     if (kontrolka) kontrolka.value = w[pole] ?? '';
-    else td.textContent = w[pole] ?? '';
+    else if (td.classList.contains('komorka-wyboru')) {
+      ustawTrescKomorkiWyboru(td, w[pole] ?? '', pole);
+    } else td.textContent = w[pole] ?? '';
   }
 
   // ==========================================================================
@@ -567,7 +697,7 @@
         odswiezDuplikatyDat();
       }
 
-      pokazStatus('zapisano', 'ok');
+      pokazStatus('saved', 'ok');
     } catch (e) {
       tr.classList.add('blad-zapisu');
       przywrocKomorke(tr, pole);
@@ -595,13 +725,13 @@
   async function usunWpis(id) {
     const w = wpisy.get(id);
     const etykieta = w && w.data ? `z ${w.data}` : `#${id}`;
-    if (!confirm(`Usunąć wpis ${etykieta}? Tej operacji nie da się cofnąć.`)) return;
+    if (!confirm(`Delete entry ${etykieta}? This cannot be undone.`)) return;
 
     try {
       await api.usun(`/api/dziennik/${id}`);
       wpisy.delete(id);
       renderuj();
-      pokazStatus('usunięto', 'ok');
+      pokazStatus('deleted', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -614,7 +744,7 @@
   function eksportujCsv() {
     const wszystkie = posortowane();
     if (wszystkie.length === 0) {
-      pokazStatus('Nie ma czego eksportować.', 'blad');
+      pokazStatus('Nothing to export.', 'blad');
       return;
     }
 
@@ -648,7 +778,7 @@
   function odswiezPodsumowanie() {
     const wszystkie = [...wpisy.values()];
     if (wszystkie.length === 0) {
-      elPodsumowanie.textContent = 'Brak wpisów.';
+      elPodsumowanie.textContent = 'No entries.';
       return;
     }
 
@@ -660,11 +790,11 @@
     const zakres = daty.length > 0 ? ` (od ${daty[0]} do ${daty[daty.length - 1]})` : '';
 
     elPodsumowanie.textContent =
-      `Filtry przepuszczają ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
+      `Filters pass ${widoczne.length} of ${wszystkie.length} entries${zakres}`;
   }
 
   // ==========================================================================
-  // Panel nawykow
+  // Panel wyboru wielokrotnego (nawyki i slowa)
   // ==========================================================================
 
   /** Rozbija zawartosc komorki na pojedyncze nazwy - ta sama zasada co na serwerze. */
@@ -674,11 +804,12 @@
       .map((s) => s.trim())
       .filter(Boolean);
 
-  /** Zapisuje nowa liste nawykow dla wiersza, do ktorego nalezy otwarty panel. */
-  async function zapiszNawyki(nazwy) {
+  /** Zapisuje nowa liste wartosci dla wiersza, do ktorego nalezy otwarty panel. */
+  async function zapiszWartosci(nazwy) {
     if (!komorkaPanelu) return;
     const tr = komorkaPanelu.closest('tr');
-    await zapisz(tr, 'nawyki', nazwy.join(', '));
+    const pole = poleWyboru;
+    await zapisz(tr, pole, nazwy.join(', '));
 
     /*
       Po zapisie wiersz mogl zostac przebudowany (renderuj()), a wtedy stara
@@ -687,40 +818,41 @@
     */
     const id = tr.dataset.id;
     komorkaPanelu =
-      document.querySelector(`#wiersze tr[data-id="${id}"] [data-pole="nawyki"]`) || null;
+      document.querySelector(`#wiersze tr[data-id="${id}"] [data-pole="${pole}"]`) || null;
 
-    if (!komorkaPanelu) zamknijPanelNawykow(); // wiersz wypadl z filtra
-    else zbudujListeNawykow();
+    if (!komorkaPanelu) zamknijPanelWyboru(); // wiersz wypadl z filtra
+    else zbudujListeWyboru();
   }
 
   /*
     Buduje liste pozycji w panelu.
 
     KLUCZOWE: pokazujemy nie tylko slownik, ale takze nazwy obecne w TYM wierszu,
-    a nieobecne w slowniku - czyli nawyki usuniete oraz historyczne (np. "Untitled").
+    a nieobecne w slowniku - czyli wartosci usuniete oraz historyczne (np. "Untitled").
     Gdyby ich tu nie bylo, zapis skladany z samych zaznaczonych checkboxow
     wykasowalby je po cichu przy pierwszej edycji wiersza.
   */
-  function zbudujListeNawykow() {
-    if (!komorkaPanelu) return;
+  function zbudujListeWyboru() {
+    if (!komorkaPanelu || !poleWyboru) return;
 
-    const obecne = tokenyNawykow(komorkaPanelu.textContent);
-    const wSlowniku = new Set(nawykiSlownik.map((n) => n.nazwa));
+    const slownik = slownikiWyboru[poleWyboru];
+    const obecne = tokenyNawykow(komorkaPanelu.dataset.wartosc ?? komorkaPanelu.textContent);
+    const wSlowniku = new Set(slownik.map((n) => n.nazwa));
     const spozaListy = obecne.filter((n) => !wSlowniku.has(n));
 
     const pozycje = [
-      ...nawykiSlownik.map((n) => ({ ...n, spoza: false })),
+      ...slownik.map((n) => ({ ...n, spoza: false })),
       ...spozaListy.map((nazwa) => ({ id: null, nazwa, spoza: true })),
     ];
 
-    elListaNawykow.replaceChildren(
-      ...pozycje.map((poz) => zbudujPozycjeNawyku(poz, obecne.includes(poz.nazwa)))
+    elListaWyboru.replaceChildren(
+      ...pozycje.map((poz) => zbudujPozycjeWyboru(poz, obecne.includes(poz.nazwa)))
     );
   }
 
-  function zbudujPozycjeNawyku(poz, zaznaczony) {
+  function zbudujPozycjeWyboru(poz, zaznaczony) {
     const wiersz = document.createElement('div');
-    wiersz.className = 'pozycja-nawyku';
+    wiersz.className = 'pozycja-wyboru';
 
     const etykieta = document.createElement('label');
     const checkbox = document.createElement('input');
@@ -728,7 +860,7 @@
     checkbox.checked = zaznaczony;
 
     checkbox.addEventListener('change', () => {
-      const obecne = tokenyNawykow(komorkaPanelu.textContent);
+      const obecne = tokenyNawykow(komorkaPanelu.dataset.wartosc ?? komorkaPanelu.textContent);
       /*
         Zachowujemy ISTNIEJACA kolejnosc nazw w wierszu, a nowo zaznaczona
         dopisujemy na koncu. Przebudowa w kolejnosci slownika przestawialaby
@@ -740,16 +872,16 @@
           : [...obecne, poz.nazwa]
         : obecne.filter((n) => n !== poz.nazwa);
 
-      zapiszNawyki(nowe);
+      zapiszWartosci(nowe);
     });
 
-    etykieta.append(checkbox, ' ' + poz.nazwa);
+    etykieta.append(checkbox, ' ', etykietaWartosci(poleWyboru, poz.nazwa));
     if (poz.spoza) {
       const znacznik = document.createElement('span');
       znacznik.className = 'spoza-listy';
-      znacznik.textContent = ' (spoza listy)';
+      znacznik.textContent = ' (not on the list)';
       znacznik.title =
-        'Ta nazwa jest w tym wpisie, ale nie ma jej już w słowniku. Odznaczenie usunie ją z wpisu.';
+        'This name is in the entry but no longer in the dictionary. Unchecking removes it from the entry.';
       etykieta.appendChild(znacznik);
     }
     wiersz.appendChild(etykieta);
@@ -757,19 +889,19 @@
     // Pozycji spoza slownika nie da sie przemianowac ani usunac - nie ma czego.
     if (!poz.spoza) {
       const akcje = document.createElement('span');
-      akcje.className = 'akcje-nawyku';
+      akcje.className = 'akcje-wyboru';
 
       const zmien = document.createElement('button');
       zmien.type = 'button';
       zmien.textContent = '✏️';
-      zmien.title = 'Zmień nazwę';
-      zmien.addEventListener('click', () => zmienNazweNawyku(poz));
+      zmien.title = 'Rename';
+      zmien.addEventListener('click', () => zmienNazweWartosci(poz));
 
       const usun = document.createElement('button');
       usun.type = 'button';
       usun.textContent = '🗑️';
-      usun.title = 'Usuń z listy wyboru';
-      usun.addEventListener('click', () => usunNawykZeSlownika(poz));
+      usun.title = 'Remove from the pick list';
+      usun.addEventListener('click', () => usunZeSlownika(poz));
 
       akcje.append(zmien, usun);
       wiersz.appendChild(akcje);
@@ -778,15 +910,17 @@
     return wiersz;
   }
 
-  async function zmienNazweNawyku(poz) {
-    const nowa = prompt(`Nowa nazwa dla „${poz.nazwa}":`, poz.nazwa);
+  async function zmienNazweWartosci(poz) {
+    const nowa = prompt(`New name for „${poz.nazwa}":`, poz.nazwa);
     if (nowa === null || nowa.trim() === '' || nowa.trim() === poz.nazwa) return;
 
     try {
-      const wynik = await api.patch(`/api/nawyki/${poz.id}`, { nazwa: nowa.trim() });
-      await przeladujNawykiIWidok();
+      const wynik = await api.patch(`${POLA_WYBORU[poleWyboru].endpoint}/${poz.id}`, {
+        nazwa: nowa.trim(),
+      });
+      await przeladujSlownikIWidok(poleWyboru);
       pokazStatus(
-        `zmieniono nazwę, zaktualizowano wpisów: ${wynik.zaktualizowanychWpisow}`,
+        `renamed, entries updated: ${wynik.zaktualizowanychWpisow}`,
         'ok'
       );
     } catch (e) {
@@ -794,97 +928,120 @@
     }
   }
 
-  async function usunNawykZeSlownika(poz) {
+  async function usunZeSlownika(poz) {
     const potwierdzenie =
-      `Usunąć „${poz.nazwa}" z listy wyboru?\n\n` +
-      'Istniejące wpisy dziennika ZOSTANĄ nietknięte — nazwa zniknie tylko z listy, ' +
-      'więc nie będzie już można po niej filtrować.';
+      `Remove „${poz.nazwa}" from the pick list?\n\n` +
+      'Existing journal entries WILL stay untouched — the name only disappears from the list, ' +
+      'so filtering by it will no longer be possible.';
     if (!confirm(potwierdzenie)) return;
 
     try {
-      await api.usun(`/api/nawyki/${poz.id}`);
-      await przeladujNawykiIWidok();
-      pokazStatus('usunięto z listy wyboru', 'ok');
+      await api.usun(`${POLA_WYBORU[poleWyboru].endpoint}/${poz.id}`);
+      await przeladujSlownikIWidok(poleWyboru);
+      pokazStatus('removed from the pick list', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
   }
 
-  async function dodajNawyk() {
-    const nazwa = elNowyNawyk.value.trim();
-    if (nazwa === '') return;
+  async function dodajWartosc() {
+    const nazwa = elNowaWartosc.value.trim();
+    if (nazwa === '' || !poleWyboru) return;
 
     try {
-      await api.post('/api/nawyki', { nazwa });
-      elNowyNawyk.value = '';
-      await przeladujNawykiIWidok();
-      pokazStatus('dodano nawyk', 'ok');
+      await api.post(POLA_WYBORU[poleWyboru].endpoint, { nazwa });
+      elNowaWartosc.value = '';
+      await przeladujSlownikIWidok(poleWyboru);
+      pokazStatus('added to the list', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
   }
 
   /** Po kazdej zmianie slownika: pobierz od nowa i odswiez OBA miejsca, ktore go uzywaja. */
-  async function przeladujNawykiIWidok() {
-    nawykiSlownik = await api.get('/api/nawyki');
-    zbudujCheckboxyNawykow(); // filtr nad tabela
-    zbudujListeNawykow(); // otwarty panel
+  async function przeladujSlownikIWidok(pole) {
+    slownikiWyboru[pole] = await api.get(POLA_WYBORU[pole].endpoint);
+    zbudujCheckboxyWyboru(pole); // filtr nad tabela
+    zbudujListeWyboru(); // otwarty panel
     renderuj(); // komorki moga pokazywac zmieniona nazwe
   }
 
-  function otworzPanelNawykow(td) {
+  function otworzPanelWyboru(td) {
     komorkaPanelu = td;
-    zbudujListeNawykow();
-    elPanelNawykow.hidden = false;
+    poleWyboru = td.dataset.pole;
+
+    const opcje = POLA_WYBORU[poleWyboru];
+    elTytulWyboru.textContent = opcje.tytul;
+    elNowaWartosc.placeholder = opcje.placeholderDodaj;
+    elDodajWartosc.textContent = opcje.etykietaDodaj;
+
+    zbudujListeWyboru();
+    elPanelWyboru.hidden = false;
 
     // Pozycjonowanie przy komorce, ze wzgledu na przewijanie strony.
     const r = td.getBoundingClientRect();
     const gora = window.scrollY + r.bottom + 2;
     const lewo = Math.min(
       window.scrollX + r.left,
-      window.scrollX + document.documentElement.clientWidth - elPanelNawykow.offsetWidth - 8
+      window.scrollX + document.documentElement.clientWidth - elPanelWyboru.offsetWidth - 8
     );
-    elPanelNawykow.style.top = `${gora}px`;
-    elPanelNawykow.style.left = `${Math.max(8, lewo)}px`;
+    elPanelWyboru.style.top = `${gora}px`;
+    elPanelWyboru.style.left = `${Math.max(8, lewo)}px`;
   }
 
-  function zamknijPanelNawykow() {
-    elPanelNawykow.hidden = true;
+  function zamknijPanelWyboru() {
+    elPanelWyboru.hidden = true;
     komorkaPanelu = null;
+    poleWyboru = null;
   }
 
   // ==========================================================================
   // Panel filtrow
   // ==========================================================================
 
-  function zbudujCheckboxyNawykow() {
+  function zbudujCheckboxyWyboru(pole) {
     /*
-      Slownik moze sie zmienic w trakcie pracy (panel nawykow), a w filtrze moga
+      Slownik moze sie zmienic w trakcie pracy (panel wyboru), a w filtrze moga
       byc juz zaznaczone nazwy. Przepisujemy stan zaznaczen, zeby przebudowa listy
       nie kasowala aktywnego filtra. Nazwy usuniete ze slownika znikaja takze
       z filtra - po nich nie da sie juz filtrowac.
     */
-    const zaznaczone = new Set(filtry.nawyki);
-    filtry.nawyki.clear();
+    const pojemnik = document.getElementById(POLA_WYBORU[pole].elementFiltra);
+    const zaznaczone = new Set(filtry[pole]);
+    filtry[pole].clear();
 
-    elFiltrNawyki.replaceChildren(
-      ...nawykiSlownik.map(({ nazwa }) => {
+    pojemnik.replaceChildren(
+      ...slownikiWyboru[pole].map(({ nazwa }) => {
         const label = document.createElement('label');
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = zaznaczone.has(nazwa);
-        if (input.checked) filtry.nawyki.add(nazwa);
+        if (input.checked) filtry[pole].add(nazwa);
 
         input.addEventListener('change', () => {
-          if (input.checked) filtry.nawyki.add(nazwa);
-          else filtry.nawyki.delete(nazwa);
+          if (input.checked) filtry[pole].add(nazwa);
+          else filtry[pole].delete(nazwa);
           zastosujFiltry();
         });
 
-        label.append(input, ' ' + nazwa);
+        label.append(input, ' ', etykietaWartosci(pole, nazwa));
         return label;
       })
     );
+  }
+
+  /*
+    Podpis zwinietego pola filtra. Zwiniete pole nie moze ukrywac aktywnego filtra -
+    ta sama zasada co przy Obszarze i Projekcie na stronie zadan.
+  */
+  function odswiezPodsumowaniaWyboru() {
+    for (const [pole, opcje] of Object.entries(POLA_WYBORU)) {
+      if (!opcje.elementPodsumowania) continue;
+      const el = document.getElementById(opcje.elementPodsumowania);
+      if (!el) continue;
+      const ile = filtry[pole].size;
+      el.textContent = ile === 0 ? `${opcje.nazwaFiltra} — wszystkie` : `${opcje.nazwaFiltra} — ${ile}`;
+    }
   }
 
   function zbudujPresety() {
@@ -918,8 +1075,9 @@
     // Zbior nawykow aktualizuja na biezaco handlery checkboxow.
 
     const ile = ileAktywnychFiltrow();
-    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — active: ${ile}` : '';
 
+    odswiezPodsumowaniaWyboru();
     odswiezPresety();
     odLiczOdNowa();
     renderuj();
@@ -932,7 +1090,7 @@
     for (const input of elPanelFiltrow.querySelectorAll('input[type="checkbox"]')) {
       input.checked = false;
     }
-    filtry.nawyki.clear();
+    for (const pole of Object.keys(POLA_WYBORU)) filtry[pole].clear();
     zastosujFiltry();
   }
 
@@ -949,16 +1107,18 @@
 
   async function start() {
     try {
-      // Slowniki, nawyki i data serwera musza byc PRZED zbudowaniem tabeli i filtrow:
-      // z opisow ocen powstaja plakietki, a z nawykow checkboxy filtra.
-      const [pobraneSlowniki, pobraneNawyki, czas, lista] = await Promise.all([
+      // Slowniki, oba slowniki wyboru i data serwera musza byc PRZED zbudowaniem
+      // tabeli i filtrow: z opisow ocen powstaja plakietki, a ze slownikow checkboxy.
+      const [pobraneSlowniki, pobraneNawyki, pobraneSlowa, czas, lista] = await Promise.all([
         api.get('/api/slowniki'),
         api.get('/api/nawyki'),
+        api.get('/api/slowa'),
         api.get('/api/czas'),
         api.get('/api/dziennik'),
       ]);
       slowniki = pobraneSlowniki;
-      nawykiSlownik = pobraneNawyki;
+      slownikiWyboru.nawyki = pobraneNawyki;
+      slownikiWyboru.trzy_slowa = pobraneSlowa;
       dzisiajSerwera = czas.dzisiaj;
 
       /*
@@ -979,7 +1139,7 @@
         elFiltrOd.value = filtrDat.dataPlusDni(dzisiajSerwera, -(DNI_DOMYSLNEGO_WIDOKU - 1));
       }
 
-      zbudujCheckboxyNawykow();
+      for (const pole of Object.keys(POLA_WYBORU)) zbudujCheckboxyWyboru(pole);
       zbudujPresety();
       odswiezPresety();
 
@@ -994,7 +1154,7 @@
       */
       zastosujFiltry();
     } catch (e) {
-      pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
+      pokazStatus('Could not load data: ' + e.message, 'blad');
     }
   }
 
@@ -1008,24 +1168,24 @@
   elFiltrOd.addEventListener('change', zastosujFiltry);
   elFiltrDo.addEventListener('change', zastosujFiltry);
 
-  // --- panel nawykow ---
-  elZamknijNawyki.addEventListener('click', zamknijPanelNawykow);
-  elDodajNawyk.addEventListener('click', dodajNawyk);
-  elNowyNawyk.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') dodajNawyk();
+  // --- panel wyboru (nawyki i slowa) ---
+  elZamknijWybor.addEventListener('click', zamknijPanelWyboru);
+  elDodajWartosc.addEventListener('click', dodajWartosc);
+  elNowaWartosc.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') dodajWartosc();
   });
 
-  // Klikniecie poza panelem go zamyka. Klikniecie w komorke nawykow obslugujemy
+  // Klikniecie poza panelem go zamyka. Klikniecie w komorke wyboru obslugujemy
   // osobno (otwiera panel dla innego wiersza), wiec je tu pomijamy.
   document.addEventListener('mousedown', (e) => {
-    if (elPanelNawykow.hidden) return;
-    if (elPanelNawykow.contains(e.target)) return;
-    if (e.target.closest('.komorka-nawykow')) return;
-    zamknijPanelNawykow();
+    if (elPanelWyboru.hidden) return;
+    if (elPanelWyboru.contains(e.target)) return;
+    if (e.target.closest('.komorka-wyboru')) return;
+    zamknijPanelWyboru();
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !elPanelNawykow.hidden) zamknijPanelNawykow();
+    if (e.key === 'Escape' && !elPanelWyboru.hidden) zamknijPanelWyboru();
   });
 
   elNaglowki.addEventListener('click', (e) => {
@@ -1036,7 +1196,7 @@
   // Import zyje w osobnym module (public/js/csv-import.js) i po zapisie
   // wysyla to zdarzenie. Nazwa zawiera profil, wiec strona zadan go nie lapie.
   document.addEventListener('dane-dziennik-zmienione', () => {
-    wczytaj().catch((e) => pokazStatus('Nie udało się odświeżyć: ' + e.message, 'blad'));
+    wczytaj().catch((e) => pokazStatus('Could not refresh: ' + e.message, 'blad'));
   });
 
   start();

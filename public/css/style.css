@@ -17,8 +17,29 @@
   /* powierzchnie i tekst */
   --tlo: #fff;
   --tekst: #111;
-  --tekst-slaby: #888;
-  --ramka: #ccc;
+  /*
+    KONTRASTY SA ZMIERZONE, nie dobrane na oko. Asercja w test/smoke.js liczy je
+    z tego pliku i oblewa, gdy ktorakolwiek para zejdzie ponizej progu WCAG:
+    4,5:1 dla tekstu, 3:1 dla obramowan kontrolek.
+
+    Poprzednie wartosci nie przechodzily: tekst slaby mial 3,54 na bialym i 3,28
+    na zebrze, a ramka 1,61 - siatki tabeli praktycznie nie bylo widac.
+  */
+  --tekst-slaby: #707070;
+
+  /*
+    DWA RODZAJE OBRAMOWAN, bo maja rozne zadania i rozne progi.
+
+    --ramka to SIATKA: linie miedzy komorkami, obwodki paneli i kart. Ma byc
+    widoczna, ale nie ma niesc informacji, wiec 2,17:1 wystarcza - przy dwudziestu
+    jeden kolumnach siatka o kontrascie 3:1 zaczyna dominowac nad trescia.
+
+    --ramka-kontrolki obrysowuje ELEMENTY INTERAKCYJNE (lista rozwijana w komorce,
+    przelacznik motywu, biezaca zakladka). Tam obramowanie mowi "to sie klika",
+    wiec obowiazuje prog 3:1 z WCAG 1.4.11.
+  */
+  --ramka: #b0b0b0;
+  --ramka-kontrolki: #949494;
   --cien: rgba(0, 0, 0, 0.15);
 
   /* naglowki tabeli i kontrolki */
@@ -34,14 +55,16 @@
   --edycja-tlo: #eef4ff;
 
   /* znaczenia */
-  --akcent: #3b7ddd;
+  /* 4,88:1 na bialym. Poprzednie #3b7ddd mialo 4,07 - ponizej progu. */
+  --akcent: #2f6fd0;
   --alarm: #b00020;
   --blad-tlo: #ffecec;
   --ok: #0a7a2f;
   --zapis-tlo: #e3f7e3;
   /* Uwaga, nie blad: cos wartego zauwazenia, ale nieblokujacego (duplikat daty).
      Celowo inny kolor niz --alarm, ktory znaczy "nie zapisano". */
-  --uwaga: #b8860b;
+  /* 4,81:1 na --uwaga-tlo. Poprzednie #b8860b mialo 3,06. */
+  --uwaga: #8f6708;
   --uwaga-tlo: #fff8e1;
   --info-tlo: #fffbe6;
   --info-ramka: #e0d28a;
@@ -74,7 +97,8 @@
   --tlo: #1c1c1e;
   --tekst: #e8e8ea;
   --tekst-slaby: #9a9aa0;
-  --ramka: #3a3a3e;
+  --ramka: #55555c;
+  --ramka-kontrolki: #6b6b74;
   --cien: rgba(0, 0, 0, 0.6);
 
   --tlo-naglowka: #2a2a2e;
@@ -119,7 +143,7 @@
 /* Wybor inny niz systemowy jest wyrozniony - inaczej nie bylo by widac,
    ze motyw jest wymuszony recznie i nie podaza juz za systemem. */
 .przelacznik-motywu:not([data-wybor='system']) {
-  border-color: var(--ramka);
+  border-color: var(--ramka-kontrolki);
   background: var(--tlo-naglowka);
 }
 * {
@@ -517,7 +541,7 @@ td.brak-danych-xp {
 */
 td select.plakietka {
   background: var(--tlo-kontrolki);
-  border: 1px solid var(--ramka);
+  border: 1px solid var(--ramka-kontrolki);
   border-radius: 10px;
   padding: 1px 4px;
 }
@@ -558,26 +582,46 @@ td select.plakietka {
   min-width: 2750px;
 }
 
-/* --- panel wyboru nawykow --- */
+/* --- panel wyboru wielokrotnego (nawyki i slowa) --- */
 
-/* Komorka nawykow nie jest polem tekstowym - klikniecie otwiera panel. */
-td.komorka-nawykow {
+/*
+  Komorka pola wyboru nie jest polem tekstowym - klikniecie otwiera panel.
+  Te same reguly obsluguja OBA pola tego rodzaju, bo roznia sie wylacznie
+  slownikiem i podpisami, a nie wygladem.
+*/
+td.komorka-wyboru {
   cursor: pointer;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-td.komorka-nawykow:hover {
+/*
+  NIGDY display: flex (ani grid, ani block) NA <td>.
+
+  Komorka z display:flex przestaje byc komorka tabeli - przegladarka przelicza
+  wtedy uklad kolumn i CALA RESZTA WIERSZA przesuwa sie o jedno miejsce w lewo.
+  Widac to bylo dokladnie na jednym wierszu: tym, ktory jako jedyny mial
+  wypelnione i "trzy slowa", i "nawyki". Dane i DOM byly poprawne - psul sam styl.
+
+  Odstepy miedzy plakietkami robi wiec margines na samej plakietce. Efekt ten sam,
+  bez ruszania trybu wyswietlania komorki. Asercja w test/smoke.js pilnuje, ze
+  zadna regula nie ustawia <td> na display inny niz table-cell.
+*/
+.komorka-wyboru .slowo {
+  margin: 0 3px 3px 0;
+}
+
+td.komorka-wyboru:hover {
   outline: 1px solid var(--akcent);
   outline-offset: -1px;
 }
 
-td.komorka-nawykow:empty::before {
+td.komorka-wyboru:empty::before {
   content: 'kliknij, aby wybrać';
   color: var(--tekst-slaby);
 }
 
-.panel-nawykow {
+.panel-wyboru {
   position: absolute;
   z-index: 10;
   width: 320px;
@@ -599,7 +643,7 @@ td.komorka-nawykow:empty::before {
   border-bottom: 1px solid var(--ramka);
 }
 
-.pozycja-nawyku {
+.pozycja-wyboru {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -607,13 +651,13 @@ td.komorka-nawykow:empty::before {
   padding: 1px 0;
 }
 
-.pozycja-nawyku label {
+.pozycja-wyboru label {
   cursor: pointer;
   flex: 1;
 }
 
 /* Ikony pojawiaja sie dopiero pod kursorem - inaczej lista bylaby zaśmiecona. */
-.akcje-nawyku button {
+.akcje-wyboru button {
   border: none;
   background: none;
   cursor: pointer;
@@ -622,7 +666,7 @@ td.komorka-nawykow:empty::before {
   opacity: 0.25;
 }
 
-.pozycja-nawyku:hover .akcje-nawyku button {
+.pozycja-wyboru:hover .akcje-wyboru button {
   opacity: 1;
 }
 
@@ -887,7 +931,7 @@ td.komorka-nawykow:empty::before {
 */
 .nawigacja a[aria-current='page'] {
   background: var(--tlo-naglowka);
-  border-color: var(--ramka);
+  border-color: var(--ramka-kontrolki);
   color: var(--tekst);
   font-weight: bold;
   cursor: default;
@@ -1173,4 +1217,150 @@ td.duplikat-daty {
   padding: 6px 10px;
   margin: 6px 0;
   font-size: 12px;
+}
+
+/*
+  XP zadania jeszcze nieukonczonego - szacunek, nie wartosc przyznana. Przygaszone
+  z tego samego powodu co zamrozone "dni do terminu": liczba, ktora moze sie jeszcze
+  zmienic, nie powinna wygladac tak samo jak ta juz rozstrzygnieta.
+*/
+.xp-szacunek {
+  color: var(--tekst-slaby);
+  font-style: italic;
+}
+
+/*
+  Slowa opisujace dzien - plakietki z emoji i kolorem kategorii.
+
+  Kolor sluzy do POGRUPOWANIA WZROKIEM, nie do oceny: "Difficult" nie jest dniem
+  gorszym, tylko innego rodzaju. Kategorie i emoji przychodza z config/slowa.js -
+  w bazie siedzi sama nazwa, wiec sortowanie i porownania ich nie widza.
+
+  Wszystkie pary tlo/tekst maja kontrast >= 5,3 w obu motywach (zmierzone).
+*/
+.slowo {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--slowo-tlo);
+  color: var(--slowo-tekst);
+}
+
+.slowo-dobre {
+  --slowo-tlo: #e6f4ea;
+  --slowo-tekst: #1e6b34;
+}
+.slowo-produktywnosc {
+  --slowo-tlo: #e8eefc;
+  --slowo-tekst: #1f4fa8;
+}
+.slowo-trudne {
+  --slowo-tlo: #fdeaea;
+  --slowo-tekst: #a12a2a;
+}
+.slowo-zmeczenie {
+  --slowo-tlo: #fdf1e0;
+  --slowo-tekst: #8a5a12;
+}
+.slowo-neutralne {
+  --slowo-tlo: #eeeeef;
+  --slowo-tekst: #5a5a5f;
+}
+
+/*
+  Motyw ciemny: odcienie DOBRANE, nie odwrocone mechanicznie - czysta inwersja
+  dawalaby jaskrawe tla, ktore na ciemnym tle krzycza mocniej niz sama tresc.
+  Ta sama zasada co przy palecie glownej.
+*/
+:root[data-motyw='ciemny'] .slowo-dobre {
+  --slowo-tlo: #1c3325;
+  --slowo-tekst: #86d9a3;
+}
+:root[data-motyw='ciemny'] .slowo-produktywnosc {
+  --slowo-tlo: #1d2b45;
+  --slowo-tekst: #8fb6f5;
+}
+:root[data-motyw='ciemny'] .slowo-trudne {
+  --slowo-tlo: #3a2226;
+  --slowo-tekst: #f09aa4;
+}
+:root[data-motyw='ciemny'] .slowo-zmeczenie {
+  --slowo-tlo: #362b16;
+  --slowo-tekst: #e0b667;
+}
+:root[data-motyw='ciemny'] .slowo-neutralne {
+  --slowo-tlo: #2a2a2e;
+  --slowo-tekst: #a8a8ae;
+}
+
+/*
+  Statystyki: nawigacja kotwicowa i sekcje.
+
+  Spis tresci u gory, bo strona ma teraz szesc sekcji i kilkanascie tabel -
+  bez niego dojscie do "Zadan" znaczy przewiniecie przez caly dziennik.
+  Kolejnosc linkow bierze sie z tablicy SEKCJE w statystyki.js; asercja w smoke
+  pilnuje, ze zgadza sie z kolejnoscia renderowania.
+*/
+.nawigacja-statystyk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ramka);
+}
+
+.nawigacja-statystyk a {
+  padding: 3px 10px;
+  border: 1px solid var(--ramka-kontrolki);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--tekst);
+  font-size: 13px;
+}
+
+.nawigacja-statystyk a:hover {
+  background: var(--tlo-naglowka-hover);
+}
+
+/* Odstep miedzy sekcjami - inaczej tabele z sasiednich grup zlewaja sie w jedna. */
+.sekcja-statystyk {
+  margin-bottom: 28px;
+  /* Kotwica nie moze chowac naglowka pod gorna krawedzia okna. */
+  scroll-margin-top: 12px;
+}
+
+.sekcja-statystyk h3.podnaglowek {
+  font-size: 13px;
+  color: var(--tekst-slaby);
+}
+
+/* Weekend w rytmie tygodnia - wyrozniony tlem, bo to on niesie najwieksza roznice. */
+.statystyki tbody tr.weekend {
+  background: var(--tlo-zebry);
+  font-weight: bold;
+}
+
+/*
+  Ostrzezenie o wspolwystepowaniu. Ton informacyjny, nie alarmowy - sekcja nie jest
+  bledna, tylko latwo z niej wyciagnac wniosek, ktorego dane nie niosa.
+*/
+.uwaga-korelacja {
+  border-left: 3px solid var(--uwaga);
+  background: var(--uwaga-tlo);
+  padding: 6px 10px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+}
+
+/*
+  Plakietka nawyku. Emoji ma, koloru kategorii nie - nawyk to czynnosc, a nie
+  zabarwienie dnia (uzasadnienie w config/nawyki.js). Neutralne tlo odroznia
+  plakietke od tekstu, nie sugerujac oceny.
+*/
+.slowo-nawyk {
+  --slowo-tlo: var(--tlo-kontrolki);
+  --slowo-tekst: var(--tekst);
 }

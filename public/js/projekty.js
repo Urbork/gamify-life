@@ -125,7 +125,7 @@
       td.appendChild(tlo);
     }
 
-    td.title = `Ukończone zadania: ${ukonczone} z ${lacznie}`;
+    td.title = `Completed tasks: ${ukonczone} of ${lacznie}`;
     return td;
   }
 
@@ -137,7 +137,7 @@
     btn.type = 'button';
     btn.className = 'usun';
     btn.textContent = '×';
-    btn.title = 'Usuń projekt (zadania zostaną, tylko się odepną)';
+    btn.title = 'Delete project (tasks stay, they are only unlinked)';
     btn.addEventListener('click', () => usunProjekt(p.id));
 
     td.appendChild(btn);
@@ -173,8 +173,8 @@
     const ukonczonych = lista.filter((p) => p.status === 'Zrobione').length;
     elPodsumowanie.textContent =
       lista.length === 0
-        ? 'Brak projektów.'
-        : `Projektów: ${lista.length} (ukończonych: ${ukonczonych})`;
+        ? 'No projects.'
+        : `Projects: ${lista.length} (completed: ${ukonczonych})`;
   }
 
   function przywrocKomorke(tr, pole) {
@@ -211,7 +211,7 @@
       tr.classList.remove('blad-zapisu');
       tr.dataset.stan = zaktualizowany.status;
       renderuj();
-      pokazStatus('zapisano', 'ok');
+      pokazStatus('saved', 'ok');
     } catch (e) {
       tr.classList.add('blad-zapisu');
       przywrocKomorke(tr, pole);
@@ -252,15 +252,15 @@
     */
     const opis =
       ile > 0
-        ? `Usunąć projekt „${p.nazwa}"?\n\n${ile} ${ile === 1 ? 'zadanie zostanie' : 'zadań zostanie'} ODPIĘTE, ale NIE usunięte — pozostaną jako zadania luźne.`
-        : `Usunąć projekt „${p ? p.nazwa : id}"?`;
+        ? `Delete project „${p.nazwa}"?\n\n${ile} ${ile === 1 ? 'task will be' : 'tasks will be'} UNLINKED, but NOT deleted — they stay as loose tasks.`
+        : `Delete project „${p ? p.nazwa : id}"?`;
     if (!confirm(opis)) return;
 
     try {
       await api.usun(`/api/projekty/${id}`);
       projekty.delete(id);
       renderuj();
-      pokazStatus(ile > 0 ? `usunięto, odpięto zadań: ${ile}` : 'usunięto', 'ok');
+      pokazStatus(ile > 0 ? `deleted, tasks unlinked: ${ile}` : 'deleted', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -282,7 +282,7 @@
       for (const p of lista) projekty.set(p.id, p);
       renderuj();
     } catch (e) {
-      pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
+      pokazStatus('Could not load data: ' + e.message, 'blad');
     }
   }
 

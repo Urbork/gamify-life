@@ -19,6 +19,7 @@ const czasRouter = require('./routes/czas');
 const importRouter = require('./routes/import');
 const dziennikRouter = require('./routes/dziennik');
 const nawykiRouter = require('./routes/nawyki');
+const slowaRouter = require('./routes/slowa');
 const postacRouter = require('./routes/postac');
 const projektyRouter = require('./routes/projekty');
 
@@ -59,6 +60,7 @@ app.use('/api/slowniki', slownikiRouter);
 app.use('/api/czas', czasRouter);
 // Nazwy nawykow to kilkadziesiat bajtow - domyslny limit wystarcza z zapasem.
 app.use('/api/nawyki', nawykiRouter);
+app.use('/api/slowa', slowaRouter);
 app.use('/api/projekty', projektyRouter);
 // Router obsluguje /api/postac oraz /api/zakupy - stad montowanie na /api.
 app.use('/api', postacRouter);

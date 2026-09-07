@@ -22,9 +22,9 @@ const motyw = (() => {
   const WYBORY = ['system', 'jasny', 'ciemny'];
 
   const OPISY = {
-    system: { ikona: '🖥️', etykieta: 'Motyw: systemowy' },
-    jasny: { ikona: '☀️', etykieta: 'Motyw: jasny' },
-    ciemny: { ikona: '🌙', etykieta: 'Motyw: ciemny' },
+    system: { ikona: '🖥️', etykieta: 'Theme: system' },
+    jasny: { ikona: '☀️', etykieta: 'Theme: light' },
+    ciemny: { ikona: '🌙', etykieta: 'Theme: dark' },
   };
 
   /*
@@ -98,8 +98,8 @@ const motyw = (() => {
       // monitora nic nie mowi o tym, co widac na ekranie.
       btn.title =
         wybor === 'system'
-          ? `${opis.etykieta} (teraz ${rozstrzygnij('system', systemChceCiemny())}) — kliknij, aby zmienić`
-          : `${opis.etykieta} — kliknij, aby zmienić`;
+          ? `${opis.etykieta} (now ${rozstrzygnij('system', systemChceCiemny())}) — click to change`
+          : `${opis.etykieta} — click to change`;
       btn.setAttribute('aria-label', btn.title);
       btn.dataset.wybor = wybor;
     };
