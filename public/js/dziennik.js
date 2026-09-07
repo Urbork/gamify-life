@@ -1075,7 +1075,7 @@
     // Zbior nawykow aktualizuja na biezaco handlery checkboxow.
 
     const ile = ileAktywnychFiltrow();
-    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — active: ${ile}` : '';
 
     odswiezPodsumowaniaWyboru();
     odswiezPresety();

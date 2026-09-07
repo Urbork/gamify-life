@@ -15,6 +15,20 @@
   const elTresc = document.getElementById('tresc');
   const elStatus = document.getElementById('status');
 
+  /*
+    Etykiety pol refleksyjnych. Nazwy kolumn w bazie zostaja polskie (wdziecznosc,
+    bledy...), wiec bez tej mapy lista w sekcji Konsekwencja pokazywalaby surowe
+    identyfikatory zamiast nazw, ktore uzytkownik widzi w naglowkach dziennika.
+  */
+  const ETYKIETY_POL = {
+    wdziecznosc: 'Gratitude',
+    bledy: 'Mistakes',
+    rozmowa: 'Conversation',
+    co_poszlo_dobrze: 'What went well',
+    jutro_wazne: 'Important tomorrow',
+    do_przemyslenia: 'To think about',
+  };
+
   // Etykiety kolumn ocen - klucz z bazy nie nadaje sie na naglowek.
   const ETYKIETY_OCEN = {
     jakosc_snu: 'Sleep quality',
@@ -332,7 +346,7 @@
         'p',
         'podstawa',
         'Reflection = at least one of these fields filled: ' +
-          regulyStatystyk.POLA_REFLEKSYJNE.join(', ') +
+          regulyStatystyk.POLA_REFLEKSYJNE.map((p) => ETYKIETY_POL[p] || p).join(', ') +
           '.'
       )
     );

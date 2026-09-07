@@ -17,8 +17,29 @@
   /* powierzchnie i tekst */
   --tlo: #fff;
   --tekst: #111;
-  --tekst-slaby: #888;
-  --ramka: #ccc;
+  /*
+    KONTRASTY SA ZMIERZONE, nie dobrane na oko. Asercja w test/smoke.js liczy je
+    z tego pliku i oblewa, gdy ktorakolwiek para zejdzie ponizej progu WCAG:
+    4,5:1 dla tekstu, 3:1 dla obramowan kontrolek.
+
+    Poprzednie wartosci nie przechodzily: tekst slaby mial 3,54 na bialym i 3,28
+    na zebrze, a ramka 1,61 - siatki tabeli praktycznie nie bylo widac.
+  */
+  --tekst-slaby: #707070;
+
+  /*
+    DWA RODZAJE OBRAMOWAN, bo maja rozne zadania i rozne progi.
+
+    --ramka to SIATKA: linie miedzy komorkami, obwodki paneli i kart. Ma byc
+    widoczna, ale nie ma niesc informacji, wiec 2,17:1 wystarcza - przy dwudziestu
+    jeden kolumnach siatka o kontrascie 3:1 zaczyna dominowac nad trescia.
+
+    --ramka-kontrolki obrysowuje ELEMENTY INTERAKCYJNE (lista rozwijana w komorce,
+    przelacznik motywu, biezaca zakladka). Tam obramowanie mowi "to sie klika",
+    wiec obowiazuje prog 3:1 z WCAG 1.4.11.
+  */
+  --ramka: #b0b0b0;
+  --ramka-kontrolki: #949494;
   --cien: rgba(0, 0, 0, 0.15);
 
   /* naglowki tabeli i kontrolki */
@@ -34,14 +55,16 @@
   --edycja-tlo: #eef4ff;
 
   /* znaczenia */
-  --akcent: #3b7ddd;
+  /* 4,88:1 na bialym. Poprzednie #3b7ddd mialo 4,07 - ponizej progu. */
+  --akcent: #2f6fd0;
   --alarm: #b00020;
   --blad-tlo: #ffecec;
   --ok: #0a7a2f;
   --zapis-tlo: #e3f7e3;
   /* Uwaga, nie blad: cos wartego zauwazenia, ale nieblokujacego (duplikat daty).
      Celowo inny kolor niz --alarm, ktory znaczy "nie zapisano". */
-  --uwaga: #b8860b;
+  /* 4,81:1 na --uwaga-tlo. Poprzednie #b8860b mialo 3,06. */
+  --uwaga: #8f6708;
   --uwaga-tlo: #fff8e1;
   --info-tlo: #fffbe6;
   --info-ramka: #e0d28a;
@@ -74,7 +97,8 @@
   --tlo: #1c1c1e;
   --tekst: #e8e8ea;
   --tekst-slaby: #9a9aa0;
-  --ramka: #3a3a3e;
+  --ramka: #55555c;
+  --ramka-kontrolki: #6b6b74;
   --cien: rgba(0, 0, 0, 0.6);
 
   --tlo-naglowka: #2a2a2e;
@@ -119,7 +143,7 @@
 /* Wybor inny niz systemowy jest wyrozniony - inaczej nie bylo by widac,
    ze motyw jest wymuszony recznie i nie podaza juz za systemem. */
 .przelacznik-motywu:not([data-wybor='system']) {
-  border-color: var(--ramka);
+  border-color: var(--ramka-kontrolki);
   background: var(--tlo-naglowka);
 }
 * {
@@ -517,7 +541,7 @@ td.brak-danych-xp {
 */
 td select.plakietka {
   background: var(--tlo-kontrolki);
-  border: 1px solid var(--ramka);
+  border: 1px solid var(--ramka-kontrolki);
   border-radius: 10px;
   padding: 1px 4px;
 }
@@ -907,7 +931,7 @@ td.komorka-wyboru:empty::before {
 */
 .nawigacja a[aria-current='page'] {
   background: var(--tlo-naglowka);
-  border-color: var(--ramka);
+  border-color: var(--ramka-kontrolki);
   color: var(--tekst);
   font-weight: bold;
   cursor: default;
@@ -1290,7 +1314,7 @@ td.duplikat-daty {
 
 .nawigacja-statystyk a {
   padding: 3px 10px;
-  border: 1px solid var(--ramka);
+  border: 1px solid var(--ramka-kontrolki);
   border-radius: 12px;
   text-decoration: none;
   color: var(--tekst);

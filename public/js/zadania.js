@@ -1069,7 +1069,8 @@
     const licznik = slowniki.stany
       .map((s) => [s, widoczne.filter((z) => z.stan === s).length])
       .filter(([, ile]) => ile > 0)
-      .map(([s, ile]) => `${s}: ${ile}`)
+      // Stan siedzi w bazie po polsku - w podsumowaniu pokazujemy etykiete.
+      .map(([s, ile]) => `${etykietaWartosci(slowniki.etykiety && slowniki.etykiety.stany, s)}: ${ile}`)
       .join(', ');
 
     elPodsumowanie.textContent =
@@ -1182,7 +1183,7 @@
     // przez handlery checkboxow.
 
     const ile = ileAktywnychFiltrow();
-    elZnacznikFiltrow.textContent = ile > 0 ? ` — aktywne: ${ile}` : '';
+    elZnacznikFiltrow.textContent = ile > 0 ? ` — active: ${ile}` : '';
 
     odswiezPodsumowaniaZwijanych();
 

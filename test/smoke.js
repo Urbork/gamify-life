@@ -1649,6 +1649,147 @@ async function testujPlakietkiZadan() {
   czyli na jednym wierszu z ponad osmiuset. Zaden test na danych ani na strukturze
   DOM nie mial szans go zlapac - dlatego pilnujemy samego arkusza stylow.
 */
+/*
+  Kontrasty palety liczone WPROST Z ARKUSZA STYLOW.
+
+  Kolory to jedyna czesc interfejsu, ktorej nie da sie sprawdzic ani na danych,
+  ani na strukturze DOM - a psuja sie po cichu: nikt nie zauwaza, ze tekst zszedl
+  z 4,6 na 4,2, dopoki nie zacznie meczyc oczu. Przed ta asercja piec par bylo
+  ponizej progu, w tym --ramka o kontrascie 1,61, czyli siatka tabeli praktycznie
+  niewidoczna.
+
+  PROGI Z WCAG 2.1:
+    4,5:1 - tekst (1.4.3),
+    3,0:1 - obramowania elementow interaktywnych (1.4.11).
+
+  Sprawdzamy OBA MOTYWY. Ciemny nie jest wariantem jasnego - ma wlasny komplet
+  wartosci, wiec poprawka w jednym nie mowi nic o drugim.
+*/
+async function testujKontrastyPalety() {
+  sekcja('PALETA: KONTRASTY');
+
+  const css = fs.readFileSync(path.join(KATALOG_PROJEKTU, 'public', 'css', 'style.css'), 'utf8');
+
+  function zmienne(selektor) {
+    const i = css.indexOf(selektor);
+    if (i < 0) return null;
+    const blok = css.slice(i, css.indexOf('}', i));
+    const mapa = {};
+    for (const x of blok.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)) mapa[x[1]] = x[2].trim();
+    return mapa;
+  }
+
+  /** '#abc' i '#aabbcc' -> '#aabbcc'. Inne zapisy (var(), rgba) zwracaja null. */
+  function hex(wartosc) {
+    if (!wartosc) return null;
+    const v = wartosc.trim();
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+    return /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+  }
+
+  // Luminancja wzgledna wg definicji WCAG.
+  function luminancja(h) {
+    const kanaly = [1, 3, 5]
+      .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    return 0.2126 * kanaly[0] + 0.7152 * kanaly[1] + 0.0722 * kanaly[2];
+  }
+
+  function kontrast(a, b) {
+    const x = luminancja(a);
+    const y = luminancja(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+
+  const jasny = zmienne(':root {');
+  const ciemny = zmienne(":root[data-motyw='ciemny']");
+  sprawdz('oba motywy deklaruja zmienne palety', Boolean(jasny && ciemny));
+
+  /*
+    Pary: co jest RYSOWANE NA CZYM. Lista jest recznie utrzymywana, bo z samego
+    CSS nie da sie wyczytac, ktore tlo faktycznie stoi pod ktorym tekstem.
+    Tekst slaby sprawdzamy takze na zebrze - to ciemniejsze tlo jest trudniejsze,
+    a wiersze zebry to polowa tabeli.
+  */
+  const PARY = [
+    ['--tekst', '--tlo', 4.5],
+    ['--tekst', '--tlo-naglowka', 4.5],
+    ['--tekst', '--tlo-kontrolki', 4.5],
+    ['--tekst', '--tlo-hover', 4.5],
+    ['--tekst', '--tlo-wybrane', 4.5],
+    ['--tekst', '--edycja-tlo', 4.5],
+    ['--tekst', '--info-tlo', 4.5],
+    ['--tekst-slaby', '--tlo', 4.5],
+    ['--tekst-slaby', '--tlo-zebry', 4.5],
+    ['--akcent', '--tlo', 4.5],
+    ['--alarm', '--tlo', 4.5],
+    ['--alarm', '--blad-tlo', 4.5],
+    ['--ok', '--tlo', 4.5],
+    ['--ok', '--zapis-tlo', 4.5],
+    ['--uwaga', '--uwaga-tlo', 4.5],
+    // Obramowanie elementu interaktywnego - prog 3:1 (WCAG 1.4.11).
+    ['--ramka-kontrolki', '--tlo', 3.0],
+  ];
+
+  for (const [nazwaMotywu, paleta] of [
+    ['jasny', jasny],
+    // Ciemny nadpisuje tylko czesc zmiennych - reszta dziedziczy z :root.
+    ['ciemny', { ...jasny, ...ciemny }],
+  ]) {
+    const zaSlabe = [];
+    const nieczytelne = [];
+
+    for (const [przod, tyl, prog] of PARY) {
+      const a = hex(paleta[przod]);
+      const b = hex(paleta[tyl]);
+      if (!a || !b) {
+        nieczytelne.push(`${przod}/${tyl}`);
+        continue;
+      }
+      const wynik = kontrast(a, b);
+      if (wynik < prog) {
+        zaSlabe.push(`${przod} na ${tyl}: ${wynik.toFixed(2)} < ${prog}`);
+      }
+    }
+
+    /*
+      Kolor zapisany inaczej niz szesnastkowo (np. przez var()) wypadlby z kontroli
+      po cichu - dlatego brak odczytu jest bledem, a nie pominieciem.
+    */
+    sprawdzListe(`motyw ${nazwaMotywu}: kazda para palety da sie odczytac`, [], nieczytelne);
+    sprawdzListe(`motyw ${nazwaMotywu}: kontrasty spelniaja progi WCAG`, [], zaSlabe);
+  }
+
+  /*
+    Plakietki slow maja wlasne pary tlo/tekst, poza glowna paleta. Wyciagamy je
+    z regul .slowo-* i sprawdzamy tak samo - inaczej piec kategorii zostaloby
+    poza kontrola.
+  */
+  const plakietki = [];
+  for (const dopasowanie of css.matchAll(
+    /(:root\[data-motyw='ciemny'\]\s*)?\.slowo-([a-z]+)\s*\{([^}]*)\}/g
+  )) {
+    const tresc = dopasowanie[3];
+    const tlo = /--slowo-tlo:\s*([^;]+);/.exec(tresc);
+    const tekst = /--slowo-tekst:\s*([^;]+);/.exec(tresc);
+    if (!tlo || !tekst) continue;
+    const a = hex(tekst[1]);
+    const b = hex(tlo[1]);
+    if (!a || !b) continue;
+    plakietki.push({
+      nazwa: (dopasowanie[1] ? 'ciemny ' : 'jasny ') + dopasowanie[2],
+      wynik: kontrast(a, b),
+    });
+  }
+
+  sprawdz('plakietki slow maja zmierzone kontrasty w obu motywach', plakietki.length >= 8, String(plakietki.length));
+  sprawdzListe(
+    'kazda plakietka slowa spelnia prog 4,5:1',
+    [],
+    plakietki.filter((p) => p.wynik < 4.5).map((p) => `${p.nazwa}: ${p.wynik.toFixed(2)}`)
+  );
+}
+
 async function testujHigieneCss() {
   sekcja('CSS: KOMORKI TABELI');
 
@@ -3506,6 +3647,7 @@ async function main() {
     await testujZasadyXp();
     await testujFormatKopii();
     await testujPlakietkiZadan();
+    await testujKontrastyPalety();
     await testujHigieneCss();
     await testujNoweStatystyki(reguly);
     await testujKolumneXp(reguly);
