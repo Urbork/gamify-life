@@ -63,7 +63,7 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 
 ### Infrastruktura
 - [x] Migracje wersjonowane przez `PRAGMA user_version` (10 migracji)
-- [x] Smoke test — 387 asercji, izolowana baza tymczasowa
+- [x] Smoke test — 399 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
 - [x] Statystyki w sześciu grupach z nawigacją kotwicową: konsekwencja (serie,
@@ -125,4 +125,6 @@ Zebrane z kodu i README — wybrane te, które najłatwiej cofnąć przez przypa
 | Duplikat zadania powstaje w SQL (`INSERT ... SELECT`) | `routes/zadania.js` | Reguła „bez stanu i bez daty zakończenia" musi być wymuszona po stronie bazy — inaczej kopia naliczyłaby XP za niewykonaną pracę |
 | **2026-09-05: wyśrodkowanie etykiet ocen** | `config/mapowanie-ocen.js` | Skrajności były martwe (5 w 1,2–3,1% wpisów), a środek stał nie tam, gdzie trzeba (nastrój: mode 4 przez słowo „Neutralny"). Etykiety zmieniono, **liczby nie** — ale zmienia to zachowanie, więc szereg czasowy ma tu próg. Porównania „2024 kontra 2026" muszą to uwzględniać |
 | **Interfejs po angielsku, wartości w bazie po polsku** | `config/slowniki.js` | `zadania.stan` trzyma `Plan/Czeka/W trakcie/Zrobione` w 527 rekordach i jest treścią eksportu CSV. Migracja wartości unieważniłaby 41 kopii zapasowych, więc mapujemy etykiety — ta sama zasada co kolumna `stres` przy polu „Calm". Nagłówki CSV zostają polskie |
+| Kontrasty palety **liczone w teście**, nie dobierane na oko | `public/css/style.css` | Kolory to jedyna warstwa, której nie sprawdzi ani test danych, ani test DOM-u, a psują się po cichu. Progi: 4,5:1 tekst, 3:1 obramowania kontrolek — w obu motywach |
+| **Dwa rodzaje obramowań** — `--ramka` (siatka) i `--ramka-kontrolki` | `public/css/style.css` | Mają różne zadania i różne progi. Siatka o kontraście 3:1 dominuje nad treścią przy 21 kolumnach; obramowanie kontrolki musi mówić „to się klika" |
 | Migracja 7 była rozstrzygalna **jednorazowo** | `db/migracje.js` | `T00:00` dało się zinterpretować tylko dlatego, że przed przełącznikiem zegara północy nie dało się ustawić celowo. Dziś to samo rozumowanie już nie działa |
