@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Projekty</title>
+    <title>Projects</title>
     <link rel="stylesheet" href="/css/style.css" />
     <!--
       Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
@@ -14,7 +14,7 @@
   </head>
   <body>
     <header class="pasek">
-      <h1>Projekty</h1>
+      <h1>Projects</h1>
       <!--
         Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
         komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
@@ -26,16 +26,16 @@
         Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
         ktorej miedzy tymi stronami nie ma.
       -->
-      <nav class="nawigacja" aria-label="Sekcje aplikacji">
-        <a href="/index.html">📋 Zadania</a>
-        <a href="/dziennik.html">📓 Dziennik</a>
-        <a href="/statystyki.html">📊 Statystyki</a>
-        <a href="/projekty.html" aria-current="page">📁 Projekty</a>
-        <a href="/postac.html">🎮 Postać</a>
+      <nav class="nawigacja" aria-label="App sections">
+        <a href="/index.html">📋 Tasks</a>
+        <a href="/dziennik.html">📓 Journal</a>
+        <a href="/statystyki.html">📊 Stats</a>
+        <a href="/projekty.html" aria-current="page">📁 Projects</a>
+        <a href="/postac.html">🎮 Character</a>
       </nav>
       <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
       <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
-      <button id="przycisk-dodaj" type="button">+ Dodaj projekt</button>
+      <button id="przycisk-dodaj" type="button">+ Add project</button>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
 
@@ -47,10 +47,10 @@
       <thead id="naglowki">
         <tr>
           <th class="kol-id">#</th>
-          <th class="kol-nazwa">Nazwa</th>
+          <th class="kol-nazwa">Name</th>
           <th class="kol-stan">Status</th>
-          <th class="kol-opis">Opis</th>
-          <th class="kol-postep" title="Ukończone zadania w tym projekcie">Zadania</th>
+          <th class="kol-opis">Description</th>
+          <th class="kol-postep" title="Completed tasks in this project">Tasks</th>
           <th class="kol-akcje"></th>
         </tr>
       </thead>

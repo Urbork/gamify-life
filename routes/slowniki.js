@@ -13,6 +13,8 @@ const {
   PRIORYTETY,
   PRIORYTET_DOMYSLNY,
   OBSZARY,
+  ETYKIETY_STANOW,
+  ETYKIETY_OBSZAROW,
 } = require('../config/slowniki');
 const { OCENY } = require('../config/mapowanie-ocen');
 const plakietkiZadan = require('../config/plakietki-zadan');
@@ -30,6 +32,11 @@ router.get('/', (req, res) => {
     priorytety: PRIORYTETY,
     priorytetDomyslny: PRIORYTET_DOMYSLNY,
     obszary: OBSZARY,
+    /*
+      Etykiety wyswietlane dla wartosci trzymanych w bazie po polsku (stan, obszar
+      "Inne"). Wartosci NIE zmieniaja sie - patrz uzasadnienie w config/slowniki.js.
+    */
+    etykiety: { stany: ETYKIETY_STANOW, obszary: ETYKIETY_OBSZAROW },
     // Opisy slowne ocen dziennika (plakietki w listach rozwijanych).
     // Lista nawykow NIE jest tu wystawiana - mieszka w bazie, patrz GET /api/nawyki.
     oceny: OCENY,

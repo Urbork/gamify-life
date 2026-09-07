@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dziennik</title>
+    <title>Journal</title>
     <link rel="stylesheet" href="/css/style.css" />
     <!--
       Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
@@ -14,7 +14,7 @@
   </head>
   <body>
     <header class="pasek">
-      <h1>Dziennik</h1>
+      <h1>Journal</h1>
       <!--
         Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
         komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
@@ -26,18 +26,18 @@
         Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
         ktorej miedzy tymi stronami nie ma.
       -->
-      <nav class="nawigacja" aria-label="Sekcje aplikacji">
-        <a href="/index.html">📋 Zadania</a>
-        <a href="/dziennik.html" aria-current="page">📓 Dziennik</a>
-        <a href="/statystyki.html">📊 Statystyki</a>
-        <a href="/projekty.html">📁 Projekty</a>
-        <a href="/postac.html">🎮 Postać</a>
+      <nav class="nawigacja" aria-label="App sections">
+        <a href="/index.html">📋 Tasks</a>
+        <a href="/dziennik.html" aria-current="page">📓 Journal</a>
+        <a href="/statystyki.html">📊 Stats</a>
+        <a href="/projekty.html">📁 Projects</a>
+        <a href="/postac.html">🎮 Character</a>
       </nav>
       <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
       <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
-      <button id="przycisk-dodaj" type="button">+ Dodaj wpis</button>
-      <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
-      <button id="przycisk-import" type="button" data-profil="dziennik">Importuj z CSV</button>
+      <button id="przycisk-dodaj" type="button">+ Add entry</button>
+      <button id="przycisk-eksport" type="button">Export to CSV</button>
+      <button id="przycisk-import" type="button" data-profil="dziennik">Import from CSV</button>
       <input type="file" id="plik-importu" accept=".csv,text/csv" hidden />
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
@@ -49,26 +49,26 @@
     -->
     <details id="panel-filtrow" class="filtry">
       <summary>
-        Filtry<span id="znacznik-filtrow" class="znacznik"></span>
+        Filters<span id="znacznik-filtrow" class="znacznik"></span>
       </summary>
 
       <div class="filtry-tresc">
         <label class="filtr">
-          <span class="filtr-tytul">Szukaj w tekście</span>
-          <input type="search" id="filtr-szukaj" placeholder="np. Karolina" />
+          <span class="filtr-tytul">Search in text</span>
+          <input type="search" id="filtr-szukaj" placeholder="e.g. Karolina" />
         </label>
 
         <!-- Dziennik ma tylko jedno pole daty, wiec zakres jest prostszy
              niz w zadaniach (tam sprawdzamy termin ORAZ okres aktywnosci). -->
         <fieldset class="filtr filtr-szeroki">
-          <legend>Zakres dat</legend>
+          <legend>Date range</legend>
           <div id="presety-dat" class="presety"></div>
-          <label class="zakres">od <input type="date" id="filtr-od" /></label>
-          <label class="zakres">do <input type="date" id="filtr-do" /></label>
+          <label class="zakres">from <input type="date" id="filtr-od" /></label>
+          <label class="zakres">to <input type="date" id="filtr-do" /></label>
         </fieldset>
 
         <fieldset class="filtr filtr-szeroki">
-          <legend>Nawyk</legend>
+          <legend>Habit</legend>
           <div id="filtr-nawyki" class="checkboxy"></div>
         </fieldset>
 
@@ -77,11 +77,11 @@
           panel - ta sama decyzja co przy Obszarze i Projekcie na stronie zadan.
         -->
         <details class="filtr filtr-szeroki filtr-zwijany" id="pole-slowa">
-          <summary id="podsumowanie-slowa">Słowa — wszystkie</summary>
+          <summary id="podsumowanie-slowa">Words — all</summary>
           <div id="filtr-slowa" class="checkboxy"></div>
         </details>
 
-        <button type="button" id="przycisk-wyczysc">Wyczyść filtry</button>
+        <button type="button" id="przycisk-wyczysc">Clear filters</button>
       </div>
     </details>
 
@@ -92,8 +92,8 @@
       <p id="import-uwagi" class="import-uwagi"></p>
       <div id="import-odrzucone"></div>
       <div class="import-akcje">
-        <button type="button" id="przycisk-zatwierdz-import">Zatwierdź import</button>
-        <button type="button" id="przycisk-anuluj-import">Anuluj</button>
+        <button type="button" id="przycisk-zatwierdz-import">Confirm import</button>
+        <button type="button" id="przycisk-anuluj-import">Cancel</button>
       </div>
     </section>
 
@@ -103,30 +103,30 @@
       Domyslne sortowanie: data malejaco (najnowszy wpis u gory).
     -->
     <table id="tabela-dziennika">
-      <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
+      <thead id="naglowki" title="Click a header to sort">
         <tr>
           <th class="kol-id" data-kolumna="id">#</th>
-          <th class="kol-dzien" data-kolumna="data">Data</th>
-          <th class="kol-godzina" data-kolumna="pobudka">Pobudka</th>
-          <th class="kol-ocena" data-kolumna="godziny_snu">Sen (h)</th>
-          <th class="kol-ocena" data-kolumna="jakosc_snu">Jakość snu</th>
-          <th class="kol-ocena" data-kolumna="stres">Spokój</th>
-          <th class="kol-ocena" data-kolumna="nastroj">Nastrój</th>
-          <th class="kol-ocena" data-kolumna="intencjonalnosc">Intencjonalność</th>
-          <th class="kol-tekst" data-kolumna="trzy_slowa">Trzy słowa</th>
-          <th class="kol-tekst-szeroki" data-kolumna="nawyki">Nawyki</th>
-          <th class="kol-tekst" data-kolumna="wdziecznosc">Wdzięczność</th>
-          <th class="kol-tekst" data-kolumna="bledy">Błędy</th>
-          <th class="kol-tekst" data-kolumna="rozmowa">Rozmowa</th>
-          <th class="kol-tekst" data-kolumna="co_poszlo_dobrze">Co poszło dobrze</th>
-          <th class="kol-tekst" data-kolumna="jutro_wazne">Jutro ważne</th>
-          <th class="kol-tekst" data-kolumna="do_przemyslenia">Do przemyślenia</th>
+          <th class="kol-dzien" data-kolumna="data">Date</th>
+          <th class="kol-godzina" data-kolumna="pobudka">Wake-up</th>
+          <th class="kol-ocena" data-kolumna="godziny_snu">Sleep (h)</th>
+          <th class="kol-ocena" data-kolumna="jakosc_snu">Sleep quality</th>
+          <th class="kol-ocena" data-kolumna="stres">Calm</th>
+          <th class="kol-ocena" data-kolumna="nastroj">Mood</th>
+          <th class="kol-ocena" data-kolumna="intencjonalnosc">Intentionality</th>
+          <th class="kol-tekst" data-kolumna="trzy_slowa">Three words</th>
+          <th class="kol-tekst-szeroki" data-kolumna="nawyki">Habits</th>
+          <th class="kol-tekst" data-kolumna="wdziecznosc">Gratitude</th>
+          <th class="kol-tekst" data-kolumna="bledy">Mistakes</th>
+          <th class="kol-tekst" data-kolumna="rozmowa">Conversation</th>
+          <th class="kol-tekst" data-kolumna="co_poszlo_dobrze">What went well</th>
+          <th class="kol-tekst" data-kolumna="jutro_wazne">Important tomorrow</th>
+          <th class="kol-tekst" data-kolumna="do_przemyslenia">To think about</th>
           <!-- Licznik wypelnionych pol refleksyjnych. Tylko do odczytu - informacyjny,
                pokazuje ile z szesciu pol dzien ma opisanych. -->
-          <th class="kol-refleksje" title="Ile z sześciu pól refleksyjnych jest wypełnionych">Refleksje</th>
-          <th class="kol-tekst" data-kolumna="sniadanie">Śniadanie</th>
-          <th class="kol-tekst" data-kolumna="obiad">Obiad</th>
-          <th class="kol-tekst" data-kolumna="kolacja">Kolacja</th>
+          <th class="kol-refleksje" title="How many of the six reflective fields are filled">Reflections</th>
+          <th class="kol-tekst" data-kolumna="sniadanie">Breakfast</th>
+          <th class="kol-tekst" data-kolumna="obiad">Lunch</th>
+          <th class="kol-tekst" data-kolumna="kolacja">Dinner</th>
           <th class="kol-akcje"></th>
         </tr>
       </thead>
@@ -155,7 +155,7 @@
     <div id="panel-wyboru" class="panel-wyboru" hidden>
       <div class="panel-naglowek">
         <strong id="tytul-wyboru"></strong>
-        <button type="button" id="zamknij-wybor" class="usun" title="Zamknij">×</button>
+        <button type="button" id="zamknij-wybor" class="usun" title="Close">×</button>
       </div>
       <div id="lista-wyboru" class="lista-wyboru"></div>
       <div class="panel-stopka">

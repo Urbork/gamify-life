@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Zadania</title>
+    <title>Tasks</title>
     <link rel="stylesheet" href="/css/style.css" />
     <!--
       Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
@@ -14,7 +14,7 @@
   </head>
   <body>
     <header class="pasek">
-      <h1>Zadania</h1>
+      <h1>Tasks</h1>
       <!--
         Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
         komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
@@ -26,17 +26,17 @@
         Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
         ktorej miedzy tymi stronami nie ma.
       -->
-      <nav class="nawigacja" aria-label="Sekcje aplikacji">
-        <a href="/index.html" aria-current="page">📋 Zadania</a>
-        <a href="/dziennik.html">📓 Dziennik</a>
-        <a href="/statystyki.html">📊 Statystyki</a>
-        <a href="/projekty.html">📁 Projekty</a>
-        <a href="/postac.html">🎮 Postać</a>
+      <nav class="nawigacja" aria-label="App sections">
+        <a href="/index.html" aria-current="page">📋 Tasks</a>
+        <a href="/dziennik.html">📓 Journal</a>
+        <a href="/statystyki.html">📊 Stats</a>
+        <a href="/projekty.html">📁 Projects</a>
+        <a href="/postac.html">🎮 Character</a>
       </nav>
       <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
       <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
-      <button id="przycisk-dodaj" type="button">+ Dodaj zadanie</button>
-      <button id="przycisk-eksport" type="button">Eksportuj do CSV</button>
+      <button id="przycisk-dodaj" type="button">+ Add task</button>
+      <button id="przycisk-eksport" type="button">Export to CSV</button>
       <!--
         Wybor profilu importu. Wartosci odpowiadaja kluczom rejestru PROFILE
         w routes/import.js - endpoint /api/import/:profil przyjmuje je wprost,
@@ -46,23 +46,23 @@
         data-profil na przycisku. Oba sposoby obsluguje public/js/csv-import.js.
       -->
       <label class="wybor-profilu">
-        Źródło:
-        <select id="profil-importu" title="Skąd pochodzi plik, który chcesz wczytać">
+        Source:
+        <select id="profil-importu" title="Where the file you want to load comes from">
           <option
             value="zadania"
-            title="Plik z przycisku „Eksportuj do CSV” na tej stronie. Nagłówki: Nazwa zadania, Stan, Obszar, Termin…"
+            title="A file from the „Export to CSV” button on this page. Headers: Nazwa zadania, Stan, Obszar, Termin…"
           >
-            Zadania — eksport z tej aplikacji
+            Tasks — export from this app
           </option>
           <option
             value="notion-quest-log"
-            title="Eksport bazy „Success Plan” z Notion. Wczytuje projekty i zadania z jednego pliku i wiąże je po kolumnie Upstream."
+            title="Notion „Success Plan” export. Loads projects and tasks from one file and links them by the Upstream column."
           >
-            Notion Success Plan — projekty + zadania
+            Notion Success Plan — projects + tasks
           </option>
         </select>
       </label>
-      <button id="przycisk-import" type="button" data-profil="zadania">Importuj z CSV</button>
+      <button id="przycisk-import" type="button" data-profil="zadania">Import from CSV</button>
       <!--
         Ukryty input pliku: przycisk wyzej wywoluje go programowo, zeby oba
         przyciski wygladaly tak samo. accept to tylko podpowiedz dla okna wyboru
@@ -81,22 +81,22 @@
     -->
     <details id="panel-filtrow" class="filtry">
       <summary>
-        Filtry<span id="znacznik-filtrow" class="znacznik"></span>
+        Filters<span id="znacznik-filtrow" class="znacznik"></span>
       </summary>
 
       <div class="filtry-tresc">
         <label class="filtr">
-          <span class="filtr-tytul">Nazwa zawiera</span>
-          <input type="search" id="filtr-nazwa" placeholder="np. raport" />
+          <span class="filtr-tytul">Name contains</span>
+          <input type="search" id="filtr-nazwa" placeholder="e.g. report" />
         </label>
 
         <fieldset class="filtr">
-          <legend>Stan</legend>
+          <legend>Status</legend>
           <div id="filtr-stany" class="checkboxy"></div>
         </fieldset>
 
         <fieldset class="filtr">
-          <legend>Priorytet</legend>
+          <legend>Priority</legend>
           <div id="filtr-priorytety" class="checkboxy"></div>
         </fieldset>
 
@@ -118,19 +118,19 @@
           dlaczego wierszy jest mniej.
         -->
         <details class="filtr filtr-szeroki filtr-zwijany" id="pole-obszary">
-          <summary id="podsumowanie-obszary">Obszar — wszystkie</summary>
+          <summary id="podsumowanie-obszary">Area — all</summary>
           <div class="tryb-filtra" id="tryb-obszary">
-            <label><input type="radio" name="tryb-obszary" value="uwzglednij" checked /> uwzględnij</label>
-            <label><input type="radio" name="tryb-obszary" value="wyklucz" /> wyklucz</label>
+            <label><input type="radio" name="tryb-obszary" value="uwzglednij" checked /> include</label>
+            <label><input type="radio" name="tryb-obszary" value="wyklucz" /> exclude</label>
           </div>
           <div id="filtr-obszary" class="checkboxy"></div>
         </details>
 
         <details class="filtr filtr-szeroki filtr-zwijany" id="pole-projekty">
-          <summary id="podsumowanie-projekty">Projekt — wszystkie</summary>
+          <summary id="podsumowanie-projekty">Project — all</summary>
           <div class="tryb-filtra" id="tryb-projekty">
-            <label><input type="radio" name="tryb-projekty" value="uwzglednij" checked /> uwzględnij</label>
-            <label><input type="radio" name="tryb-projekty" value="wyklucz" /> wyklucz</label>
+            <label><input type="radio" name="tryb-projekty" value="uwzglednij" checked /> include</label>
+            <label><input type="radio" name="tryb-projekty" value="wyklucz" /> exclude</label>
           </div>
           <div id="filtr-projekty" class="checkboxy"></div>
         </details>
@@ -142,12 +142,12 @@
           zadania BEZ terminu. Patrz pasujeTerminDo w public/js/reguly-zadan.js.
         -->
         <fieldset class="filtr">
-          <legend>Termin najpóźniej</legend>
+          <legend>Due no later than</legend>
           <label class="zakres">
-            do <input type="date" id="filtr-termin-do" />
+            to <input type="date" id="filtr-termin-do" />
           </label>
           <p class="filtr-podpowiedz">
-            Zadania po terminie i bez terminu zostają widoczne.
+            Overdue tasks and tasks without a due date stay visible.
           </p>
         </fieldset>
 
@@ -159,13 +159,13 @@
           zawsze widac, jaki zakres jest naprawde uzyty, i mozna go recznie poprawic.
         -->
         <fieldset class="filtr filtr-szeroki">
-          <legend>Zakres dat</legend>
+          <legend>Date range</legend>
           <div id="presety-dat" class="presety"></div>
-          <label class="zakres">od <input type="date" id="filtr-od" /></label>
-          <label class="zakres">do <input type="date" id="filtr-do" /></label>
+          <label class="zakres">from <input type="date" id="filtr-od" /></label>
+          <label class="zakres">to <input type="date" id="filtr-do" /></label>
         </fieldset>
 
-        <button type="button" id="przycisk-wyczysc">Wyczyść filtry</button>
+        <button type="button" id="przycisk-wyczysc">Clear filters</button>
       </div>
     </details>
 
@@ -187,45 +187,45 @@
       <p id="import-uwagi" class="import-uwagi"></p>
       <div id="import-odrzucone"></div>
       <div class="import-akcje">
-        <button type="button" id="przycisk-zatwierdz-import">Zatwierdź import</button>
-        <button type="button" id="przycisk-anuluj-import">Anuluj</button>
+        <button type="button" id="przycisk-zatwierdz-import">Confirm import</button>
+        <button type="button" id="przycisk-anuluj-import">Cancel</button>
       </div>
     </section>
 
     <table id="tabela-zadan">
-      <thead id="naglowki" title="Kliknij nagłówek, aby posortować">
+      <thead id="naglowki" title="Click a header to sort">
         <tr>
           <th class="kol-id" data-kolumna="id">#</th>
-          <th class="kol-stan" data-kolumna="stan">Stan</th>
-          <th class="kol-nazwa" data-kolumna="nazwa">Nazwa</th>
-          <th class="kol-priorytet" data-kolumna="priorytet">Priorytet</th>
+          <th class="kol-stan" data-kolumna="stan">Status</th>
+          <th class="kol-nazwa" data-kolumna="nazwa">Name</th>
+          <th class="kol-priorytet" data-kolumna="priorytet">Priority</th>
           <!-- Trudnosc jest NIEZALEZNA od priorytetu: priorytet = pilnosc (zarzadzanie),
                trudnosc = waga zadania przy naliczaniu XP. -->
-          <th class="kol-trudnosc" data-kolumna="trudnosc" title="Waga zadania przy naliczaniu XP">
-            Trudność
+          <th class="kol-trudnosc" data-kolumna="trudnosc" title="Task weight when XP is calculated">
+            Difficulty
           </th>
           <th
             class="kol-godziny"
             data-kolumna="czas_trwania_godziny"
-            title="Ile godzin faktycznie zajęło — wpisywane ręcznie, liczy się do XP"
+            title="How many hours it actually took — entered by hand, counts towards XP"
           >
-            Czas (h)
+            Time (h)
           </th>
-          <th class="kol-obszar" data-kolumna="obszar">Obszar</th>
-          <th class="kol-projekt" data-kolumna="projekt_id" title="Projekt nadrzędny — kontener, nie daje XP">Projekt</th>
+          <th class="kol-obszar" data-kolumna="obszar">Area</th>
+          <th class="kol-projekt" data-kolumna="projekt_id" title="Parent project — a container, gives no XP">Project</th>
           <th class="kol-data" data-kolumna="start_zadania">Start</th>
-          <th class="kol-data" data-kolumna="termin">Termin</th>
-          <th class="kol-liczba" data-kolumna="dni_do_terminu" title="Wyliczane: termin minus dzisiaj">
-            Dni do terminu
+          <th class="kol-data" data-kolumna="termin">Due</th>
+          <th class="kol-liczba" data-kolumna="dni_do_terminu" title="Computed: due date minus today">
+            Days to due
           </th>
-          <th class="kol-data" data-kolumna="czas_zakonczenia">Zakończenie</th>
+          <th class="kol-data" data-kolumna="czas_zakonczenia">Completed</th>
           <!--
             XP liczy SERWER (lib/nagrody.js) i przysyła gotowe z /api/zadania -
             przegladarka niczego tu nie przelicza, zeby silnik nie mial dwoch
             implementacji. Kolumna jest tylko do odczytu, wiec nie ma data-kolumna
             do sortowania po stronie bazy - sortowanie obsluguje reguly-zadan.js.
           -->
-          <th class="kol-liczba" data-kolumna="xp" title="Ile XP daje to zadanie: godziny × przelicznik trudności, z mnożnikiem za termin">
+          <th class="kol-liczba" data-kolumna="xp" title="How much XP this task gives: hours × difficulty multiplier, times the timeliness multiplier">
             XP
           </th>
           <th class="kol-akcje"></th>

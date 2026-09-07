@@ -442,10 +442,10 @@
     */
     przelacznik.disabled = wartosc === '';
     przelacznik.title = przelacznik.disabled
-      ? 'Najpierw wpisz datę'
+      ? 'Enter a date first'
       : zGodzina
-        ? 'Usuń godzinę (całodzienne)'
-        : 'Dodaj godzinę';
+        ? 'Remove the time (all-day)'
+        : 'Add a time';
   }
 
 
@@ -484,14 +484,14 @@
     duplikuj.type = 'button';
     duplikuj.className = 'duplikuj';
     duplikuj.textContent = '⧉'; // dwa nalozone prostokaty
-    duplikuj.title = 'Duplikuj zadanie (kopia dostaje stan "Plan", bez daty zakończenia)';
+    duplikuj.title = 'Duplicate task (the copy gets status "Plan", no completion date)';
     duplikuj.addEventListener('click', () => duplikujZadanie(z.id));
 
     const usun = document.createElement('button');
     usun.type = 'button';
     usun.className = 'usun';
     usun.textContent = '×'; // znak "razy"
-    usun.title = 'Usuń zadanie';
+    usun.title = 'Delete task';
     usun.addEventListener('click', () => usunZadanie(z.id));
 
     td.append(duplikuj, usun);
@@ -517,8 +517,21 @@
   const zPlakietka = (emoji, tekst) => (emoji ? emoji + ' ' + tekst : tekst);
 
   /** Opcje z listy tekstow (stan, obszar) + emoji ze slownika plakietek. */
-  const jakoOpcje = (teksty, plakietki) =>
-    teksty.map((t) => ({ wartosc: t, etykieta: zPlakietka(plakietki && plakietki[t], t) }));
+  /*
+    Opcje listy wyboru z SUROWEJ wartosci.
+
+    Wartosc zostaje ta z bazy (stan bywa polski: "Zrobione"), a widac etykiete
+    z mapy `slowniki.etykiety` - dokladnie ta sama zasada, ktora sprawia, ze kolumna
+    nazywa sie `stres`, a pole "Calm". Bez tego anglicyzacja interfejsu wymagalaby
+    migracji 527 rekordow i uniewaznila 41 kopii zapasowych.
+  */
+  const etykietaWartosci = (mapa, wartosc) => (mapa && mapa[wartosc]) || wartosc;
+
+  const jakoOpcje = (teksty, plakietki, mapaEtykiet) =>
+    teksty.map((t) => ({
+      wartosc: t,
+      etykieta: zPlakietka(plakietki && plakietki[t], etykietaWartosci(mapaEtykiet, t)),
+    }));
 
   /** Opcje priorytetu: numer zostaje wartoscia, etykieta dostaje emoji. */
   const opcjePriorytetow = () =>
@@ -546,14 +559,14 @@
     // Wiersz pokazany MIMO filtrow - patrz wymuszoneId.
     if (wymuszoneId.has(z.id) && !pasujeWidokowi(z)) {
       tr.classList.add('poza-filtrami');
-      tr.title = 'To zadanie nie pasuje do aktywnych filtrów — zniknie po odświeżeniu listy.';
+      tr.title = 'This task does not match the active filters — it will disappear after a refresh.';
     }
 
     // KOLEJNOSC KOLUMN musi sie zgadzac z naglowkami w public/index.html
     // oraz z KOLUMNY_CSV nizej.
     tr.append(
       komorkaId(z),
-      komorkaSelect(z, 'stan', 'kol-stan', jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY), false),
+      komorkaSelect(z, 'stan', 'kol-stan', jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY, slowniki.etykiety && slowniki.etykiety.stany), false),
       komorkaTekst(z, 'nazwa', 'kol-nazwa'),
       komorkaSelect(z, 'priorytet', 'kol-priorytet', opcjePriorytetow(), false),
       komorkaSelect(
@@ -564,7 +577,7 @@
         true // trudnosc jest opcjonalna - wolno ja zostawic pusta
       ),
       komorkaGodzin(z),
-      komorkaSelect(z, 'obszar', 'kol-obszar', jakoOpcje(slowniki.obszary, slowniki.plakietkiZadan.OBSZARY), true),
+      komorkaSelect(z, 'obszar', 'kol-obszar', jakoOpcje(slowniki.obszary, slowniki.plakietkiZadan.OBSZARY, slowniki.etykiety && slowniki.etykiety.obszary), true),
       komorkaSelect(z, 'projekt_id', 'kol-projekt', opcjeProjektow(), true),
       komorkaZnacznikCzasu(z, 'start_zadania'),
       komorkaZnacznikCzasu(z, 'termin'),
@@ -639,7 +652,7 @@
     if (elDoladowanie.hidden) return;
 
     const porcja = Math.min(PORCJA_WIDOKU, pozostalo);
-    elDoladuj.textContent = `Załaduj kolejne ${porcja} (widoczne ${limitWidoku} z ${ilePasuje})`;
+    elDoladuj.textContent = `Load ${porcja} more (showing ${limitWidoku} of ${ilePasuje})`;
   }
 
   function doladuj() {
@@ -704,8 +717,8 @@
     const zamrozone = regulyZadan.dniDoTerminuZamrozone(z);
     tdTermin.classList.toggle('wyliczone-zamrozone', zamrozone);
     if (zamrozone) {
-      const opis = doTerminu >= 0 ? `${doTerminu} dni przed terminem` : `${-doTerminu} dni po terminie`;
-      tdTermin.title = `Zamrożone w chwili ukończenia: ${opis}`;
+      const opis = doTerminu >= 0 ? `${doTerminu} days before the due date` : `${-doTerminu} days after the due date`;
+      tdTermin.title = `Frozen at completion: ${opis}`;
     } else {
       tdTermin.removeAttribute('title');
     }
@@ -742,9 +755,9 @@
     if (wartosc === null || wartosc === undefined) {
       td.removeAttribute('title');
     } else if (zrobione) {
-      td.title = `Przyznane: ${wartosc} XP`;
+      td.title = `Awarded: ${wartosc} XP`;
     } else {
-      td.title = `Szacunek: ${wartosc} XP po ukończeniu. Termin może to zmienić (×1,5 przed czasem, ×0,5 po terminie).`;
+      td.title = `Estimate: ${wartosc} XP once completed. The due date can change it (×1.5 early, ×0.5 late).`;
     }
   }
 
@@ -766,7 +779,7 @@
       if (!td) continue;
 
       td.classList.toggle('brak-danych-xp', pokaz);
-      if (pokaz) td.title = 'Uzupełnij trudność i czas, by policzyć XP za to zadanie.';
+      if (pokaz) td.title = 'Fill in difficulty and time to count XP for this task.';
       else td.removeAttribute('title');
     }
   }
@@ -854,7 +867,7 @@
         odswiezPodsumowanie();
       }
 
-      pokazStatus('zapisano', 'ok');
+      pokazStatus('saved', 'ok');
       /*
         Potwierdzenie NA WIERSZU. Komunikat wyzej ladbuje w pasku na gorze strony,
         a wzrok jest w tym momencie na edytowanej komorce - przy 12 kolumnach
@@ -907,7 +920,7 @@
       // nadaje serwer - patrz routes/zadania.js.
       const nowe = await api.post('/api/zadania');
       const pasuje = pokazNowyWiersz(nowe);
-      pokazStatus(pasuje ? 'dodano zadanie' : 'dodano zadanie — nie pasuje do filtrów, ale jest widoczne', 'ok');
+      pokazStatus(pasuje ? 'dodano zadanie' : 'task added — does not match the filters, but stays visible', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -925,7 +938,7 @@
       // Komunikat o sukcesie tylko wtedy, gdy kopie widac - inaczej nadpisalby
       // ostrzezenie o tym, ze ukrywaja ja filtry.
       const pasuje = pokazNowyWiersz(kopia);
-      pokazStatus(pasuje ? 'utworzono kopię' : 'utworzono kopię — nie pasuje do filtrów, ale jest widoczna', 'ok');
+      pokazStatus(pasuje ? 'copy created' : 'copy created — does not match the filters, but stays visible', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -934,13 +947,13 @@
   async function usunZadanie(id) {
     const z = zadania.get(id);
     const etykieta = z && z.nazwa ? `„${z.nazwa}”` : `bez nazwy (#${id})`;
-    if (!confirm(`Usunąć zadanie ${etykieta}? Tej operacji nie da się cofnąć.`)) return;
+    if (!confirm(`Delete task ${etykieta}? This cannot be undone.`)) return;
 
     try {
       await api.usun(`/api/zadania/${id}`);
       zadania.delete(id);
       renderuj();
-      pokazStatus('usunięto', 'ok');
+      pokazStatus('deleted', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -997,7 +1010,7 @@
     const wszystkie = posortowane();
 
     if (wszystkie.length === 0) {
-      pokazStatus('Nie ma czego eksportować.', 'blad');
+      pokazStatus('Nothing to export.', 'blad');
       return;
     }
 
@@ -1045,7 +1058,7 @@
   function odswiezPodsumowanie() {
     const wszystkie = [...zadania.values()];
     if (wszystkie.length === 0) {
-      elPodsumowanie.textContent = 'Brak zadań.';
+      elPodsumowanie.textContent = 'No tasks.';
       return;
     }
 
@@ -1060,7 +1073,7 @@
       .join(', ');
 
     elPodsumowanie.textContent =
-      `Filtry przepuszczają ${widoczne.length} z ${wszystkie.length} zadań` +
+      `Filters pass ${widoczne.length} of ${wszystkie.length} tasks` +
       (licznik ? ` (${licznik})` : '');
   }
 
@@ -1200,13 +1213,21 @@
 
   /** Buduje zawartosc panelu filtrow ze slownikow. Wolane raz, po ich pobraniu. */
   function zbudujPanelFiltrow() {
-    zbudujCheckboxy(elFiltrStany, jakoOpcje(slowniki.stany), filtry.stany);
+    zbudujCheckboxy(
+      elFiltrStany,
+      jakoOpcje(slowniki.stany, null, slowniki.etykiety && slowniki.etykiety.stany),
+      filtry.stany
+    );
     zbudujCheckboxy(
       elFiltrPriorytety,
       slowniki.priorytety.map((p) => ({ wartosc: p.numer, etykieta: p.etykieta })),
       filtry.priorytety
     );
-    zbudujCheckboxy(elFiltrObszary, jakoOpcje(slowniki.obszary), filtry.obszary);
+    zbudujCheckboxy(
+      elFiltrObszary,
+      jakoOpcje(slowniki.obszary, null, slowniki.etykiety && slowniki.etykiety.obszary),
+      filtry.obszary
+    );
     zbudujCheckboxy(
       elFiltrProjekty,
       projekty.map((p) => ({ wartosc: p.id, etykieta: p.nazwa })),
@@ -1261,7 +1282,7 @@
       */
       zastosujFiltry();
     } catch (e) {
-      pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
+      pokazStatus('Could not load data: ' + e.message, 'blad');
     }
   }
 
@@ -1279,7 +1300,7 @@
       for (const z of lista) zadania.set(z.id, z);
       renderuj();
     } catch (e) {
-      pokazStatus('Nie udało się odświeżyć listy: ' + e.message, 'blad');
+      pokazStatus('Could not refresh the list: ' + e.message, 'blad');
     }
   }
 
@@ -1302,7 +1323,7 @@
       );
       renderuj();
     } catch (e) {
-      pokazStatus('Nie udało się odświeżyć projektów: ' + e.message, 'blad');
+      pokazStatus('Could not refresh projects: ' + e.message, 'blad');
     }
   }
 
@@ -1316,11 +1337,11 @@
   function blysnijZapisem(id) {
     const tr = elWiersze.querySelector(`tr[data-id="${id}"]`);
     if (!tr) return; // wiersz wypadl z widoku przez filtry - nie ma czego podswietlac
-    tr.classList.remove('zapisano');
+    tr.classList.remove('saved');
     // Wymuszenie przeliczenia stylu, inaczej przegladarka nie zauwazy ponownego dodania klasy.
     void tr.offsetWidth;
-    tr.classList.add('zapisano');
-    setTimeout(() => tr.classList.remove('zapisano'), CZAS_BLYSKU_MS);
+    tr.classList.add('saved');
+    setTimeout(() => tr.classList.remove('saved'), CZAS_BLYSKU_MS);
   }
 
   /*
@@ -1389,7 +1410,11 @@
   /** Powrot do widoku domyslnego z poziomu skrotu: stan + odswiezenie panelu. */
   function przywrocWidokDomyslny() {
     ustawWidokDomyslny();
-    zbudujCheckboxy(elFiltrStany, jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY), filtry.stany);
+    zbudujCheckboxy(
+      elFiltrStany,
+      jakoOpcje(slowniki.stany, slowniki.plakietkiZadan.STANY, slowniki.etykiety && slowniki.etykiety.stany),
+      filtry.stany
+    );
     zastosujFiltry();
   }
 

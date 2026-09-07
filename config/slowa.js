@@ -23,11 +23,11 @@
   korelacje zmieniaja sie z danymi, a znaczenie slowa nie.
 */
 const KATEGORIE = [
-  { id: 'dobre', etykieta: 'Dobre', opis: 'Radość, bliskość, odpoczynek' },
-  { id: 'produktywnosc', etykieta: 'Produktywność', opis: 'Tworzenie, nauka, porządek' },
-  { id: 'trudne', etykieta: 'Trudne', opis: 'Stres, przeszkody, gorsze samopoczucie' },
-  { id: 'zmeczenie', etykieta: 'Zmęczenie', opis: 'Niska energia, dzień bez ciągu' },
-  { id: 'neutralne', etykieta: 'Neutralne', opis: 'Bez wyraźnego zabarwienia' },
+  { id: 'dobre', etykieta: 'Good', opis: 'Joy, closeness, rest' },
+  { id: 'produktywnosc', etykieta: 'Productivity', opis: 'Creating, learning, order' },
+  { id: 'trudne', etykieta: 'Hard', opis: 'Stress, obstacles, feeling worse' },
+  { id: 'zmeczenie', etykieta: 'Fatigue', opis: 'Low energy, a day without momentum' },
+  { id: 'neutralne', etykieta: 'Neutral', opis: 'No clear colouring' },
 ];
 
 const KATEGORIA_DOMYSLNA = 'neutralne';

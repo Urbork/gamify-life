@@ -29,11 +29,11 @@ const STAN_ZAKONCZONY = 'Zrobione';
   nie wymaga ruszania danych. Etykieta to warstwa prezentacji.
 */
 const PRIORYTETY = [
-  { numer: 0, etykieta: 'Brak' },
-  { numer: 1, etykieta: 'Niski' },
-  { numer: 2, etykieta: 'Średni' },
-  { numer: 3, etykieta: 'Wysoki' },
-  { numer: 4, etykieta: 'Pilne' },
+  { numer: 0, etykieta: 'None' },
+  { numer: 1, etykieta: 'Low' },
+  { numer: 2, etykieta: 'Medium' },
+  { numer: 3, etykieta: 'High' },
+  { numer: 4, etykieta: 'Urgent' },
 ];
 
 // Priorytet nadawany nowo utworzonemu zadaniu.
@@ -52,6 +52,34 @@ const PRIORYTET_DOMYSLNY = 2;
   to lista podpowiedzi. Wartosc spoza niej nadal sie zapisze i pokaze
   z dopiskiem "(spoza listy)", wiec stare rekordy z nazwami klientow nie znikaja.
 */
+/*
+  ETYKIETY WYSWIETLANE dla wartosci, ktore siedza w bazie po polsku.
+
+  Interfejs jest po angielsku, ale `zadania.stan` trzyma wartosci polskie w 527
+  rekordach, a `obszar` w jednym przypadku ("Inne"). Zamiast migrowac dane,
+  mapujemy je na etykiety - dokladnie tak, jak kolumna `stres` nazywa sie w bazie
+  po staremu, a w interfejsie jest "Spokoj".
+
+  DLACZEGO NIE MIGRACJA
+  Wartosc stanu jest tez naglowkiem i trescia eksportu CSV, ktory musi dac sie
+  wczytac z powrotem. Zmiana wartosci uniewazniloby 41 istniejacych kopii
+  zapasowych - to ta sama awaria, ktora naprawialismy przy kopiach.
+
+  Brak wpisu = wartosc pokazuje sie taka, jaka jest. Obszary sa juz po angielsku,
+  wiec mapowanie ma dokladnie jedna pozycje.
+*/
+const ETYKIETY_STANOW = {
+  Plan: 'Planned',
+  Czeka: 'Waiting',
+  'W trakcie': 'In progress',
+  Zrobione: 'Done',
+  Blok: 'Blocked',
+};
+
+const ETYKIETY_OBSZAROW = {
+  Inne: 'Other',
+};
+
 const OBSZARY = [
   'Mindset',
   'Career',
@@ -98,4 +126,6 @@ module.exports = {
   etykietaPriorytetu,
   OBSZARY,
   OBSZAR_ZAPASOWY,
+  ETYKIETY_STANOW,
+  ETYKIETY_OBSZAROW,
 };

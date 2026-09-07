@@ -284,15 +284,7 @@ const regulyStatystyk = (() => {
   // Rytm tygodnia
   // ==========================================================================
 
-  const NAZWY_DNI = [
-    'niedziela',
-    'poniedziałek',
-    'wtorek',
-    'środa',
-    'czwartek',
-    'piątek',
-    'sobota',
-  ];
+  const NAZWY_DNI = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   /** Godzina 'HH:MM' -> minuty od polnocy. Puste i niepoprawne dają null. */
   function minutyOdPolnocy(godzina) {
@@ -333,7 +325,7 @@ const regulyStatystyk = (() => {
       grupy[(((n % 7) + 4) % 7 + 7) % 7].wpisy.push(w);
     }
 
-    const kolejnosc = [1, 2, 3, 4, 5, 6, 0]; // poniedzialek ... niedziela
+    const kolejnosc = [1, 2, 3, 4, 5, 6, 0]; // poniedzialek ... niedziela (tydzien od poniedzialku)
 
     return kolejnosc.map((i) => {
       const g = grupy[i];

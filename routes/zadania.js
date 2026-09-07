@@ -80,7 +80,7 @@ function znormalizuj(pole, wartosc) {
     if (!Number.isInteger(numer) || !DOZWOLONE_PRIORYTETY.includes(numer)) {
       throw blad(
         400,
-        `Niepoprawny priorytet "${wartosc}". Dozwolone: ${DOZWOLONE_PRIORYTETY.join(', ')}.`
+        `Invalid priority "${wartosc}". Allowed: ${DOZWOLONE_PRIORYTETY.join(', ')}.`
       );
     }
     return numer;
@@ -100,14 +100,14 @@ function znormalizuj(pole, wartosc) {
 
     if (pole === 'trudnosc') {
       if (!Number.isInteger(liczba) || liczba < 1 || liczba > 3) {
-        throw blad(400, `Trudność musi być liczbą całkowitą 1-3, otrzymano "${wartosc}".`);
+        throw blad(400, `Difficulty must be an integer 1-3, got "${wartosc}".`);
       }
       return liczba;
     }
 
     // Czas trwania jest REAL - dopuszczamy ulamki godzin (0.5h itd.).
     if (!Number.isFinite(liczba) || liczba < 0) {
-      throw blad(400, `Czas trwania musi być liczbą nieujemną, otrzymano "${wartosc}".`);
+      throw blad(400, `Duration must be a non-negative number, got "${wartosc}".`);
     }
     return liczba;
   }
@@ -125,7 +125,7 @@ function znormalizuj(pole, wartosc) {
     const numer = typPoprawny ? Number(wartosc) : NaN;
 
     if (!Number.isInteger(numer) || numer <= 0) {
-      throw blad(400, `Niepoprawne id projektu "${wartosc}".`);
+      throw blad(400, `Invalid project id "${wartosc}".`);
     }
     return numer;
   }
@@ -133,12 +133,12 @@ function znormalizuj(pole, wartosc) {
   // Puste pole = brak wartosci = NULL w bazie (dotyczy dat i obszaru).
   if (wartosc === null || wartosc === undefined || wartosc === '') {
     if (pole === 'nazwa') return '';
-    if (pole === 'stan') throw blad(400, 'Pole "stan" nie moze byc puste.');
+    if (pole === 'stan') throw blad(400, 'Field "stan" cannot be empty.');
     return null;
   }
 
   if (typeof wartosc !== 'string') {
-    throw blad(400, `Pole "${pole}" musi byc tekstem.`);
+    throw blad(400, `Field "${pole}" must be text.`);
   }
 
   const tekst = wartosc.trim();
@@ -149,7 +149,7 @@ function znormalizuj(pole, wartosc) {
     if (!znacznik) {
       throw blad(
         400,
-        `Pole "${pole}": oczekiwano znacznika czasu YYYY-MM-DDTHH:MM, otrzymano "${tekst}".`
+        `Field "${pole}": expected a YYYY-MM-DDTHH:MM timestamp, got "${tekst}".`
       );
     }
     return znacznik;
@@ -157,7 +157,7 @@ function znormalizuj(pole, wartosc) {
 
   // `stan` walidujemy twardo - to zamknieta lista, od ktorej zaleza przyszle statystyki.
   if (pole === 'stan' && !STANY.includes(tekst)) {
-    throw blad(400, `Nieznany stan "${tekst}". Dozwolone: ${STANY.join(', ')}.`);
+    throw blad(400, `Unknown status "${tekst}". Allowed: ${STANY.join(', ')}.`);
   }
 
   // `obszar` NIE jest walidowany wobec listy - to lista podpowiedzi,
@@ -169,7 +169,7 @@ function znormalizuj(pole, wartosc) {
 /** Zamienia :id z URL-a na liczbe albo rzuca bledem 400. */
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id zadania.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid task id.');
   return id;
 }
 
@@ -295,7 +295,7 @@ router.post('/', (req, res) => {
 router.post('/:id/duplikuj', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (!pobierzJedno.get(id)) throw blad(404, `There is no task with id ${id}.`);
 
   const wynik = wstawDuplikat.run(id);
   res.status(201).json(zXp(pobierzJedno.get(wynik.lastInsertRowid)));
@@ -304,7 +304,7 @@ router.post('/:id/duplikuj', (req, res) => {
 router.patch('/:id', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJedno.get(id)) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (!pobierzJedno.get(id)) throw blad(404, `There is no task with id ${id}.`);
 
   // Bierzemy z body tylko pola z whitelisty i normalizujemy ich wartosci.
   const doZapisu = {};
@@ -315,7 +315,7 @@ router.patch('/:id', (req, res) => {
   }
 
   const pola = Object.keys(doZapisu);
-  if (pola.length === 0) throw blad(400, 'Brak pol do aktualizacji.');
+  if (pola.length === 0) throw blad(400, 'No fields to update.');
 
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
@@ -327,7 +327,7 @@ router.patch('/:id', (req, res) => {
     // Klucz obcy odrzuca przypisanie do nieistniejacego projektu - zamieniamy
     // surowy blad SQLite na czytelny komunikat dla interfejsu.
     if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-      throw blad(400, `Nie ma projektu o id ${doZapisu.projekt_id}.`);
+      throw blad(400, `There is no project with id ${doZapisu.projekt_id}.`);
     }
     throw e;
   }
@@ -338,7 +338,7 @@ router.patch('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const id = idZParametru(req);
   const wynik = usun.run(id);
-  if (wynik.changes === 0) throw blad(404, `Nie ma zadania o id ${id}.`);
+  if (wynik.changes === 0) throw blad(404, `There is no task with id ${id}.`);
   res.status(204).end();
 });
 

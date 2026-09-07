@@ -113,26 +113,26 @@ function znormalizuj(pole, wartosc) {
 
   // Puste pole = brak wartosci = NULL w bazie.
   if (wartosc === null || wartosc === undefined || wartosc === '') {
-    if (pole === 'data') throw blad(400, 'Pole "data" nie może być puste.');
+    if (pole === 'data') throw blad(400, 'Field "data" cannot be empty.');
     return null;
   }
 
   if (typeof wartosc !== 'string') {
-    throw blad(400, `Pole "${pole}" musi być tekstem.`);
+    throw blad(400, `Field "${pole}" must be text.`);
   }
 
   const tekst = wartosc.trim();
   if (tekst === '') {
-    if (pole === 'data') throw blad(400, 'Pole "data" nie może być puste.');
+    if (pole === 'data') throw blad(400, 'Field "data" cannot be empty.');
     return null;
   }
 
   if (pole === 'data' && !poprawnaData(tekst)) {
-    throw blad(400, `Pole "data": oczekiwano daty w formacie YYYY-MM-DD, otrzymano "${tekst}".`);
+    throw blad(400, `Field "data": expected a YYYY-MM-DD date, got "${tekst}".`);
   }
 
   if (pole === 'pobudka' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(tekst)) {
-    throw blad(400, `Pole "pobudka": oczekiwano godziny w formacie HH:MM, otrzymano "${tekst}".`);
+    throw blad(400, `Field "pobudka": expected an HH:MM time, got "${tekst}".`);
   }
 
   return tekst;
@@ -141,7 +141,7 @@ function znormalizuj(pole, wartosc) {
 /** Zamienia :id z URL-a na liczbe albo rzuca bledem 400. */
 function idZParametru(req) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Niepoprawne id wpisu.');
+  if (!Number.isInteger(id) || id <= 0) throw blad(400, 'Invalid entry id.');
   return id;
 }
 
@@ -181,7 +181,7 @@ router.post('/', (req, res) => {
 router.patch('/:id', (req, res) => {
   const id = idZParametru(req);
 
-  if (!pobierzJeden.get(id)) throw blad(404, `Nie ma wpisu o id ${id}.`);
+  if (!pobierzJeden.get(id)) throw blad(404, `There is no entry with id ${id}.`);
 
   // Bierzemy z body tylko pola z whitelisty i normalizujemy ich wartosci.
   const doZapisu = {};
@@ -192,7 +192,7 @@ router.patch('/:id', (req, res) => {
   }
 
   const pola = Object.keys(doZapisu);
-  if (pola.length === 0) throw blad(400, 'Brak pól do aktualizacji.');
+  if (pola.length === 0) throw blad(400, 'No fields to update.');
 
   // Nazwy kolumn pochodza z whitelisty, wiec sklejenie ich w SQL jest bezpieczne.
   // Wartosci ida wylacznie przez parametry (@pole), nigdy przez konkatenacje.
@@ -205,7 +205,7 @@ router.patch('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const id = idZParametru(req);
   const wynik = usun.run(id);
-  if (wynik.changes === 0) throw blad(404, `Nie ma wpisu o id ${id}.`);
+  if (wynik.changes === 0) throw blad(404, `There is no entry with id ${id}.`);
   res.status(204).end();
 });
 

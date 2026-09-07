@@ -17,10 +17,10 @@
 
   // Etykiety kolumn ocen - klucz z bazy nie nadaje sie na naglowek.
   const ETYKIETY_OCEN = {
-    jakosc_snu: 'Jakość snu',
-    stres: 'Spokój',
-    nastroj: 'Nastrój',
-    intencjonalnosc: 'Intencjonalność',
+    jakosc_snu: 'Sleep quality',
+    stres: 'Calm',
+    nastroj: 'Mood',
+    intencjonalnosc: 'Intentionality',
   };
 
   // ==========================================================================
@@ -30,7 +30,8 @@
   /** Liczba z jednym miejscem po przecinku albo kreska, gdy brak danych. */
   function liczba(wartosc, miejsc = 1) {
     if (wartosc === null || wartosc === undefined || Number.isNaN(wartosc)) return '—';
-    return wartosc.toLocaleString('pl', {
+    // Za jezykiem interfejsu: separator dziesietny to kropka, tysiecy - przecinek.
+    return wartosc.toLocaleString('en-GB', {
       minimumFractionDigits: miejsc,
       maximumFractionDigits: miejsc,
     });
@@ -131,23 +132,23 @@
   // ==========================================================================
 
   function sekcjaZadan(s, zadania) {
-    const sekcja = naglowekSekcji('zadania', 'Zadania', null);
+    const sekcja = naglowekSekcji('zadania', 'Tasks', null);
 
     if (s.lacznie === 0) {
-      sekcja.appendChild(el('p', 'brak-danych', 'Brak zadań w bazie.'));
+      sekcja.appendChild(el('p', 'brak-danych', 'No tasks in the database.'));
       return sekcja;
     }
 
     const karty = el('div', 'karty');
-    karty.appendChild(karta('Zadań łącznie', String(s.lacznie)));
+    karty.appendChild(karta('Tasks in total', String(s.lacznie)));
 
     karty.appendChild(
       karta(
-        'Średni czas trwania',
+        'Average duration',
         s.czasTrwania.srednia === null ? '—' : liczba(s.czasTrwania.srednia) + ' h',
         s.czasTrwania.ile > 0
-          ? `z ${s.czasTrwania.ile} zadań z wpisanym czasem`
-          : 'brak zadań z wpisanym czasem (h)'
+          ? `from ${s.czasTrwania.ile} tasks with time entered`
+          : 'no tasks with time entered (h)'
       )
     );
 
@@ -158,21 +159,23 @@
     const pt = s.poTerminie;
     karty.appendChild(
       karta(
-        'Zakończone po terminie',
+        'Completed after due date',
         pt.procent === null ? '—' : procent(pt.procent),
         pt.zBadanych === 0
-          ? 'brak zadań z terminem i datą zakończenia'
-          : `${pt.ile} z ${pt.zBadanych} zadań z obiema datami`
+          ? 'no tasks with both a due date and a completion date'
+          : `${pt.ile} of ${pt.zBadanych} tasks with both dates`
       )
     );
     sekcja.appendChild(karty);
 
-    sekcja.appendChild(el('h3', null, 'Według stanu'));
+    sekcja.appendChild(el('h3', null, 'By status'));
     sekcja.appendChild(
       tabela(
-        ['Stan', 'Zadań', 'Udział'],
+        ['Status', 'Tasks', 'Share'],
         s.wgStanu.map((w) => [
-          w.klucz,
+          // Stan siedzi w bazie po polsku - pokazujemy etykiete, wartosci nie ruszamy.
+          (slowniki.etykiety && slowniki.etykiety.stany && slowniki.etykiety.stany[w.klucz]) ||
+            w.klucz,
           String(w.ile),
           procent((100 * w.ile) / s.lacznie),
         ]),
@@ -180,12 +183,13 @@
       )
     );
 
-    sekcja.appendChild(el('h3', null, 'Według obszaru'));
+    sekcja.appendChild(el('h3', null, 'By area'));
     sekcja.appendChild(
       tabela(
-        ['Obszar', 'Zadań', 'Udział'],
+        ['Area', 'Tasks', 'Share'],
         s.wgObszaru.map((w) => [
-          w.klucz,
+          (slowniki.etykiety && slowniki.etykiety.obszary && slowniki.etykiety.obszary[w.klucz]) ||
+            w.klucz,
           String(w.ile),
           procent((100 * w.ile) / s.lacznie),
         ]),
@@ -200,16 +204,16 @@
       po prostu brakuje danych. Mianownik stoi obok procentu z tego samego powodu.
     */
     for (const [pole, etykieta, prog] of [
-      ['obszar', 'obszaru', PROG_TERMINOWOSCI],
-      ['priorytet', 'priorytetu', PROG_TERMINOWOSCI],
+      ['obszar', 'area', PROG_TERMINOWOSCI],
+      ['priorytet', 'priority', PROG_TERMINOWOSCI],
     ]) {
       const dane = regulyStatystyk.terminowoscWedlug(zadania, pole, prog);
       if (dane.length === 0) continue;
 
-      sekcja.appendChild(el('h3', null, `Po terminie — według ${etykieta} (min. ${prog} zadań)`));
+      sekcja.appendChild(el('h3', null, `After due date — by ${etykieta} (min. ${prog} tasks)`));
       sekcja.appendChild(
         tabela(
-          [pole === 'obszar' ? 'Obszar' : 'Priorytet', 'Z obiema datami', 'Po terminie', 'Odsetek', ''],
+          [pole === 'obszar' ? 'Area' : 'Priority', 'With both dates', 'After due date', 'Share', ''],
           dane.map((g) => [
             pole === 'priorytet' ? etykietaPriorytetu(g.klucz) : g.klucz,
             String(g.zBadanych),
@@ -225,10 +229,10 @@
     const miesiace = regulyStatystyk.zadaniaWedlugMiesiecy(zadania);
     if (miesiace.length > 0) {
       const najwiecej = Math.max(...miesiace.map((m) => m.ile));
-      sekcja.appendChild(el('h3', null, 'Ukończone według miesiąca'));
+      sekcja.appendChild(el('h3', null, 'Completed by month'));
       sekcja.appendChild(
         tabela(
-          ['Miesiąc', 'Ukończonych', ''],
+          ['Month', 'Completed', ''],
           miesiace.map((m) => [m.miesiac, String(m.ile), slupek((100 * m.ile) / najwiecej)]),
           [false, true, false]
         )
@@ -260,12 +264,12 @@
     ladniejszy wykres nie znaczy wazniejszej informacji.
   */
   const SEKCJE = [
-    { id: 'konsekwencja', tytul: 'Konsekwencja' },
-    { id: 'tydzien', tytul: 'Rytm tygodnia' },
-    { id: 'samopoczucie', tytul: 'Samopoczucie' },
-    { id: 'wplyw', tytul: 'Co Ci służy' },
-    { id: 'zadania', tytul: 'Zadania' },
-    { id: 'postep', tytul: 'Postęp' },
+    { id: 'konsekwencja', tytul: 'Consistency' },
+    { id: 'tydzien', tytul: 'Weekly rhythm' },
+    { id: 'samopoczucie', tytul: 'Wellbeing' },
+    { id: 'wplyw', tytul: 'What works for you' },
+    { id: 'zadania', tytul: 'Tasks' },
+    { id: 'postep', tytul: 'Progress' },
   ];
 
   function naglowekSekcji(id, tytul, podtytul) {
@@ -279,7 +283,7 @@
 
   function nawigacja() {
     const nav = el('nav', 'nawigacja-statystyk');
-    nav.setAttribute('aria-label', 'Sekcje statystyk');
+    nav.setAttribute('aria-label', 'Stats sections');
     for (const s of SEKCJE) {
       const a = document.createElement('a');
       a.href = '#' + s.id;
@@ -300,41 +304,41 @@
   // ==========================================================================
 
   function sekcjaKonsekwencji(wpisy, statDziennika) {
-    const s = naglowekSekcji('konsekwencja', 'Konsekwencja', 'Jak regularnie prowadzisz dziennik.');
+    const s = naglowekSekcji('konsekwencja', 'Consistency', 'How regularly you keep the journal.');
 
     const serie = regulyStatystyk.serieDni(wpisy);
     const pok = regulyStatystyk.pokrycie(wpisy);
 
     const karty = el('div', 'karty');
     karty.append(
-      karta('Wpisów łącznie', liczba(statDziennika.lacznie, 0), `${statDziennika.odDaty} → ${statDziennika.doDaty}`),
+      karta('Entries in total', liczba(statDziennika.lacznie, 0), `${statDziennika.odDaty} → ${statDziennika.doDaty}`),
       karta(
-        'Pokrycie',
+        'Coverage',
         procent(pok.procent),
-        `${liczba(pok.dniZWpisem, 0)} z ${liczba(pok.dniWZakresie, 0)} dni w zakresie`
+        `${liczba(pok.dniZWpisem, 0)} of ${liczba(pok.dniWZakresie, 0)} days in range`
       ),
-      karta('Najdłuższa seria', `${liczba(serie.najdluzsza, 0)} dni`, `${serie.odDnia} → ${serie.doDnia}`),
+      karta('Longest streak', `${liczba(serie.najdluzsza, 0)} days`, `${serie.odDnia} → ${serie.doDnia}`),
       /*
         Seria "obecna" liczy sie od OSTATNIEGO wpisu, nie od dzisiaj - stad data
         w podstawie karty. Bez niej liczba klamalaby po kilku dniach przerwy.
       */
-      karta('Seria na koniec', `${liczba(serie.obecna, 0)} dni`, `do ${serie.ostatniDzien}`)
+      karta('Streak at the end', `${liczba(serie.obecna, 0)} days`, `up to ${serie.ostatniDzien}`)
     );
     s.appendChild(karty);
 
-    s.appendChild(el('h3', null, 'Miesiące — wpisy i odsetek z refleksją'));
+    s.appendChild(el('h3', null, 'Months — entries and share with reflection'));
     s.appendChild(
       el(
         'p',
         'podstawa',
-        'Refleksja = wypełnione co najmniej jedno z pól: ' +
+        'Reflection = at least one of these fields filled: ' +
           regulyStatystyk.POLA_REFLEKSYJNE.join(', ') +
           '.'
       )
     );
     s.appendChild(
       tabela(
-        ['Miesiąc', 'Wpisów', 'Z refleksją', 'Odsetek', ''],
+        ['Month', 'Entries', 'With reflection', 'Share', ''],
         statDziennika.miesiace.map((m) => [
           m.miesiac,
           String(m.wpisow),
@@ -356,8 +360,8 @@
   function sekcjaTygodnia(wpisy) {
     const s = naglowekSekcji(
       'tydzien',
-      'Rytm tygodnia',
-      'Średnie w rozbiciu na dzień tygodnia. Weekend wyróżniony.'
+      'Weekly rhythm',
+      'Averages by day of the week. Weekend highlighted.'
     );
 
     const dni = regulyStatystyk.wedlugDniTygodnia(wpisy);
@@ -376,7 +380,7 @@
     });
 
     const t = tabela(
-      ['Dzień', 'Wpisów', 'Sen (h)', 'Jakość snu', 'Spokój', 'Nastrój', 'Pobudka'],
+      ['Day', 'Entries', 'Sleep (h)', 'Sleep quality', 'Calm', 'Mood', 'Wake-up'],
       wiersze.map((w) => w.komorki),
       [false, true, true, true, true, true, true]
     );
@@ -394,21 +398,21 @@
   // ==========================================================================
 
   function sekcjaSamopoczucia(wpisy, s0) {
-    const s = naglowekSekcji('samopoczucie', 'Samopoczucie', 'Oceny dzienne: średnie, rozkłady i trend.');
+    const s = naglowekSekcji('samopoczucie', 'Wellbeing', 'Daily ratings: averages, distributions and trend.');
 
     const karty = el('div', 'karty');
     karty.appendChild(
       karta(
-        'Sen — średnia',
+        'Sleep — average',
         s0.sen.srednia === null ? '—' : liczba(s0.sen.srednia) + ' h',
         `min ${liczba(s0.sen.min, 0)} h, max ${liczba(s0.sen.max, 0)} h`
       )
     );
     karty.appendChild(
       karta(
-        'Sen — wypełnienie',
+        'Sleep — filled in',
         procent(s0.sen.procentWypelnienia),
-        `${s0.sen.ile} z ${s0.lacznie} wpisów`
+        `${s0.sen.ile} of ${s0.lacznie} entries`
       )
     );
     s.appendChild(karty);
@@ -419,10 +423,10 @@
       mowi o zakresie (Spokoj ma 0-5, reszta 1-5); to fakt o skali, nie pulapka,
       dlatego kolumna, a nie baner.
     */
-    s.appendChild(el('h3', null, 'Średnie'));
+    s.appendChild(el('h3', null, 'Averages'));
     s.appendChild(
       tabela(
-        ['Ocena', 'Skala', 'Średnia', 'Min', 'Max', 'Wypełnionych'],
+        ['Rating', 'Scale', 'Average', 'Min', 'Max', 'Filled in'],
         s0.oceny.map((o) => [
           ETYKIETY_OCEN[o.pole],
           o.pole === 'stres' ? '0–5' : '1–5',
@@ -435,30 +439,30 @@
       )
     );
 
-    s.appendChild(el('h3', null, 'Trend miesięczny'));
+    s.appendChild(el('h3', null, 'Monthly trend'));
     const oceny = ['jakosc_snu', 'stres', 'nastroj', 'intencjonalnosc'];
     const trend = regulyStatystyk.trendMiesieczny(wpisy, oceny);
     s.appendChild(
       tabela(
-        ['Miesiąc', 'Wpisów', ...oceny.map((o) => ETYKIETY_OCEN[o])],
+        ['Month', 'Entries', ...oceny.map((o) => ETYKIETY_OCEN[o])],
         trend.map((m) => [m.miesiac, String(m.wpisow), ...oceny.map((o) => liczba(m[o], 2))]),
         [false, true, true, true, true, true]
       )
     );
 
-    s.appendChild(el('h3', null, 'Rozkład wartości'));
+    s.appendChild(el('h3', null, 'Value distribution'));
     for (const o of s0.oceny) {
       s.appendChild(
-        el('h3', 'podnaglowek', ETYKIETY_OCEN[o.pole] + (o.pole === 'stres' ? ' — skala 0–5 (0 = skrajny stres)' : ''))
+        el('h3', 'podnaglowek', ETYKIETY_OCEN[o.pole] + (o.pole === 'stres' ? ' — scale 0–5 (0 = extremely stressed)' : ''))
       );
       if (o.rozklad.length === 0) {
-        s.appendChild(el('p', 'brak-danych', 'Brak wypełnionych wartości.'));
+        s.appendChild(el('p', 'brak-danych', 'No values filled in.'));
         continue;
       }
       const suma = o.rozklad.reduce((a, r) => a + r.ile, 0);
       s.appendChild(
         tabela(
-          ['Wartość', 'Dni', 'Udział', ''],
+          ['Value', 'Days', 'Share', ''],
           o.rozklad.map((r) => [
             opisOceny(o.pole, r.wartosc),
             String(r.ile),
@@ -486,7 +490,7 @@
     );
 
     return tabela(
-      ['Wartość', 'Dni', 'Spokój', 'Nastrój', 'Odchylenie'],
+      ['Value', 'Days', 'Calm', 'Mood', 'Deviation'],
       pozycje.map((p) => [
         p.nazwa,
         String(p.wystapien),
@@ -499,7 +503,7 @@
   }
 
   function sekcjaWplywu(wpisy) {
-    const s = naglowekSekcji('wplyw', 'Co Ci służy', null);
+    const s = naglowekSekcji('wplyw', 'What works for you', null);
 
     /*
       OSTRZEZENIE STOI PRZED TABELAMI, nie pod nimi - czytane po liczbach byloby
@@ -511,10 +515,10 @@
       el(
         'p',
         'uwaga-korelacja',
-        'To współwystępowanie, nie przyczyna. Liczby mówią, jak wyglądały dni, ' +
-          'w których dana wartość się pojawiła — nie co ją spowodowało ani co z niej wynika. ' +
-          `Pokazujemy tylko wartości z co najmniej ${PROG_SLOWA} dniami (słowa) ` +
-          `i ${PROG_NAWYKI} (nawyki); przy mniejszej liczbie średnia to pojedynczy dzień.`
+        'This is co-occurrence, not causation. The numbers say what the days looked like ' +
+          'on which a given value appeared — not what caused it or what follows from it. ' +
+          `Only values with at least ${PROG_SLOWA} days (words) ` +
+          `and ${PROG_NAWYKI} (habits) are shown; below that an average is a single day.`
       )
     );
 
@@ -525,21 +529,21 @@
       el(
         'p',
         'podstawa',
-        `Twoje średnie: Spokój ${liczba(slowa.bazowe.stres, 2)}, Nastrój ${liczba(slowa.bazowe.nastroj, 2)}. ` +
-          'Odchylenie liczy się względem nich.'
+        `Your averages: Calm ${liczba(slowa.bazowe.stres, 2)}, Mood ${liczba(slowa.bazowe.nastroj, 2)}. ` +
+          'Deviation is measured against them.'
       )
     );
 
-    s.appendChild(el('h3', null, `Słowa (min. ${PROG_SLOWA} dni) — według Spokoju`));
+    s.appendChild(el('h3', null, `Words (min. ${PROG_SLOWA} days) — by Calm`));
     if (slowa.pozycje.length === 0) {
-      s.appendChild(el('p', 'brak-danych', 'Za mało danych.'));
+      s.appendChild(el('p', 'brak-danych', 'Not enough data.'));
     } else {
       s.appendChild(tabelaWplywu(slowa, 'stres'));
     }
 
-    s.appendChild(el('h3', null, `Nawyki (min. ${PROG_NAWYKI} dni) — według Nastroju`));
+    s.appendChild(el('h3', null, `Habits (min. ${PROG_NAWYKI} days) — by Mood`));
     if (nawyki.pozycje.length === 0) {
-      s.appendChild(el('p', 'brak-danych', 'Za mało danych.'));
+      s.appendChild(el('p', 'brak-danych', 'Not enough data.'));
     } else {
       s.appendChild(tabelaWplywu(nawyki, 'nastroj'));
     }
@@ -554,8 +558,8 @@
   function sekcjaPostepu(wpisy, zadania) {
     const s = naglowekSekcji(
       'postep',
-      'Postęp',
-      'XP zdobyte w kolejnych miesiącach, w rozbiciu na źródła.'
+      'Progress',
+      'XP earned month by month, split by source.'
     );
 
     const miesiace = regulyStatystyk.xpWedlugMiesiecy(wpisy, zadania);
@@ -567,7 +571,7 @@
     const najwiekszy = Math.max(...miesiace.map((m) => m.razem));
     s.appendChild(
       tabela(
-        ['Miesiąc', 'Dziennik', 'Zadania', 'Razem', ''],
+        ['Month', 'Journal', 'Tasks', 'Total', ''],
         miesiace.map((m) => [
           m.miesiac,
           liczba(m.dziennik, 0),
@@ -619,15 +623,15 @@
 
       const brakujacy = SEKCJE.filter((s) => !budowniczowie[s.id]).map((s) => s.id);
       if (brakujacy.length > 0) {
-        throw new Error(`Sekcje bez budowniczego: ${brakujacy.join(', ')}.`);
+        throw new Error(`Sections without a builder: ${brakujacy.join(', ')}.`);
       }
 
       elTresc.replaceChildren(nawigacja(), ...SEKCJE.map((s) => budowniczowie[s.id]()));
 
-      elStatus.textContent = `przeliczono ${zadania.length} zadań i ${wpisy.length} wpisów`;
+      elStatus.textContent = `recalculated ${zadania.length} tasks and ${wpisy.length} entries`;
       elStatus.className = 'status ok';
     } catch (e) {
-      elTresc.replaceChildren(el('p', 'brak-danych', 'Nie udało się wczytać danych.'));
+      elTresc.replaceChildren(el('p', 'brak-danych', 'Could not load data.'));
       elStatus.textContent = e.message;
       elStatus.className = 'status blad';
     }

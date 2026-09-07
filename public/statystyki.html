@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Statystyki</title>
+    <title>Stats</title>
     <link rel="stylesheet" href="/css/style.css" />
     <!--
       Motyw ustawiany SYNCHRONICZNIE, przed pierwszym malowaniem - inaczej przy
@@ -14,7 +14,7 @@
   </head>
   <body>
     <header class="pasek">
-      <h1>Statystyki</h1>
+      <h1>Stats</h1>
       <!--
         Menu jest IDENTYCZNE na wszystkich stronach - ta sama kolejnosc, ten sam
         komplet pozycji. Wczesniej kazda strona miala wlasny podzbior (na "Postaci"
@@ -26,12 +26,12 @@
         Strzalki celowo usuniete: sugerowaly kolejnosc ("Dziennik -&gt;", "&lt;- Zadania"),
         ktorej miedzy tymi stronami nie ma.
       -->
-      <nav class="nawigacja" aria-label="Sekcje aplikacji">
-        <a href="/index.html">📋 Zadania</a>
-        <a href="/dziennik.html">📓 Dziennik</a>
-        <a href="/statystyki.html" aria-current="page">📊 Statystyki</a>
-        <a href="/projekty.html">📁 Projekty</a>
-        <a href="/postac.html">🎮 Postać</a>
+      <nav class="nawigacja" aria-label="App sections">
+        <a href="/index.html">📋 Tasks</a>
+        <a href="/dziennik.html">📓 Journal</a>
+        <a href="/statystyki.html" aria-current="page">📊 Stats</a>
+        <a href="/projekty.html">📁 Projects</a>
+        <a href="/postac.html">🎮 Character</a>
       </nav>
       <!-- Przelacznik motywu: system -> jasny -> ciemny. Tresc i tytul ustawia motyw.js. -->
       <button id="przelacznik-motywu" class="przelacznik-motywu" type="button"></button>
@@ -44,7 +44,7 @@
       z GET /api/zadania i GET /api/dziennik. Zadnych nowych endpointow.
     -->
     <div id="tresc" class="statystyki">
-      <p class="brak-danych">Wczytywanie…</p>
+      <p class="brak-danych">Loading…</p>
     </div>
 
     <script src="/js/api.js"></script>

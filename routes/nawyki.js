@@ -23,6 +23,6 @@ const { utworzRouterSlownika } = require('../lib/slownik-wartosci');
 module.exports = utworzRouterSlownika(db, {
   tabela: 'nawyki_slownik',
   kolumnaWpisu: 'nawyki',
-  mianownik: 'Nawyk',
-  dopelniacz: 'nawyku',
+  mianownik: 'Habit',
+  dopelniacz: 'habit',
 });

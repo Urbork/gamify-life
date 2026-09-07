@@ -66,28 +66,28 @@
   const POLA_WYBORU = {
     nawyki: {
       endpoint: '/api/nawyki',
-      tytul: 'Nawyki',
-      podpowiedzKomorki: 'Kliknij, aby wybrać nawyki',
-      placeholderDodaj: 'nazwa nowego nawyku',
-      etykietaDodaj: '+ Dodaj nawyk',
+      tytul: 'Habits',
+      podpowiedzKomorki: 'Click to pick habits',
+      placeholderDodaj: 'new habit name',
+      etykietaDodaj: '+ Add habit',
       elementFiltra: 'filtr-nawyki',
       elementPodsumowania: null, // filtr nawykow nie jest zwiniety
-      nazwaFiltra: 'Nawyk',
+      nazwaFiltra: 'Habit',
     },
     trzy_slowa: {
       endpoint: '/api/slowa',
-      tytul: 'Słowa opisujące dzień',
+      tytul: 'Words describing the day',
       /*
         "Trzy slowa" to SUGESTIA, nie limit - stad brak licznika i brak gornej
         granicy. Do XP pole liczy sie jako jedno, tak samo jak nawyki, wiec
         zaznaczenie dziesieciu slow nie daje wiecej punktow niz jednego.
       */
-      podpowiedzKomorki: 'Kliknij, aby wybrać słowa opisujące dzień',
-      placeholderDodaj: 'nowe słowo',
-      etykietaDodaj: '+ Dodaj słowo',
+      podpowiedzKomorki: 'Click to pick words describing the day',
+      placeholderDodaj: 'new word',
+      etykietaDodaj: '+ Add word',
       elementFiltra: 'filtr-slowa',
       elementPodsumowania: 'podsumowanie-slowa',
-      nazwaFiltra: 'Słowa',
+      nazwaFiltra: 'Words',
     },
   };
 
@@ -462,7 +462,7 @@
     btn.type = 'button';
     btn.className = 'usun';
     btn.textContent = '×';
-    btn.title = 'Usuń wpis';
+    btn.title = 'Delete entry';
     btn.addEventListener('click', () => usunWpis(w.id));
 
     td.appendChild(btn);
@@ -504,7 +504,7 @@
     const ile = pola.filter((p) => regulyStatystyk.wypelnione(w[p])).length;
 
     td.textContent = `${ile}/${pola.length}`;
-    td.title = `Wypełnione pola refleksyjne: ${ile} z ${pola.length}`;
+    td.title = `Reflective fields filled: ${ile} of ${pola.length}`;
     return td;
   }
 
@@ -576,7 +576,7 @@
     if (elDoladowanie.hidden) return;
 
     const porcja = Math.min(PORCJA_WIDOKU, pozostalo);
-    elDoladuj.textContent = `Załaduj kolejne ${porcja} (widoczne ${limitWidoku} z ${ilePasuje})`;
+    elDoladuj.textContent = `Load ${porcja} more (showing ${limitWidoku} of ${ilePasuje})`;
   }
 
   function doladuj() {
@@ -625,7 +625,7 @@
 
       if (inne.length > 0) {
         const ktore = inne.length === 1 ? `id ${inne[0]}` : `id: ${inne.join(', ')}`;
-        td.title = `Uwaga: inny wpis już ma tę datę (${ktore}). To dozwolone — zapis się udał.`;
+        td.title = `Note: another entry already has this date (${ktore}). That is allowed — the save succeeded.`;
       } else {
         td.removeAttribute('title');
       }
@@ -697,7 +697,7 @@
         odswiezDuplikatyDat();
       }
 
-      pokazStatus('zapisano', 'ok');
+      pokazStatus('saved', 'ok');
     } catch (e) {
       tr.classList.add('blad-zapisu');
       przywrocKomorke(tr, pole);
@@ -725,13 +725,13 @@
   async function usunWpis(id) {
     const w = wpisy.get(id);
     const etykieta = w && w.data ? `z ${w.data}` : `#${id}`;
-    if (!confirm(`Usunąć wpis ${etykieta}? Tej operacji nie da się cofnąć.`)) return;
+    if (!confirm(`Delete entry ${etykieta}? This cannot be undone.`)) return;
 
     try {
       await api.usun(`/api/dziennik/${id}`);
       wpisy.delete(id);
       renderuj();
-      pokazStatus('usunięto', 'ok');
+      pokazStatus('deleted', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -744,7 +744,7 @@
   function eksportujCsv() {
     const wszystkie = posortowane();
     if (wszystkie.length === 0) {
-      pokazStatus('Nie ma czego eksportować.', 'blad');
+      pokazStatus('Nothing to export.', 'blad');
       return;
     }
 
@@ -778,7 +778,7 @@
   function odswiezPodsumowanie() {
     const wszystkie = [...wpisy.values()];
     if (wszystkie.length === 0) {
-      elPodsumowanie.textContent = 'Brak wpisów.';
+      elPodsumowanie.textContent = 'No entries.';
       return;
     }
 
@@ -790,7 +790,7 @@
     const zakres = daty.length > 0 ? ` (od ${daty[0]} do ${daty[daty.length - 1]})` : '';
 
     elPodsumowanie.textContent =
-      `Filtry przepuszczają ${widoczne.length} z ${wszystkie.length} wpisów${zakres}`;
+      `Filters pass ${widoczne.length} of ${wszystkie.length} entries${zakres}`;
   }
 
   // ==========================================================================
@@ -879,9 +879,9 @@
     if (poz.spoza) {
       const znacznik = document.createElement('span');
       znacznik.className = 'spoza-listy';
-      znacznik.textContent = ' (spoza listy)';
+      znacznik.textContent = ' (not on the list)';
       znacznik.title =
-        'Ta nazwa jest w tym wpisie, ale nie ma jej już w słowniku. Odznaczenie usunie ją z wpisu.';
+        'This name is in the entry but no longer in the dictionary. Unchecking removes it from the entry.';
       etykieta.appendChild(znacznik);
     }
     wiersz.appendChild(etykieta);
@@ -894,13 +894,13 @@
       const zmien = document.createElement('button');
       zmien.type = 'button';
       zmien.textContent = '✏️';
-      zmien.title = 'Zmień nazwę';
+      zmien.title = 'Rename';
       zmien.addEventListener('click', () => zmienNazweWartosci(poz));
 
       const usun = document.createElement('button');
       usun.type = 'button';
       usun.textContent = '🗑️';
-      usun.title = 'Usuń z listy wyboru';
+      usun.title = 'Remove from the pick list';
       usun.addEventListener('click', () => usunZeSlownika(poz));
 
       akcje.append(zmien, usun);
@@ -911,7 +911,7 @@
   }
 
   async function zmienNazweWartosci(poz) {
-    const nowa = prompt(`Nowa nazwa dla „${poz.nazwa}":`, poz.nazwa);
+    const nowa = prompt(`New name for „${poz.nazwa}":`, poz.nazwa);
     if (nowa === null || nowa.trim() === '' || nowa.trim() === poz.nazwa) return;
 
     try {
@@ -920,7 +920,7 @@
       });
       await przeladujSlownikIWidok(poleWyboru);
       pokazStatus(
-        `zmieniono nazwę, zaktualizowano wpisów: ${wynik.zaktualizowanychWpisow}`,
+        `renamed, entries updated: ${wynik.zaktualizowanychWpisow}`,
         'ok'
       );
     } catch (e) {
@@ -930,15 +930,15 @@
 
   async function usunZeSlownika(poz) {
     const potwierdzenie =
-      `Usunąć „${poz.nazwa}" z listy wyboru?\n\n` +
-      'Istniejące wpisy dziennika ZOSTANĄ nietknięte — nazwa zniknie tylko z listy, ' +
-      'więc nie będzie już można po niej filtrować.';
+      `Remove „${poz.nazwa}" from the pick list?\n\n` +
+      'Existing journal entries WILL stay untouched — the name only disappears from the list, ' +
+      'so filtering by it will no longer be possible.';
     if (!confirm(potwierdzenie)) return;
 
     try {
       await api.usun(`${POLA_WYBORU[poleWyboru].endpoint}/${poz.id}`);
       await przeladujSlownikIWidok(poleWyboru);
-      pokazStatus('usunięto z listy wyboru', 'ok');
+      pokazStatus('removed from the pick list', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -952,7 +952,7 @@
       await api.post(POLA_WYBORU[poleWyboru].endpoint, { nazwa });
       elNowaWartosc.value = '';
       await przeladujSlownikIWidok(poleWyboru);
-      pokazStatus('dodano do listy', 'ok');
+      pokazStatus('added to the list', 'ok');
     } catch (e) {
       pokazStatus(e.message, 'blad');
     }
@@ -1154,7 +1154,7 @@
       */
       zastosujFiltry();
     } catch (e) {
-      pokazStatus('Nie udało się wczytać danych: ' + e.message, 'blad');
+      pokazStatus('Could not load data: ' + e.message, 'blad');
     }
   }
 
@@ -1196,7 +1196,7 @@
   // Import zyje w osobnym module (public/js/csv-import.js) i po zapisie
   // wysyla to zdarzenie. Nazwa zawiera profil, wiec strona zadan go nie lapie.
   document.addEventListener('dane-dziennik-zmienione', () => {
-    wczytaj().catch((e) => pokazStatus('Nie udało się odświeżyć: ' + e.message, 'blad'));
+    wczytaj().catch((e) => pokazStatus('Could not refresh: ' + e.message, 'blad'));
   });
 
   start();

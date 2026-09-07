@@ -99,7 +99,7 @@
 
     const thead = document.createElement('thead');
     const naglowki = document.createElement('tr');
-    for (const tekst of ['Linia', 'Nazwa', 'Powód odrzucenia']) {
+    for (const tekst of ['Linia', 'Nazwa', 'Reason for rejection']) {
       const th = document.createElement('th');
       th.textContent = tekst;
       naglowki.appendChild(th);
@@ -130,8 +130,8 @@
     */
     const d = wynik.dziennik;
     elNaglowek.textContent = d
-      ? `Podgląd importu: ${d.nowych} nowych, ${d.doAktualizacji} do aktualizacji, ${wynik.odrzuconych} odrzuconych`
-      : `Podgląd importu: ${wynik.gotowych} gotowych do zaimportowania, ${wynik.odrzuconych} odrzuconych`;
+      ? `Import preview: ${d.nowych} new, ${d.doAktualizacji} to update, ${wynik.odrzuconych} rejected`
+      : `Import preview: ${wynik.gotowych} ready to import, ${wynik.odrzuconych} rejected`;
 
     const uwagi = [];
     /*
@@ -147,7 +147,7 @@
       uwagi.push(`wykryty separator: "${wynik.separator === '\t' ? 'tabulator' : wynik.separator}"`);
     }
     if (wynik.nieznaneKolumny.length > 0) {
-      uwagi.push(`kolumny pominięte (brak w mapowaniu): ${wynik.nieznaneKolumny.join(', ')}`);
+      uwagi.push(`columns skipped (not in the mapping): ${wynik.nieznaneKolumny.join(', ')}`);
     }
     if (d) {
       /*
@@ -157,12 +157,12 @@
       */
       uwagi.push(
         d.polZmieni === 0
-          ? 'żadne pole nie zmieni wartości'
-          : `pól, które zmienią wartość: ${d.polZmieni}`
+          ? 'no field will change its value'
+          : `fields that will change value: ${d.polZmieni}`
       );
-      uwagi.push('puste pola w pliku nie skasują danych już zapisanych');
+      uwagi.push('empty fields in the file will not erase data already saved');
     } else {
-      uwagi.push('dane zostaną dopisane, nic istniejącego nie zostanie nadpisane');
+      uwagi.push('data will be appended, nothing existing will be overwritten');
     }
     elUwagi.textContent = uwagi.join(' · ');
 
@@ -209,7 +209,7 @@
       const dz = wynik.dziennik;
       pokazStatus(
         dz
-          ? `dodano ${dz.nowych}, zaktualizowano ${dz.zaktualizowanych} (zmienionych pól: ${dz.zmienionychPol})`
+          ? `added ${dz.nowych}, updated ${dz.zaktualizowanych} (fields changed: ${dz.zmienionychPol})`
           : `zaimportowano ${wynik.zaimportowano} wierszy`,
         'ok'
       );

@@ -1227,8 +1227,8 @@ async function testujNawyki() {
   for (const pole of ['jakosc_snu', 'nastroj', 'intencjonalnosc']) {
     const srodek = slowniki.oceny[pole].find((o) => o.wartosc === 3);
     sprawdz(
-      `skala "${pole}": stopien 3 to "Przeciętny"`,
-      srodek && srodek.opis === 'Przeciętny',
+      `skala "${pole}": stopien 3 to "Average"`,
+      srodek && srodek.opis === 'Average',
       srodek && srodek.opis
     );
   }
@@ -1730,12 +1730,12 @@ async function testujNoweStatystyki(reguly) {
   ]);
   sprawdzListe(
     'tydzien zaczyna sie od poniedzialku',
-    ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'],
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
     tydzien.map((d) => d.nazwa)
   );
   sprawdz(
     'weekend oznaczony na sobote i niedziele',
-    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',') === 'sobota,niedziela',
+    tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',') === 'Saturday,Sunday',
     tydzien.filter((d) => d.weekend).map((d) => d.nazwa).join(',')
   );
   /*
@@ -1743,8 +1743,8 @@ async function testujNoweStatystyki(reguly) {
     na czasie lokalnym - przy datach calodziennych przegladarka na zachod od UTC
     przesuwalaby kazdy dzien o jeden wstecz.
   */
-  const poniedzialek = tydzien.find((d) => d.nazwa === 'poniedziałek');
-  const sobota = tydzien.find((d) => d.nazwa === 'sobota');
+  const poniedzialek = tydzien.find((d) => d.nazwa === 'Monday');
+  const sobota = tydzien.find((d) => d.nazwa === 'Saturday');
   sprawdz(
     'wpisy trafiaja we wlasciwe dni tygodnia',
     poniedzialek.wpisow === 1 && poniedzialek.sen === 6 && sobota.wpisow === 1 && sobota.sen === 8,
@@ -2346,7 +2346,7 @@ async function testujKolejnoscKolumnDziennika() {
   const komorki = ['id'];
   for (const pole of pola) {
     komorki.push(pole);
-    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Refleksje)');
+    if (przedRefleksjami && pole === przedRefleksjami[1]) komorki.push('(Reflections)');
   }
   komorki.push('(akcje)');
 

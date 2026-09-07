@@ -24,6 +24,6 @@ const { utworzRouterSlownika } = require('../lib/slownik-wartosci');
 module.exports = utworzRouterSlownika(db, {
   tabela: 'slowa_slownik',
   kolumnaWpisu: 'trzy_slowa',
-  mianownik: 'Słowo',
-  dopelniacz: 'słowa',
+  mianownik: 'Word',
+  dopelniacz: 'word',
 });

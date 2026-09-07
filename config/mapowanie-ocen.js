@@ -42,11 +42,11 @@
   "2024 kontra 2026".
 */
 const JAKOSC_SNU = [
-  { wartosc: 5, emoji: '🌟', opis: 'Bardzo dobry' },
-  { wartosc: 4, emoji: '😴', opis: 'Dobry' },
-  { wartosc: 3, emoji: '😐', opis: 'Przeciętny' },
-  { wartosc: 2, emoji: '😕', opis: 'Słaby' },
-  { wartosc: 1, emoji: '😫', opis: 'Bardzo słaby' },
+  { wartosc: 5, emoji: '🌟', opis: 'Very good' },
+  { wartosc: 4, emoji: '😴', opis: 'Good' },
+  { wartosc: 3, emoji: '😐', opis: 'Average' },
+  { wartosc: 2, emoji: '😕', opis: 'Poor' },
+  { wartosc: 1, emoji: '😫', opis: 'Very poor' },
 ];
 
 /*
@@ -71,22 +71,22 @@ const JAKOSC_SNU = [
   na rzecz wygladajaca spojnie.
 */
 const SPOKOJ = [
-  { wartosc: 5, emoji: '🧘', opis: 'Pełny spokój' },
-  { wartosc: 4, emoji: '😌', opis: 'Duży spokój' },
-  { wartosc: 3, emoji: '🙂', opis: 'Umiarkowany' },
-  { wartosc: 2, emoji: '😬', opis: 'Niepokój' },
-  { wartosc: 1, emoji: '😰', opis: 'Duży stres' },
-  { wartosc: 0, emoji: '🔥', opis: 'Skrajny stres' },
+  { wartosc: 5, emoji: '🧘', opis: 'Fully calm' },
+  { wartosc: 4, emoji: '😌', opis: 'Very calm' },
+  { wartosc: 3, emoji: '🙂', opis: 'Moderate' },
+  { wartosc: 2, emoji: '😬', opis: 'Uneasy' },
+  { wartosc: 1, emoji: '😰', opis: 'Stressed' },
+  { wartosc: 0, emoji: '🔥', opis: 'Extremely stressed' },
 ];
 
 const NASTROJ = [
-  { wartosc: 5, emoji: '😄', opis: 'Bardzo dobry' },
-  { wartosc: 4, emoji: '🙂', opis: 'Dobry' },
+  { wartosc: 5, emoji: '😄', opis: 'Very good' },
+  { wartosc: 4, emoji: '🙂', opis: 'Good' },
   // "Przecietny", a nie "Neutralny": neutralny nastroj czyta sie jako BRAK nastroju,
   // wiec zwykly dobry dzien ladowal na 4 - stad mode 52,9% na czworce.
-  { wartosc: 3, emoji: '😐', opis: 'Przeciętny' },
-  { wartosc: 2, emoji: '🙁', opis: 'Zły' },
-  { wartosc: 1, emoji: '😢', opis: 'Bardzo zły' },
+  { wartosc: 3, emoji: '😐', opis: 'Average' },
+  { wartosc: 2, emoji: '🙁', opis: 'Bad' },
+  { wartosc: 1, emoji: '😢', opis: 'Very bad' },
 ];
 
 /*
@@ -95,11 +95,11 @@ const NASTROJ = [
   ladowalo na "Malo intencjonalny". "Skupiony" jest osiagalne w zwyklym dniu.
 */
 const INTENCJONALNOSC = [
-  { wartosc: 5, emoji: '🎯', opis: 'Bardzo skupiony' },
-  { wartosc: 4, emoji: '🧭', opis: 'Skupiony' },
-  { wartosc: 3, emoji: '🤔', opis: 'Przeciętny' },
-  { wartosc: 2, emoji: '🤷', opis: 'Rozproszony' },
-  { wartosc: 1, emoji: '🌊', opis: 'Zupełnie przypadkowy' },
+  { wartosc: 5, emoji: '🎯', opis: 'Very focused' },
+  { wartosc: 4, emoji: '🧭', opis: 'Focused' },
+  { wartosc: 3, emoji: '🤔', opis: 'Average' },
+  { wartosc: 2, emoji: '🤷', opis: 'Scattered' },
+  { wartosc: 1, emoji: '🌊', opis: 'Completely random' },
 ];
 
 /*
