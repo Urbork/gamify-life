@@ -79,6 +79,7 @@ było dużo.
 
 | Wersja | Co ją wyznacza |
 | --- | --- |
+| **2.1.0** | Porównania okien kroczących (7/30/365 dni) i statystyki w zakładkach; przycięty słownik nawyków z pozycją „Work". Baza bez zmian — nadal 10 migracji, XP liczy się tak samo, więc stare i nowe liczby są porównywalne. Stąd MNIEJSZA, nie większa |
 | **2.0.0** | Nowy silnik XP przeliczył **całą historię wstecz** (36 891 XP / prestiż 0 / poziom 74 → 10 952 / prestiż 2 / poziom 20), więc żadna wcześniejsza notatka czy zrzut ekranu nie jest już porównywalny. Do tego interfejs po angielsku i schemat bazy z 7 na 10 migracji — kod 1.0.0 tej bazy nie otworzy |
 | 1.0.0 | Zadania, dziennik, import CSV, smoke test, kopia zapasowa |
 
