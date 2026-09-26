@@ -1818,6 +1818,148 @@ async function testujHigieneCss() {
   sprawdzListe('zadna regula nie zmienia trybu wyswietlania komorki tabeli', [], podejrzane);
 }
 
+/*
+  Porownania okien kroczacych.
+
+  Regula, ktora najlatwiej zepsuc po cichu, to TLO: gdyby liczylo sie z calej
+  historii RAZEM z badanym okresem, przy oknie rocznym porownywalibysmy okres
+  z samym soba w 43% i kazda roznica bylaby sztucznie stlumiona. Stad osobna
+  asercja na rozlacznosc.
+*/
+async function testujPorownaniaOkresow(reguly) {
+  sekcja('STATYSTYKI: POROWNANIA OKRESOW');
+
+  const R = reguly.regulyStatystyk;
+  const OCENY = ['stres'];
+
+  // --- okna ---
+  const biezace = R.oknoDat('2026-01-10', 7, 0);
+  const poprzednie = R.oknoDat('2026-01-10', 7, 1);
+  sprawdz(
+    'okno biezace konczy sie dzisiaj i obejmuje 7 dni',
+    biezace.od === '2026-01-04' && biezace.do === '2026-01-10',
+    JSON.stringify(biezace)
+  );
+  /*
+    Okna musza do siebie PRZYLEGAC, a nie zachodzic - inaczej te same dni liczylyby
+    sie po obu stronach porownania i roznica bylaby zanizona.
+  */
+  sprawdz(
+    'okno poprzednie przylega do biezacego, bez zachodzenia',
+    poprzednie.do === '2026-01-03' && poprzednie.od === '2025-12-28',
+    JSON.stringify(poprzednie)
+  );
+
+  // --- podsumowanie okresu ---
+  const dane = [
+    { data: '2026-01-05', stres: 4 },
+    { data: '2026-01-06', stres: 2 },
+    { data: '2026-01-07', stres: null }, // wpis bez oceny
+    { data: '2025-06-01', stres: 0 }, // poza oknem
+  ];
+  const okres = R.podsumujOkres(dane, '2026-01-04', '2026-01-10', OCENY);
+  sprawdz(
+    'okres liczy tylko wpisy z zakresu',
+    okres.wpisow === 3 && okres.dniWOkresie === 7,
+    JSON.stringify({ wpisow: okres.wpisow, dni: okres.dniWOkresie })
+  );
+  sprawdz(
+    'pokrycie to wpisy przez dni okresu',
+    Math.round(okres.pokrycie) === 43,
+    String(okres.pokrycie)
+  );
+  /*
+    Srednia i wypelnienie musza isc w parze. Tu trzy wpisy, ale tylko dwa z ocena -
+    "spokoj 3,0" bez informacji "n=2 z 3" mowi wiecej, niz wynika z danych.
+  */
+  sprawdz(
+    'srednia niesie ze soba n i wypelnienie',
+    okres.oceny.stres.srednia === 3 &&
+      okres.oceny.stres.ile === 2 &&
+      Math.round(okres.oceny.stres.wypelnienie) === 67,
+    JSON.stringify(okres.oceny.stres)
+  );
+
+  // --- tlo ---
+  const tlo = R.tloPozaOkresem(dane, '2026-01-04', '2026-01-10', OCENY);
+  sprawdz(
+    'tlo WYKLUCZA badany okres',
+    tlo.wpisow === 1 && tlo.oceny.stres.srednia === 0,
+    JSON.stringify({ wpisow: tlo.wpisow, srednia: tlo.oceny.stres.srednia })
+  );
+  sprawdz(
+    'brak danych poza okresem daje tlo null, a nie puste zera',
+    R.tloPozaOkresem([{ data: '2026-01-05', stres: 4 }], '2026-01-04', '2026-01-10', OCENY) === null
+  );
+
+  // --- granica kalibracji ---
+  const G = R.DATA_ZMIANY_KALIBRACJI;
+  /*
+    GRANICA TO OSTATNI DZIEN PO STAREMU, wiec sam ten dzien nalezy do "przed".
+    Zakres konczacy sie na nim jest czysty; zakres zaczynajacy sie na nim i siegajacy
+    dalej - juz nie, bo obejmuje i stara, i nowa kalibracje.
+  */
+  sprawdz('zakres konczacy sie na granicy jest czysty', R.przecinaKalibracje('2026-08-01', G) === false);
+  sprawdz('zakres w calosci po granicy jest czysty', R.przecinaKalibracje('2026-09-07', '2026-09-30') === false);
+  sprawdz('zakres od granicy w przod miesza', R.przecinaKalibracje(G, '2026-09-30') === true);
+  sprawdz('zakres przechodzacy przez granice miesza', R.przecinaKalibracje('2026-08-01', '2026-09-30') === true);
+
+  // --- porownanie ---
+  const historia = [
+    { data: '2026-01-05', stres: 4 },
+    { data: '2026-01-06', stres: 4 },
+    { data: '2025-12-30', stres: 1 },
+    { data: '2025-12-31', stres: 1 },
+    { data: '2024-05-05', stres: 3 },
+  ];
+  const [okno] = R.porownanieOkien(historia, '2026-01-10', [7], OCENY);
+  sprawdz(
+    'roznica wobec poprzedniego okresu liczy sie z obu stron',
+    okno.roznice.stres.wobecPoprzedniego === 3,
+    String(okno.roznice.stres.wobecPoprzedniego)
+  );
+  sprawdz(
+    'roznica wobec tla pomija badany okres',
+    okno.roznice.stres.wobecTla === 4 - (1 + 1 + 3) / 3,
+    String(okno.roznice.stres.wobecTla)
+  );
+  /*
+    BRAK DANYCH TO null, NIE ZERO. Zero czyta sie jako "bez zmian" - najgorsza
+    mozliwa odpowiedz w sytuacji, w ktorej po prostu nie ma czego porownac.
+  */
+  const [puste] = R.porownanieOkien(
+    [{ data: '2026-01-05', stres: 4 }],
+    '2026-01-10',
+    [7],
+    OCENY
+  );
+  sprawdz(
+    'brak drugiej strony daje null, nie zero',
+    puste.roznice.stres.wobecPoprzedniego === null && puste.roznice.stres.wobecTla === null,
+    JSON.stringify(puste.roznice.stres)
+  );
+
+  // --- flagi kalibracji ---
+  const [przezGranice] = R.porownanieOkien(
+    [
+      { data: '2026-09-04', stres: 1 },
+      { data: '2026-09-08', stres: 5 },
+    ],
+    '2026-09-09',
+    [7],
+    OCENY
+  );
+  sprawdz(
+    'okres rozciagniety przez granice niesie wlasna flage',
+    przezGranice.biezacy.mieszaKalibracje === true,
+    JSON.stringify({ od: przezGranice.biezacy.od, do: przezGranice.biezacy.do })
+  );
+  sprawdz(
+    'zestawienie dziedziczy flage po okresie skladowym',
+    przezGranice.mieszaneZestawienie.zPoprzednim === true
+  );
+}
+
 async function testujNoweStatystyki(reguly) {
   sekcja('STATYSTYKI: NOWE GRUPY');
 
@@ -2192,10 +2334,30 @@ async function testujSlownikSlow() {
     Object.keys(emojiNawykow).length > 0,
     JSON.stringify(Object.keys(emojiNawykow))
   );
-  sprawdzListe(
-    'konfiguracja nie opisuje nawykow spoza slownika',
-    [],
-    Object.keys(emojiNawykow).filter((k) => !nazwyNawykow.includes(k))
+  /*
+    CELOWO NIE SPRAWDZAMY, czy kazdy klucz konfiguracji istnieje w slowniku.
+
+    Ta asercja tu byla i BYLA BLEDNA - oblala przy pierwszym realnym uzyciu.
+    Slownik nawykow jest zarzadzany przez uzytkownika z panelu wyboru, wiec
+    konfiguracja emoji rozjezdza sie z nim w OBIE strony, i obie sa poprawne:
+
+      - nawyk usuniety z listy zostaje w historii (po skasowaniu "Sprawdzić Slack
+        i Discord" nazwa nadal siedzi w 145 wpisach), wiec jego emoji ma prawo
+        tu zostac - inaczej stare wiersze straciłyby ikony,
+      - nawyk dopisany z panelu ("Work") nie istnieje w bazie testowej, bo ta
+        powstaje z migracji 4, a migracji nie edytujemy po wykonaniu.
+
+    Zostaje to, co da sie sprawdzic sensownie: ksztalt i unikalnosc. Literowka
+    w kluczu objawia sie brakiem ikony - kosmetycznie, nie groznie.
+
+    UWAGA: blizniacza asercja dla SLOW ma te sama slabosc i dzis przechodzi tylko
+    dlatego, ze slownik slow nie byl jeszcze recznie edytowany. Pierwsze usuniecie
+    slowa z panelu ja oblei - wtedy trzeba ja poprawic tak samo.
+  */
+  sprawdz(
+    'kazdy wpis emoji nawykow ma niepusta nazwe i znak',
+    Object.entries(emojiNawykow).every(([k, v]) => k.trim() !== '' && typeof v === 'string' && v !== ''),
+    JSON.stringify(emojiNawykow)
   );
   const emojiN = Object.values(emojiNawykow);
   sprawdz('emoji nawykow sa rozne', new Set(emojiN).size === emojiN.length, emojiN.join(' '));
@@ -3649,6 +3811,7 @@ async function main() {
     await testujPlakietkiZadan();
     await testujKontrastyPalety();
     await testujHigieneCss();
+    await testujPorownaniaOkresow(reguly);
     await testujNoweStatystyki(reguly);
     await testujKolumneXp(reguly);
     await testujAtrybuty();

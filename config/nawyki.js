@@ -32,6 +32,19 @@ const EMOJI_NAWYKOW = {
   'Zapisać emocje (rano)': '🌅',
   'Zapisać emocje (popołudnie)': '☀️',
   'Zapisać emocje (wieczór)': '🌙',
+  Work: '💼',
 };
+
+/*
+  WPISY ZOSTAJA PO USUNIECIU NAWYKU Z LISTY WYBORU.
+
+  Usuniecie ze slownika zdejmuje nazwe z panelu, ale NIE rusza historii - "Sprawdzić
+  Slack i Discord" siedzi nadal w 145 wpisach, "Zapisać emocje" w 417, "Proktis-M"
+  w 7. Gdybysmy skasowali stad ich emoji, stare wiersze straciłyby ikony bez powodu.
+
+  Dlatego ta lista jest NADZBIOREM slownika i tak ma byc. Brak wpisu nie jest bledem
+  (nawyk bez ikony), nadmiarowy wpis tez nie (ikona dla wartosci obecnej juz tylko
+  w historii).
+*/
 
 module.exports = { EMOJI_NAWYKOW };

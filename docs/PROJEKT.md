@@ -63,12 +63,13 @@ ręcznie albo importem CSV z Notion; wychodzą eksportem CSV i codzienną kopią
 
 ### Infrastruktura
 - [x] Migracje wersjonowane przez `PRAGMA user_version` (10 migracji)
-- [x] Smoke test — 399 asercji, izolowana baza tymczasowa
+- [x] Smoke test — 415 asercji, izolowana baza tymczasowa
 - [x] Czyste reguły w osobnych plikach, testowane bez przeglądarki
 - [x] Codzienna kopia zapasowa CSV z rotacją
-- [x] Statystyki w sześciu grupach z nawigacją kotwicową: konsekwencja (serie,
+- [x] Statystyki w **siedmiu zakładkach** (wybór zapamiętany w hashu URL-a): konsekwencja (serie,
       pokrycie), rytm tygodnia, samopoczucie z trendem, współwystępowanie słów
-      i nawyków, zadania (terminowość wg obszaru i priorytetu), postęp XP
+      i nawyków, zadania (terminowość wg obszaru i priorytetu), postęp XP,
+      porównania okien kroczących 7/30/365 dni
 
 ## Wersje
 
@@ -78,6 +79,7 @@ było dużo.
 
 | Wersja | Co ją wyznacza |
 | --- | --- |
+| **2.1.0** | Porównania okien kroczących (7/30/365 dni) i statystyki w zakładkach; przycięty słownik nawyków z pozycją „Work". Baza bez zmian — nadal 10 migracji, XP liczy się tak samo, więc stare i nowe liczby są porównywalne. Stąd MNIEJSZA, nie większa |
 | **2.0.0** | Nowy silnik XP przeliczył **całą historię wstecz** (36 891 XP / prestiż 0 / poziom 74 → 10 952 / prestiż 2 / poziom 20), więc żadna wcześniejsza notatka czy zrzut ekranu nie jest już porównywalny. Do tego interfejs po angielsku i schemat bazy z 7 na 10 migracji — kod 1.0.0 tej bazy nie otworzy |
 | 1.0.0 | Zadania, dziennik, import CSV, smoke test, kopia zapasowa |
 
@@ -134,7 +136,7 @@ Zebrane z kodu i README — wybrane te, które najłatwiej cofnąć przez przypa
 | `numerDnia` bierze pierwsze 10 znaków | `lib/nagrody.js`, `public/js/filtr-dat.js` | Wszystkie porównania dat idą na pełnych dniach — dzięki temu daty całodzienne nie wymagały zmian w regułach. Dwie kopie pilnuje asercja |
 | XP nigdy nie zapisywane w bazie | `lib/nagrody.js` | Zmiana wzoru przelicza całą historię bez migracji. Zapisywane są **wyłącznie decyzje użytkownika**, których nie da się odtworzyć z danych: `zakupy` i `atrybuty` |
 | Duplikat zadania powstaje w SQL (`INSERT ... SELECT`) | `routes/zadania.js` | Reguła „bez stanu i bez daty zakończenia" musi być wymuszona po stronie bazy — inaczej kopia naliczyłaby XP za niewykonaną pracę |
-| **2026-09-05: wyśrodkowanie etykiet ocen** | `config/mapowanie-ocen.js` | Skrajności były martwe (5 w 1,2–3,1% wpisów), a środek stał nie tam, gdzie trzeba (nastrój: mode 4 przez słowo „Neutralny"). Etykiety zmieniono, **liczby nie** — ale zmienia to zachowanie, więc szereg czasowy ma tu próg. Porównania „2024 kontra 2026" muszą to uwzględniać |
+| **Wyśrodkowanie etykiet ocen — ostatni dzień po staremu: 2026-09-06** | `config/mapowanie-ocen.js` | Skrajności były martwe (5 w 1,2–3,1% wpisów), a środek stał nie tam, gdzie trzeba (nastrój: mode 4 przez słowo „Neutralny"). Etykiety zmieniono, **liczby nie** — ale zmienia to zachowanie, więc szereg czasowy ma tu próg. **Data ustalona ze znaczników czasu, nie z pamięci:** commit `2f2d73e` ma `2026-09-06 20:56`, a wpis z tego dnia powstał o `20:14` — pierwszy dzień na nowych etykietach to 2026-09-07. Stała `DATA_ZMIANY_KALIBRACJI` w `reguly-statystyk.js` oznacza porównania przechodzące przez tę granicę |
 | **Interfejs po angielsku, wartości w bazie po polsku** | `config/slowniki.js` | `zadania.stan` trzyma `Plan/Czeka/W trakcie/Zrobione` w 527 rekordach i jest treścią eksportu CSV. Migracja wartości unieważniłaby 41 kopii zapasowych, więc mapujemy etykiety — ta sama zasada co kolumna `stres` przy polu „Calm". Nagłówki CSV zostają polskie |
 | Kontrasty palety **liczone w teście**, nie dobierane na oko | `public/css/style.css` | Kolory to jedyna warstwa, której nie sprawdzi ani test danych, ani test DOM-u, a psują się po cichu. Progi: 4,5:1 tekst, 3:1 obramowania kontrolek — w obu motywach |
 | **Dwa rodzaje obramowań** — `--ramka` (siatka) i `--ramka-kontrolki` | `public/css/style.css` | Mają różne zadania i różne progi. Siatka o kontraście 3:1 dominuje nad treścią przy 21 kolumnach; obramowanie kontrolki musi mówić „to się klika" |
