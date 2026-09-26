@@ -500,6 +500,145 @@ const regulyStatystyk = (() => {
       .sort((a, b) => b.procent - a.procent);
   }
 
+  // ==========================================================================
+  // Porownania okresow
+  // ==========================================================================
+
+  /*
+    DATA ZMIANY KALIBRACJI OCEN.
+
+    Wysrodkowanie etykiet ocen (szczegoly w config/mapowanie-ocen.js i w tabeli
+    decyzji w docs/PROJEKT.md). Liczby w bazie znacza to samo, ale punkt odniesienia
+    przy ich wystawianiu sie przesunal.
+
+    TA STALA TO OSTATNI DZIEN OCENIANY PO STAREMU, nie dzien commita.
+    Ustalone ze znacznikow czasu, nie z pamieci: commit 2f2d73e ma date
+    2026-09-06 20:56, a wpis z 2026-09-06 powstal o 20:14 - czyli jeszcze przed
+    zmiana. Pierwszym dniem na nowych etykietach jest 2026-09-07.
+
+    Kazde porownanie PRZECHODZACE przez te granice miesza dwie kalibracje.
+    Nie blokujemy go - odciecie polowy historii byloby gorsze - ale oznaczamy,
+    zeby liczba nie udawala czystej.
+  */
+  const DATA_ZMIANY_KALIBRACJI = '2026-09-06';
+
+  /** Okno [od, do] o zadanej dlugosci, cofniete o `przesuniecie` okien wstecz. */
+  function oknoDat(dzisiaj, dlugosc, przesuniecie = 0) {
+    const koniec = numerDniaISO(dzisiaj) - przesuniecie * dlugosc;
+    const naDate = (n) => new Date(n * MS_W_DNIU).toISOString().slice(0, 10);
+    return { od: naDate(koniec - dlugosc + 1), do: naDate(koniec) };
+  }
+
+  /*
+    Podsumowanie jednego okresu.
+
+    KAZDA SREDNIA NIESIE ZE SOBA `ile` I `wypelnienie`. To nie jest ozdoba: wrzesien
+    2024 mial refleksje w 90% dni, a 2026 w 57%, wiec sama srednia porownuje dwie
+    rozne rzeczy i nikt tego nie zauwaza. Widok ma obowiazek pokazac oba liczniki
+    obok siebie.
+  */
+  function podsumujOkres(wpisy, od, do_, oceny) {
+    const wOkresie = wpisy.filter((w) => wypelnione(w.data) && w.data >= od && w.data <= do_);
+    const dni = numerDniaISO(do_) - numerDniaISO(od) + 1;
+
+    const wynik = {
+      od,
+      do: do_,
+      dniWOkresie: dni,
+      wpisow: wOkresie.length,
+      pokrycie: dni > 0 ? (100 * wOkresie.length) / dni : null,
+      /*
+        Flaga siedzi PRZY OKRESIE, a nie tylko przy porownaniu. Okres rozciagniety
+        przez 5 wrzesnia usrednia oceny z dwoch kalibracji naraz - jego wlasna
+        liczba jest juz mieszana, niezaleznie od tego, z czym ja zestawimy.
+      */
+      mieszaKalibracje: przecinaKalibracje(od, do_),
+      oceny: {},
+    };
+
+    for (const pole of oceny) {
+      const s = srednia(wOkresie, pole);
+      wynik.oceny[pole] = {
+        srednia: s.srednia,
+        ile: s.ile,
+        wypelnienie: wOkresie.length > 0 ? (100 * s.ile) / wOkresie.length : null,
+      };
+    }
+
+    return wynik;
+  }
+
+  /*
+    Tlo porownania: CALA HISTORIA POZA badanym okresem.
+
+    Gdyby tlem bylo wszystko razem z okresem, przy oknie 365 dni porownywalibysmy
+    okres z samym soba w 43% - i kazda roznica bylaby sztucznie stlumiona.
+    "Ten okres kontra reszta" jest pytaniem, ktore ma sens; "ten okres kontra
+    ten okres plus reszta" nie ma zadnego.
+  */
+  function tloPozaOkresem(wpisy, od, do_, oceny) {
+    const poza = wpisy.filter((w) => wypelnione(w.data) && (w.data < od || w.data > do_));
+    if (poza.length === 0) return null;
+
+    const daty = poza.map((w) => w.data).sort();
+    return podsumujOkres(poza, daty[0], daty[daty.length - 1], oceny);
+  }
+
+  /** Czy zakres [od, do] przechodzi przez date zmiany kalibracji ocen? */
+  function przecinaKalibracje(od, do_) {
+    return od <= DATA_ZMIANY_KALIBRACJI && do_ > DATA_ZMIANY_KALIBRACJI;
+  }
+
+  /*
+    Porownanie okien kroczacych.
+
+    Dla kazdej dlugosci zwracamy trzy kolumny: okres biezacy, poprzedni taki sam
+    i reszta historii. Roznice liczymy WYLACZNIE tam, gdzie obie strony maja dane -
+    odejmowanie od brakujacej sredniej dawaloby zero, czyli "bez zmian", co jest
+    najgorsza mozliwa odpowiedzia przy braku danych.
+  */
+  function porownanieOkien(wpisy, dzisiaj, dlugosci, oceny) {
+    return dlugosci.map((dlugosc) => {
+      const bOkno = oknoDat(dzisiaj, dlugosc, 0);
+      const pOkno = oknoDat(dzisiaj, dlugosc, 1);
+
+      const biezacy = podsumujOkres(wpisy, bOkno.od, bOkno.do, oceny);
+      const poprzedni = podsumujOkres(wpisy, pOkno.od, pOkno.do, oceny);
+      const tlo = tloPozaOkresem(wpisy, bOkno.od, bOkno.do, oceny);
+
+      const roznice = {};
+      for (const pole of oceny) {
+        const b = biezacy.oceny[pole].srednia;
+        const p = poprzedni.oceny[pole].srednia;
+        const t = tlo ? tlo.oceny[pole].srednia : null;
+        roznice[pole] = {
+          wobecPoprzedniego: b === null || p === null ? null : b - p,
+          wobecTla: b === null || t === null ? null : b - t,
+        };
+      }
+
+      return {
+        dlugosc,
+        biezacy,
+        poprzedni,
+        tlo,
+        roznice,
+        /*
+          Porownanie jest mieszane, gdy mieszany jest ktorykolwiek z zestawianych
+          okresow ALBO gdy granica przebiega miedzy nimi. Same okresy nosza swoje
+          flagi w `mieszaKalibracje` - tu chodzi o zestawienie jako calosc.
+        */
+        mieszaneZestawienie: {
+          zPoprzednim:
+            biezacy.mieszaKalibracje ||
+            poprzedni.mieszaKalibracje ||
+            przecinaKalibracje(pOkno.od, bOkno.do),
+          zTlem: Boolean(tlo) && (biezacy.mieszaKalibracje || tlo.mieszaKalibracje),
+        },
+      };
+    });
+  }
+
   /** Komplet statystyk dziennika. */
   function statystykiDziennika(wpisy) {
     const daty = wpisy
@@ -557,5 +696,12 @@ const regulyStatystyk = (() => {
     zadaniaWedlugMiesiecy,
     terminowoscWedlug,
     NAZWY_DNI,
+    // --- porownania okresow ---
+    oknoDat,
+    podsumujOkres,
+    tloPozaOkresem,
+    przecinaKalibracje,
+    porownanieOkien,
+    DATA_ZMIANY_KALIBRACJI,
   };
 })();

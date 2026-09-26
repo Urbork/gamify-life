@@ -284,6 +284,7 @@
     { id: 'wplyw', tytul: 'What works for you' },
     { id: 'zadania', tytul: 'Tasks' },
     { id: 'postep', tytul: 'Progress' },
+    { id: 'porownania', tytul: 'Comparisons' },
   ];
 
   function naglowekSekcji(id, tytul, podtytul) {
@@ -295,15 +296,76 @@
     return sekcja;
   }
 
-  function nawigacja() {
-    const nav = el('nav', 'nawigacja-statystyk');
+  /*
+    ZAKLADKI ZAMIAST JEDNEGO DLUGIEGO PRZEWIJANIA.
+
+    Siedem sekcji i kilkanascie tabel na jednej stronie znaczylo, ze dojscie
+    do "Tasks" wymagalo przewiniecia przez caly dziennik. Teraz widac jedna sekcje
+    naraz, a reszta czeka schowana (hidden), nie usunieta - przelaczenie jest
+    natychmiastowe i nie przelicza niczego od nowa.
+
+    WYBOR SIEDZI W HASHU URL-a. Dzieki temu odswiezenie strony wraca na te sama
+    zakladke, dziala przycisk "wstecz", a stare linki kotwicowe (#wplyw) nadal
+    prowadza tam, gdzie prowadzily.
+
+    Klawiatura: strzalki w bok, Home i End - tak jak w kazdym innym tablist.
+  */
+  function zbudujZakladki(panele) {
+    const nav = el('nav', 'zakladki');
+    nav.setAttribute('role', 'tablist');
     nav.setAttribute('aria-label', 'Stats sections');
-    for (const s of SEKCJE) {
-      const a = document.createElement('a');
-      a.href = '#' + s.id;
-      a.textContent = s.tytul;
-      nav.appendChild(a);
+
+    const przyciski = new Map();
+
+    function pokaz(id, zapiszWHashu) {
+      for (const s of SEKCJE) {
+        const wybrana = s.id === id;
+        const przycisk = przyciski.get(s.id);
+        przycisk.setAttribute('aria-selected', wybrana ? 'true' : 'false');
+        // Tylko aktywna zakladka lapie Tab - reszta jest dostepna strzalkami.
+        przycisk.tabIndex = wybrana ? 0 : -1;
+        panele.get(s.id).hidden = !wybrana;
+      }
+      if (zapiszWHashu) history.replaceState(null, '', '#' + id);
     }
+
+    SEKCJE.forEach((s) => {
+      const przycisk = el('button', 'zakladka', s.tytul);
+      przycisk.type = 'button';
+      przycisk.setAttribute('role', 'tab');
+      przycisk.setAttribute('aria-controls', s.id);
+      przycisk.addEventListener('click', () => pokaz(s.id, true));
+      przyciski.set(s.id, przycisk);
+      nav.appendChild(przycisk);
+    });
+
+    nav.addEventListener('keydown', (e) => {
+      const kolejnosc = SEKCJE.map((s) => s.id);
+      const teraz = kolejnosc.findIndex((id) => przyciski.get(id).tabIndex === 0);
+      let cel = null;
+
+      if (e.key === 'ArrowRight') cel = (teraz + 1) % kolejnosc.length;
+      else if (e.key === 'ArrowLeft') cel = (teraz - 1 + kolejnosc.length) % kolejnosc.length;
+      else if (e.key === 'Home') cel = 0;
+      else if (e.key === 'End') cel = kolejnosc.length - 1;
+      else return;
+
+      e.preventDefault();
+      pokaz(kolejnosc[cel], true);
+      przyciski.get(kolejnosc[cel]).focus();
+    });
+
+    /* Hash moze wskazywac na sekcje, ktorej nie ma - wtedy pierwsza. */
+    const zHasha = decodeURIComponent(location.hash.slice(1));
+    const startowa = SEKCJE.some((s) => s.id === zHasha) ? zHasha : SEKCJE[0].id;
+    pokaz(startowa, false);
+
+    // Wstecz/dalej w przegladarce ma przelaczac zakladki, a nie nic nie robic.
+    window.addEventListener('hashchange', () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      if (SEKCJE.some((s) => s.id === id)) pokaz(id, false);
+    });
+
     return nav;
   }
 
@@ -604,12 +666,131 @@
   // Start
   // ==========================================================================
 
+  // ==========================================================================
+  // 7. Porownania okresow
+  // ==========================================================================
+
+  const OKNA_POROWNANIA = [7, 30, 365];
+  const OCENY_POROWNANIA = ['jakosc_snu', 'stres', 'nastroj', 'intencjonalnosc'];
+
+  const NAZWY_OKIEN = { 7: 'Last 7 days', 30: 'Last 30 days', 365: 'Last 365 days' };
+
+  /*
+    Roznica z jawnym znakiem i kierunkiem. Przy wszystkich czterech ocenach
+    WYZSZA WARTOSC ZNACZY LEPIEJ (po zmianie nazwy "Stres" na "Calm"), wiec jeden
+    kolor dla dodatnich wystarczy - nie trzeba pamietac, ktora skala leci odwrotnie.
+  */
+  function komorkaRoznicy(wartosc) {
+    const td = el('span', 'roznica');
+    if (wartosc === null || wartosc === undefined) {
+      td.textContent = '—';
+      td.title = 'Za mało danych po jednej ze stron';
+      return td;
+    }
+    td.classList.add(wartosc > 0 ? 'roznica-lepiej' : wartosc < 0 ? 'roznica-gorzej' : 'roznica-bez');
+    td.textContent = (wartosc > 0 ? '+' : '') + liczba(wartosc, 2);
+    return td;
+  }
+
+  /** "3,41 (n=23)" - srednia nigdy nie stoi bez licznika. */
+  function sredniaZLicznikiem(pozycja) {
+    if (!pozycja || pozycja.srednia === null) return '— (n=0)';
+    return `${liczba(pozycja.srednia, 2)} (n=${pozycja.ile})`;
+  }
+
+  function tabelaOkna(okno) {
+    const wiersze = OCENY_POROWNANIA.map((pole) => [
+      ETYKIETY_OCEN[pole],
+      sredniaZLicznikiem(okno.biezacy.oceny[pole]),
+      sredniaZLicznikiem(okno.poprzedni.oceny[pole]),
+      komorkaRoznicy(okno.roznice[pole].wobecPoprzedniego),
+      okno.tlo ? sredniaZLicznikiem(okno.tlo.oceny[pole]) : '—',
+      komorkaRoznicy(okno.roznice[pole].wobecTla),
+    ]);
+
+    return tabela(
+      ['Rating', 'This period', 'Previous', 'Δ', 'Rest of history', 'Δ'],
+      wiersze,
+      [false, true, true, true, true, true]
+    );
+  }
+
+  function sekcjaPorownan(wpisy, dzisiaj) {
+    const s = naglowekSekcji(
+      'porownania',
+      'Comparisons',
+      'Each window against the one before it and against the rest of the history.'
+    );
+
+    const okna = regulyStatystyk.porownanieOkien(
+      wpisy,
+      dzisiaj,
+      OKNA_POROWNANIA,
+      OCENY_POROWNANIA
+    );
+
+    /*
+      OSTRZEZENIE O PROBIE STOI RAZ, NA GORZE. Kazda srednia niesie swoje n,
+      ale to nie wystarczy: przy dwoch oknach o podobnej sredniej i rozniacych
+      sie licznikach oko i tak porownuje same liczby.
+    */
+    s.appendChild(
+      el(
+        'p',
+        'uwaga-korelacja',
+        'Averages only describe the days that were actually filled in. Check the n ' +
+          'next to each one and the coverage above the table — a period with 5 entries ' +
+          'and one with 30 are not the same measurement.'
+      )
+    );
+
+    for (const okno of okna) {
+      s.appendChild(el('h3', null, NAZWY_OKIEN[okno.dlugosc] || `Last ${okno.dlugosc} days`));
+
+      const b = okno.biezacy;
+      const p = okno.poprzedni;
+      s.appendChild(
+        el(
+          'p',
+          'podstawa',
+          `${b.od} → ${b.do}: ${b.wpisow}/${b.dniWOkresie} days (${procent(b.pokrycie)}) · ` +
+            `previous: ${p.wpisow}/${p.dniWOkresie} (${procent(p.pokrycie)})` +
+            (okno.tlo ? ` · rest of history: ${okno.tlo.wpisow} entries` : '')
+        )
+      );
+
+      /*
+        Znacznik kalibracji pojawia sie tylko tam, gdzie faktycznie cos miesza -
+        stala data i wyjasnienie siedza w regulach, tu jest sama informacja.
+      */
+      if (okno.mieszaneZestawienie.zPoprzednim || okno.mieszaneZestawienie.zTlem) {
+        s.appendChild(
+          el(
+            'p',
+            'uwaga-kalibracja',
+            'This comparison crosses the rating-label change of ' +
+              regulyStatystyk.DATA_ZMIANY_KALIBRACJI +
+              '. The stored numbers mean the same, but the reference point for entering ' +
+              'them shifted — treat the difference as a hint, not a measurement.'
+          )
+        );
+      }
+
+      s.appendChild(tabelaOkna(okno));
+    }
+
+    return s;
+  }
+
   async function start() {
     try {
-      const [zadania, wpisy, pobraneSlowniki] = await Promise.all([
+      // Data DZISIAJ wedlug SERWERA - okna kroczace musza liczyc sie od tej samej
+      // daty co reszta aplikacji, niezaleznie od zegara i strefy przegladarki.
+      const [zadania, wpisy, pobraneSlowniki, czas] = await Promise.all([
         api.get('/api/zadania'),
         api.get('/api/dziennik'),
         api.get('/api/slowniki'),
+        api.get('/api/czas'),
       ]);
       slowniki = pobraneSlowniki;
 
@@ -633,6 +814,7 @@
         wplyw: () => sekcjaWplywu(wpisy),
         zadania: () => sekcjaZadan(statZadan, zadania),
         postep: () => sekcjaPostepu(wpisy, zadania),
+        porownania: () => sekcjaPorownan(wpisy, czas.dzisiaj),
       };
 
       const brakujacy = SEKCJE.filter((s) => !budowniczowie[s.id]).map((s) => s.id);
@@ -640,7 +822,15 @@
         throw new Error(`Sections without a builder: ${brakujacy.join(', ')}.`);
       }
 
-      elTresc.replaceChildren(nawigacja(), ...SEKCJE.map((s) => budowniczowie[s.id]()));
+      /*
+        Panele powstaja WSZYSTKIE naraz i sa chowane, a nie budowane na zadanie.
+        Przelaczanie zakladek nie przelicza wtedy niczego, a caly koszt renderowania
+        placimy raz - tak samo jak przed podzialem na zakladki.
+      */
+      const panele = new Map(SEKCJE.map((s) => [s.id, budowniczowie[s.id]()]));
+      for (const panel of panele.values()) panel.setAttribute('role', 'tabpanel');
+
+      elTresc.replaceChildren(zbudujZakladki(panele), ...panele.values());
 
       elStatus.textContent = `recalculated ${zadania.length} tasks and ${wpisy.length} entries`;
       elStatus.className = 'status ok';
